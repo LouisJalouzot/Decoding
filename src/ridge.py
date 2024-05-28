@@ -2,24 +2,24 @@ import numpy as np
 from sklearn.compose import TransformedTargetRegressor
 from sklearn.linear_model import RidgeCV
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import RobustScaler
 
 from src.utils import memory
 
-alphas = np.logspace(-5, 8, 10)
+alphas = np.logspace(-5, 5, 10)
 
 
-# @memory.cache
+@memory.cache
 def train_ridge(X, Y, alphas=alphas):
 
     pipeline = Pipeline(
         [
-            ("scaler", StandardScaler()),
+            ("scaler", RobustScaler()),
             ("ridge", RidgeCV(alphas=alphas, alpha_per_target=True)),
         ]
     )
     pipeline = TransformedTargetRegressor(
-        pipeline, transformer=StandardScaler(), check_inverse=False
+        pipeline, transformer=RobustScaler(), check_inverse=False
     )
     pipeline.fit(X, Y)
 

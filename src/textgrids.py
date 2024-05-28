@@ -87,7 +87,7 @@ class TextGrid(object):
         if self.text_type == "ChronTextFile":
             m = re.compile(header)
             tier_headers = m.findall(self.read_file)
-            tier_re = ' \d+.?\d* \d+.?\d*[\r\n]+"[^"]*"'
+            tier_re = r' \d+.?\d* \d+.?\d*[\r\n]+"[^"]*"'
             for i in range(0, self.size):
                 tier_info = [tier_headers[i]] + re.findall(
                     str(i + 1) + tier_re, self.read_file
@@ -96,7 +96,7 @@ class TextGrid(object):
                 tiers.append(Tier(tier_info, self.text_type, self.t_time))
             return tiers
 
-        tier_re = header + "[\s\S]+?(?=" + header + "|$$)"
+        tier_re = header + r"[\s\S]+?(?=" + header + r"|$$)"
         m = re.compile(tier_re)
         tier_iter = m.finditer(self.read_file)
         for iterator in tier_iter:
@@ -134,13 +134,13 @@ class TextGrid(object):
 
         if self.text_type == "ooTextFile":
             m = OOTEXTFILE
-            header = " +item \["
+            header = r" +item \["
         elif self.text_type == "ChronTextFile":
             m = CHRONTEXTFILE
-            header = '"\S+" ".*" \d+\.?\d* \d+\.?\d*'
+            header = r'"\S+" ".*" \d+\.?\d* \d+\.?\d*'
         elif self.text_type == "OldooTextFile":
             m = OLDOOTEXTFILE
-            header = '".*"[\r\n]+".*"'
+            header = r'".*"[\r\n]+".*"'
 
         file_info = m.findall(self.read_file)[0]
         self.xmin = float(file_info[0])
@@ -185,14 +185,14 @@ class TextGrid(object):
         @return:  A string in OoTextGrid file format.
         """
 
-        oo_file = ""
-        oo_file += 'File type = "ooTextFile"\n'
-        oo_file += 'Object class = "TextGrid"\n\n'
-        oo_file += "xmin = ", self.xmin, "\n"
-        oo_file += "xmax = ", self.xmax, "\n"
-        oo_file += "tiers? <exists>\n"
-        oo_file += "size = ", self.size, "\n"
-        oo_file += "item []:\n"
+        oo_file = r""
+        oo_file += r'File type = "ooTextFile"\n'
+        oo_file += r'Object class = "TextGrid"\n\n'
+        oo_file += r"xmin = ", self.xmin, "\n"
+        oo_file += r"xmax = ", self.xmax, "\n"
+        oo_file += r"tiers? <exists>\n"
+        oo_file += r"size = ", self.size, "\n"
+        oo_file += r"item []:\n"
         for i in range(len(self.tiers)):
             oo_file += "%4s%s [%s]" % ("", "item", i + 1)
             _curr_tier = self.tiers[i]
@@ -264,27 +264,27 @@ class Tier(object):
         class, name, xmin, xmax, transcript.
         """
 
-        trans = "([\S\s]*)"
+        trans = r"([\S\s]*)"
         if self.text_type == "ChronTextFile":
-            classid = '"(.*)" +'
-            nameid = '"(.*)" +'
-            xmin = "(\d+\.?\d*) +"
-            xmax = "(\d+\.?\d*) *[\r\n]+"
+            classid = r'"(.*)" +'
+            nameid = r'"(.*)" +'
+            xmin = r"(\d+\.?\d*) +"
+            xmax = r"(\d+\.?\d*) *[\r\n]+"
             # No size values are given in the Chronological Text File format.
             self.size = None
             size = ""
         elif self.text_type == "ooTextFile":
-            classid = ' +class = "(.*)" *[\r\n]+'
-            nameid = ' +name = "(.*)" *[\r\n]+'
-            xmin = " +xmin = (\d+\.?\d*) *[\r\n]+"
-            xmax = " +xmax = (\d+\.?\d*) *[\r\n]+"
-            size = " +\S+: size = (\d+) *[\r\n]+"
+            classid = r' +class = "(.*)" *[\r\n]+'
+            nameid = r' +name = "(.*)" *[\r\n]+'
+            xmin = r" +xmin = (\d+\.?\d*) *[\r\n]+"
+            xmax = r" +xmax = (\d+\.?\d*) *[\r\n]+"
+            size = r" +\S+: size = (\d+) *[\r\n]+"
         elif self.text_type == "OldooTextFile":
-            classid = '"(.*)" *[\r\n]+'
-            nameid = '"(.*)" *[\r\n]+'
-            xmin = "(\d+\.?\d*) *[\r\n]+"
-            xmax = "(\d+\.?\d*) *[\r\n]+"
-            size = "(\d+) *[\r\n]+"
+            classid = r'"(.*)" *[\r\n]+'
+            nameid = r'"(.*)" *[\r\n]+'
+            xmin = r"(\d+\.?\d*) *[\r\n]+"
+            xmax = r"(\d+\.?\d*) *[\r\n]+"
+            size = r"(\d+) *[\r\n]+"
         m = re.compile(classid + nameid + xmin + xmax + size + trans)
         self.tier_info = m.findall(self.tier)[0]
         self.classid = self.tier_info[0]
@@ -301,22 +301,22 @@ class Tier(object):
         """
 
         if self.text_type == "ChronTextFile":
-            trans_head = ""
-            trans_xmin = " (\S+)"
-            trans_xmax = " (\S+)[\r\n]+"
-            trans_text = '"([\S\s]*?)"'
+            trans_head = r""
+            trans_xmin = r" (\S+)"
+            trans_xmax = r" (\S+)[\r\n]+"
+            trans_text = r'"([\S\s]*?)"'
         elif self.text_type == "ooTextFile":
-            trans_head = " +\S+ \[\d+\]: *[\r\n]+"
-            trans_xmin = " +\S+ = (\S+) *[\r\n]+"
-            trans_xmax = " +\S+ = (\S+) *[\r\n]+"
-            trans_text = ' +\S+ = "([^"]*?)"'
+            trans_head = r" +\S+ \[\d+\]: *[\r\n]+"
+            trans_xmin = r" +\S+ = (\S+) *[\r\n]+"
+            trans_xmax = r" +\S+ = (\S+) *[\r\n]+"
+            trans_text = r' +\S+ = "([^"]*?)"'
         elif self.text_type == "OldooTextFile":
-            trans_head = ""
-            trans_xmin = "(.*)[\r\n]+"
-            trans_xmax = "(.*)[\r\n]+"
-            trans_text = '"([\S\s]*?)"'
+            trans_head = r""
+            trans_xmin = r"(.*)[\r\n]+"
+            trans_xmax = r"(.*)[\r\n]+"
+            trans_text = r'"([\S\s]*?)"'
         if self.classid == TEXTTIER:
-            trans_xmin = ""
+            trans_xmin = r""
         trans_m = re.compile(trans_head + trans_xmin + trans_xmax + trans_text)
         self.simple_transcript = trans_m.findall(self.transcript)
         return self.simple_transcript

@@ -19,22 +19,27 @@ from src.textgrids import TextGrid
 
 console = Console()
 
-memory = memory.Memory(location=".cache", compress=9)
+memory = memory.Memory(location=".cache", compress=9, verbose=0)
 
 
 DEFAULT_BAD_WORDS = frozenset(
-    ["sentence_start", "sentence_end", "br", "lg", "ls", "ns", "sp"]
+    ["sentence_start", "sentence_end", "br", "lg", "ls", "ns", ""]
 )
 
 
 def get_textgrid(textgrid_path):
     textgrid = TextGrid(textgrid_path)
     grtranscript = textgrid.tiers[1].make_simple_transcript()
-    return [
-        x
-        for x in grtranscript
-        if x[2].lower().strip("{}").strip() not in DEFAULT_BAD_WORDS
+    grtranscript = [
+        (float(start), float(stop), "," if text == "sp" else text)
+        for start, stop, text in grtranscript
+        if text.lower().strip("{}").strip() not in DEFAULT_BAD_WORDS
     ]
+    if grtranscript[0][2] == ",":
+        grtranscript = grtranscript[1:]
+    if grtranscript[-1][2] == ",":
+        grtranscript = grtranscript[:-1]
+    return grtranscript
 
 
 def _get_progress(**kwargs):

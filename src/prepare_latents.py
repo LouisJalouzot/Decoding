@@ -1,46 +1,105 @@
+from typing import Callable, List, Tuple
+
+import clip
 import numpy as np
 
-from src.utils import _get_progress, get_textgrid, memory
+from src.utils import device, get_textgrid, memory
 
 
-def encode_chunks(model, chunks, n_context=0, verbose=False):
-    features = []
-    n_chunks = len(chunks)
-    with _get_progress(transient=True) as progress:
-        if verbose:
-            task = progress.add_task("Encoding chunks", total=n_chunks)
+def get_model(
+    model_class: str,
+    model_name: str,
+) -> Callable[[str], np.ndarray]:
+    """
+    Get the model for encoding text.
 
-        for i in range(n_chunks):
-            # Add previous chunks for context
-            text = " ".join(
-                [chunks[k] for k in range(max(0, i - n_context), i + 1)]
-            ).strip()
-            features.append(model.encode_text(text).detach().cpu().numpy().flatten())
+    Args:
+        model_class (str): The class of the model.
+        model_name (str): The name of the model.
 
-            if verbose:
-                progress.update(task, advance=1)
+    Returns:
+        Callable[[str], np.ndarray]: The model function that takes a text input and returns the encoded features.
+    """
+    import torch
 
-    return np.array(features)
+    if model_class.lower() == "clip":
+        clip_model, _ = clip.load(model_name, device=device)
+
+        def model(text: str) -> np.ndarray:
+            with torch.no_grad():
+                return clip_model.encode_text(
+                    clip.tokenize(text, truncate=True).to(device),
+                )
+
+        return model
+    else:
+        from transformers import AutoModel, AutoTokenizer
+
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
+        auto_model = AutoModel.from_pretrained(model_name).to(device)
+        auto_model.eval()
+
+        def model(text: str) -> np.ndarray:
+            inputs = tokenizer(
+                text, return_tensors="pt", padding=True, truncation=True
+            ).to(device)
+            with torch.no_grad():
+                return auto_model(**inputs).last_hidden_state.mean(dim=1)
+
+        return model
 
 
-# @memory.cache(ignore=["verbose"])
-# TODO: Create function to instantiate model from name for use with cache
-def prepare_latents(model, textgrid_path, tr, n_context=0, verbose=False):
+@memory.cache
+def compute_chunks(textgrid_path: str, tr: int, context_length: int) -> List[str]:
+    """
+    Compute the chunks of text from the given textgrid file.
+
+    Args:
+        textgrid_path (str): The path to the textgrid file.
+        tr (int): The time resolution.
+        context_length (int): The number of previous chunks to include for context.
+
+    Returns:
+        List[str]: The list of computed chunks of text.
+    """
     goodtranscript = get_textgrid(textgrid_path)
-    offsets = np.array([float(x[1]) for x in goodtranscript])
-    words = np.array([x[2].strip("{}").strip().lower() for x in goodtranscript])
 
+    offsets = np.array([x[1] for x in goodtranscript])
+    words = [x[2].strip("{}").strip() for x in goodtranscript]
+    words = np.array([(x if x == "I" else x.lower()) for x in words])
     group_indices = np.array(offsets // tr, dtype=int)
     unique_indices = np.arange(group_indices.max())
-    chunks = [" ".join(list(words[group_indices == idx])) for idx in unique_indices]
 
-    aggregated_chunks = [
-        " ".join([chunks[k] for k in range(max(0, i - n_context), i + 1)]).strip()
+    chunks = [" ".join(list(words[group_indices == idx])) for idx in unique_indices]
+    return [
+        " ".join([chunks[k] for k in range(max(0, i - context_length), i + 1)]).strip()
         for i in range(len(chunks))
     ]
 
-    features = encode_chunks(
-        model=model, chunks=chunks, n_context=n_context, verbose=verbose
-    )
 
-    return features, aggregated_chunks
+@memory.cache
+def prepare_latents(
+    textgrid_path: str,
+    model_class: str = "clip",
+    model_name: str = "ViT-L/14",
+    tr: int = 2,
+    context_length: int = 0,
+) -> Tuple[np.ndarray, List[str]]:
+    """
+    Prepare the latents for the given textgrid file.
+
+    Args:
+        textgrid_path (str): The path to the textgrid file.
+        model_class (str, optional): The class of the model. Defaults to "clip".
+        model_name (str, optional): The name of the model. Defaults to "ViT-L/14".
+        tr (int, optional): The time resolution. Defaults to 2.
+        context_length (int, optional): The number of previous chunks to include for context. Defaults to 0.
+        verbose (bool, optional): Whether to display progress. Defaults to False.
+
+    Returns:
+        Tuple[np.ndarray, List[str]]: The encoded features and the aggregated chunks of text.
+    """
+    chunks = compute_chunks(textgrid_path, tr, context_length)
+    model = get_model(model_class, model_name)
+    latents = model(chunks).cpu().numpy()
+    return latents

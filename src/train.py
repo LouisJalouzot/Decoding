@@ -169,4 +169,10 @@ def train(
                 output[f"{t}_{key}"] = value
             output[f"{t}_ranks"] = latent_rank(Y, Y_pred)
             output[f"{t}_median_rank"] = np.median(output[f"{t}_ranks"])
+
+        console.log(
+            f"Train median rank: {output['train_median_rank']}, "
+            f"test median rank: {output['test_median_rank']}"
+        )
+
         return output, model, scaler

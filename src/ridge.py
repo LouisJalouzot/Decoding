@@ -1,6 +1,7 @@
 from typing import Dict, List, Union
 
 import numpy as np
+from sklearn.linear_model import Ridge
 from sklearn.preprocessing import RobustScaler
 
 from src.metrics import scores
@@ -22,10 +23,7 @@ def fast_ridge(
     output = {}
     with _get_progress(transient=not verbose) as progress:
         if verbose:
-            task = progress.add_task(
-                "Fitting for each alpha",
-                total=2 * len(alphas),
-            )
+            task = progress.add_task("Fine-tuning", total=2 * len(alphas))
 
         coefs = []
         val_mse = []
@@ -39,7 +37,7 @@ def fast_ridge(
             val_mse.append(((X_valid @ c - Y_valid) ** 2).mean(axis=0))
 
             if verbose:
-                progress.update(task, description="Fine-tuning", advance=1)
+                progress.update(task, advance=1)
         val_mse = np.stack(val_mse)
         best_alpha_index = val_mse.argmin(axis=0)
         output["alpha"] = alphas[best_alpha_index]
@@ -62,7 +60,6 @@ def fast_ridge(
 
         for t, Y_true, Y_pred in [
             ("train", Y_train, X_train @ coefs.T),
-            ("valid", Y_valid, X_valid @ coefs.T),
             ("test", Y_test, X_test @ coefs.T),
         ]:
             for key, value in scores(Y_true, Y_pred).items():
@@ -171,3 +168,46 @@ def fast_ridge_cv(
     for key in output:
         output[key] /= len(n_scans)
     return output
+
+
+def ridge(
+    X_train: np.ndarray,
+    X_valid: np.ndarray,
+    X_test: np.ndarray,
+    Y_train: np.ndarray,
+    Y_valid: np.ndarray,
+    Y_test: np.ndarray,
+    alphas: np.ndarray = np.logspace(-3, 10, 10),
+    verbose: bool = False,
+) -> Dict[str, Union[np.ndarray, float]]:
+    model = Ridge(fit_intercept=False)
+
+    with _get_progress(transient=not verbose) as progress:
+        if verbose:
+            task = progress.add_task("Fine-tuning", total=len(alphas) + 1)
+
+        val_mse = []
+        for alpha in alphas:
+            model.alpha = alpha
+            model = model.fit(X_train, Y_train)
+            val_mse.append(((model.predict(X_valid) - Y_valid) ** 2).mean(axis=0))
+            if verbose:
+                progress.update(task, advance=1)
+
+        best_alphas = alphas[np.stack(val_mse).argmin(axis=0)]
+        output = {"alpha": best_alphas}
+        model.alpha = best_alphas
+        X_train = np.vstack([X_train, X_valid])
+        Y_train = np.vstack([Y_train, Y_valid])
+        model.fit(X_train, Y_train)
+        output["coefs"] = model.coef_
+
+        for t, (X, Y) in [
+            ("train", (X_train, Y_train)),
+            ("test", (X_test, Y_test)),
+        ]:
+            Y_pred = model.predict(X)
+            for key, value in scores(Y, Y_pred).items():
+                output[f"{t}_{key}"] = value
+
+        return output

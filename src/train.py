@@ -9,7 +9,7 @@ from sklearn.preprocessing import RobustScaler
 
 from src.metrics import scores
 from src.prepare_latents import prepare_latents
-from src.ridge import fast_ridge, fast_ridge_cv
+from src.ridge import fast_ridge, fast_ridge_cv, ridge
 from src.utils import _get_progress, console, device, memory
 
 """
@@ -26,7 +26,7 @@ def fetch_data(
     model_name: str,
     tr: int,
     context_length: int,
-    lag: int = 0,
+    lag: int,
     verbose: bool = False,
 ) -> Tuple[List[np.ndarray], List[np.ndarray], np.ndarray]:
     """
@@ -94,6 +94,7 @@ def train(
     model_name: str = "ViT-L/14",
     context_length: int = 2,
     tr: int = 2,
+    lag: int = 2,
     valid_ratio: float = 0.2,
     test_ratio: float = 0.1,
     seed: int = 0,
@@ -130,6 +131,7 @@ def train(
         model_name,
         tr,
         context_length,
+        lag,
         verbose=verbose,
     )
     n_stories = len(stories)
@@ -140,12 +142,12 @@ def train(
     n_valid = max(1, int(valid_ratio * n_stories))
     n_test = max(1, int(test_ratio * n_stories))
     n_train = n_stories - n_valid - n_test
-    X_train = np.concatenate(Xs[n_test+n_valid:])
-    X_valid = np.concatenate(Xs[n_test:n_test+n_valid])
+    X_train = np.concatenate(Xs[n_test + n_valid :])
+    X_valid = np.concatenate(Xs[n_test : n_test + n_valid])
     X_test = np.concatenate(Xs[:n_test])
     scaler = RobustScaler()
-    Y_train = scaler.fit_transform(np.concatenate(Ys[n_test+n_valid:]))
-    Y_valid = scaler.transform(np.concatenate(Ys[n_test:n_test+n_valid]))
+    Y_train = scaler.fit_transform(np.concatenate(Ys[n_test + n_valid :]))
+    Y_valid = scaler.transform(np.concatenate(Ys[n_test : n_test + n_valid]))
     Y_test = scaler.transform(np.concatenate(Ys[:n_test]))
     if verbose and not decoder.endswith("_cv"):
         console.log(f"X_train: {X_train.shape}, Y_train: {Y_train.shape}")
@@ -162,28 +164,36 @@ def train(
         )
 
     if decoder.lower() == "fast_ridge":
-        return fast_ridge(X_train, X_valid, X_test, Y_train, Y_valid, Y_test, alphas=alphas, verbose=verbose,)
+        output = fast_ridge(
+            X_train,
+            X_valid,
+            X_test,
+            Y_train,
+            Y_valid,
+            Y_test,
+            alphas=alphas,
+            verbose=verbose,
+        )
     elif decoder.lower() == "fast_ridge_cv":
-        return fast_ridge_cv(Xs, Ys, alphas=alphas, verbose=verbose)
+        output = fast_ridge_cv(Xs, Ys, alphas=alphas, verbose=verbose)
     elif decoder.lower() == "ridge":
-        model = RidgeCV(alphas=alphas, alpha_per_target=True)
-        model = model.fit(X_train, Y_train)
-        output = {}
-        for t, (X, Y) in [
-            ("train", (X_train, Y_train)),
-            ("test", (X_test, Y_test)),
-        ]:
-            Y_pred = model.predict(X)
-            for key, value in scores(Y, Y_pred).items():
-                output[f"{t}_{key}"] = value
-
-        console.log(
-            f"Train median rank: {output['train_median_rank']} "
-            f"(size {output["train_size"]}), "
-            f"valid median rank: {output['valid_median_rank']} "
-            f"(size {output["valid_size"]})"
-            f"test median rank: {output['test_median_rank']} "
-            f"(size {output["test_size"]})"
+        output = ridge(
+            X_train,
+            X_valid,
+            X_test,
+            Y_train,
+            Y_valid,
+            Y_test,
+            alphas=alphas,
+            verbose=verbose,
         )
 
-        return output, model, scaler
+    console.log(
+        f"Train median rank: {output["train_median_rank"]} "
+        f"(size {output["train_size"]})"
+    )
+    console.log(
+        f"Test median rank: {output["test_median_rank"]} "
+        f"(size {output["test_size"]})"
+    )
+    return output

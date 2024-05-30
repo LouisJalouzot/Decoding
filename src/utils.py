@@ -76,3 +76,5 @@ if torch.cuda.is_available():
     device = torch.device(f"cuda:{_get_free_gpu()}")
 else:
     device = torch.device("cpu")
+
+console.log("Running on device:", device)

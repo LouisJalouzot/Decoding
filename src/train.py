@@ -10,6 +10,7 @@ from sklearn.preprocessing import RobustScaler
 from src.metrics import scores
 from src.prepare_latents import prepare_latents
 from src.ridge import fast_ridge, fast_ridge_cv, ridge
+from src.skorch import simple_MLP
 from src.utils import _get_progress, console, device, memory
 
 """
@@ -77,8 +78,8 @@ def fetch_data(
                     Y[i + 1 :] += Y_init[: -i - 1]
                     count[i + 1 :] += 1
                 Y /= count[:, None]
-            Xs.append(X)
-            Ys.append(Y)
+            Xs.append(X.astype(np.float32))
+            Ys.append(Y.astype(np.float32))
 
             if verbose:
                 progress.update(task, description=f"Story: {story}", advance=1)
@@ -187,6 +188,16 @@ def train(
             alphas=alphas,
             verbose=verbose,
         )
+    elif decoder.lower() == "simple_mlp":
+        output = simple_MLP(
+            X_train,
+            Y_train,
+            X_valid,
+            Y_valid,
+            X_test,
+            Y_test,
+            verbose=verbose
+        )
 
     console.log(
         f"Train median rank: {output["train_median_rank"]} "
@@ -196,4 +207,5 @@ def train(
         f"Test median rank: {output["test_median_rank"]} "
         f"(size {output["test_size"]})"
     )
+    
     return output

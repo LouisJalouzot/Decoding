@@ -8,10 +8,73 @@ from src.utils import _get_progress
 
 
 def fast_ridge(
+    X_train: np.ndarray,
+    X_valid: np.ndarray,
+    X_test: np.ndarray,
+    Y_train: np.ndarray,
+    Y_valid: np.ndarray,
+    Y_test: np.ndarray,
+    alphas: np.ndarray = np.logspace(-3, 10, 10),
+    verbose: bool = False,
+) -> Dict[str, Union[np.ndarray, float]]:
+    n_features = X_train.shape[1]
+    n_targets = Y_train.shape[1]
+    output = {}
+    with _get_progress(transient=not verbose) as progress:
+        if verbose:
+            task = progress.add_task(
+                "Fitting for each alpha",
+                total=2 * len(alphas),
+            )
+
+        coefs = []
+        val_mse = []
+        for alpha in alphas:
+            c = (
+                np.linalg.pinv(X_train.T @ X_train + alpha * np.eye(n_features))
+                @ X_train.T
+                @ Y_train
+            )
+            coefs.append(c)
+            val_mse.append(((X_valid @ c - Y_valid) ** 2).mean(axis=0))
+
+            if verbose:
+                progress.update(task, description="Fine-tuning", advance=1)
+        val_mse = np.stack(val_mse)
+        best_alpha_index = val_mse.argmin(axis=0)
+        output["alpha"] = alphas[best_alpha_index]
+
+        X_train = np.vstack([X_train, X_valid])
+        Y_train = np.vstack([Y_train, Y_valid])
+        coefs = []
+        for alpha in alphas:
+            coefs.append(
+                np.linalg.pinv(X_train.T @ X_train + alpha * np.eye(n_features))
+                @ X_train.T
+                @ Y_train
+            )
+
+            if verbose:
+                progress.update(task, description="Fitting", advance=1)
+        coefs = np.stack(coefs)
+        coefs = coefs[best_alpha_index, :, np.arange(n_targets)]
+        output["coefs"] = coefs
+
+        for t, Y_true, Y_pred in [
+            ("train", Y_train, X_train @ coefs.T),
+            ("valid", Y_valid, X_valid @ coefs.T),
+            ("test", Y_test, X_test @ coefs.T),
+        ]:
+            for key, value in scores(Y_true, Y_pred).items():
+                output[f"{t}_{key}"] = value
+
+    return output
+
+
+def fast_ridge_cv(
     Xs: List[np.ndarray],
     Ys: List[np.ndarray],
     alphas: np.ndarray = np.logspace(-3, 10, 10),
-    cv: bool = True,
     verbose: bool = False,
 ) -> Dict[str, Union[np.ndarray, float]]:
     """
@@ -21,7 +84,6 @@ def fast_ridge(
         Xs: List of input arrays.
         Ys: List of target arrays.
         alphas: Array of alpha values.
-        cv: Whether to perform cross-validation.
         verbose: Whether to display progress.
 
     Returns:
@@ -46,8 +108,7 @@ def fast_ridge(
         for type in ["train", "test"]:
             output[f"{type}_{score}"] = np.zeros(n_features)
     with _get_progress(transient=not verbose) as progress:
-        if cv and verbose:
-            task = progress.add_task(f"Nested CV", total=len(n_scans) ** 2)
+        task = progress.add_task(f"Nested CV", total=len(n_scans) ** 2)
         for i, n in enumerate(n_scans):
             train_mask = (indices < start) | (indices >= start + n)
             test_mask = (indices >= start) & (indices < start + n)
@@ -74,8 +135,6 @@ def fast_ridge(
                     if verbose:
                         progress.update(task, advance=1)
                 start_start += m
-                if not cv:
-                    break
             best_alpha_index = val_mse.argmin(axis=0)
             output["alpha"] += alphas[best_alpha_index]
             X_train = X[train_mask]
@@ -95,7 +154,7 @@ def fast_ridge(
             for t, Y_true, Y_pred in [
                 (
                     "train",
-                    scaler.transform(Y[train_mask]),
+                    Y_train,
                     X[train_mask] @ coefs.T,
                 ),
                 (
@@ -107,8 +166,6 @@ def fast_ridge(
                 for key, value in scores(Y_true, Y_pred).items():
                     output[f"{t}_{key}"] += value
             start += n
-            if not cv:
-                return output
             if verbose:
                 progress.update(task, advance=1)
     for key in output:

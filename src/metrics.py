@@ -74,10 +74,14 @@ def scores(
 
     """
     ranks = latent_rank(Y_true, Y_pred, metric=metric, n_jobs=n_jobs)
+    size = len(Y_true)
     return {
         "mse": ((Y_true - Y_pred) ** 2).mean(axis=0),
         "r2": r2_score(Y_true, Y_pred, multioutput="raw_values"),
         "r": corr(Y_true, Y_pred, axis=0),
         "ranks": ranks,
+        "relative_ranks": ranks / size,
         "median_rank": np.median(ranks),
+        "relative_median_rank": np.median(ranks) / size,
+        "size": size,
     }

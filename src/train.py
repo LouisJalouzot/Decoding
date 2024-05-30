@@ -7,9 +7,9 @@ import numpy as np
 from sklearn.linear_model import RidgeCV
 from sklearn.preprocessing import RobustScaler
 
-from src.fast_ridge import fast_ridge, scores
-from src.metrics import latent_rank
+from src.metrics import scores
 from src.prepare_latents import prepare_latents
+from src.ridge import fast_ridge, fast_ridge_cv
 from src.utils import _get_progress, console, device, memory
 
 """
@@ -85,6 +85,7 @@ def fetch_data(
 
     return Xs, Ys, np.array(stories)
 
+
 @memory.cache(ignore=["verbose", "n_jobs"])
 def train(
     subject: str = "UTS00",
@@ -131,33 +132,41 @@ def train(
         context_length,
         verbose=verbose,
     )
+    n_stories = len(stories)
+    shuffled_indices = np.random.permutation(n_stories)
+    Xs = [Xs[i] for i in shuffled_indices]
+    Ys = [Ys[i] for i in shuffled_indices]
+    stories = stories[shuffled_indices]
+    n_valid = max(1, int(valid_ratio * n_stories))
+    n_test = max(1, int(test_ratio * n_stories))
+    n_train = n_stories - n_valid - n_test
+    X_train = np.concatenate(Xs[n_test+n_valid:])
+    X_valid = np.concatenate(Xs[n_test:n_test+n_valid])
+    X_test = np.concatenate(Xs[:n_test])
+    scaler = RobustScaler()
+    Y_train = scaler.fit_transform(np.concatenate(Ys[n_test+n_valid:]))
+    Y_valid = scaler.transform(np.concatenate(Ys[n_test:n_test+n_valid]))
+    Y_test = scaler.transform(np.concatenate(Ys[:n_test]))
+    if verbose and not decoder.endswith("_cv"):
+        console.log(f"X_train: {X_train.shape}, Y_train: {Y_train.shape}")
+        console.log(f"X_valid: {X_valid.shape}, Y_valid: {Y_valid.shape}")
+        console.log(f"X_test: {X_test.shape}, Y_test: {Y_test.shape}")
+        console.log(
+            f"{n_train} train stories: {', '.join(stories[n_test+n_valid:])}",
+        )
+        console.log(
+            f"{n_valid} valid stories: {', '.join(stories[n_test:n_test+n_valid])}",
+        )
+        console.log(
+            f"{n_test} test stories: {', '.join(stories[:n_test])}",
+        )
+
     if decoder.lower() == "fast_ridge":
-        return fast_ridge(Xs, Ys, alphas=alphas, cv=False, verbose=verbose)
+        return fast_ridge(X_train, X_valid, X_test, Y_train, Y_valid, Y_test, alphas=alphas, verbose=verbose,)
+    elif decoder.lower() == "fast_ridge_cv":
+        return fast_ridge_cv(Xs, Ys, alphas=alphas, verbose=verbose)
     elif decoder.lower() == "ridge":
-        scaler = RobustScaler()
         model = RidgeCV(alphas=alphas, alpha_per_target=True)
-
-        n_stories = len(stories)
-        shuffled_indices = np.random.permutation(n_stories)
-        Xs = [Xs[i] for i in shuffled_indices]
-        Ys = [Ys[i] for i in shuffled_indices]
-
-        stories = stories[shuffled_indices]
-        n_test = max(1, int(test_ratio * n_stories))
-        if verbose:
-            console.log(
-                f"{n_test} test stories: {', '.join(stories[:n_test])}",
-            )
-        if verbose:
-            console.log(
-                f"{n_stories - n_test} train stories: {', '.join(stories[n_test:])}",
-            )
-        X_train = np.concatenate(Xs[n_test:])
-        X_test = np.concatenate(Xs[:n_test])
-        Y_train = scaler.fit_transform(np.concatenate(Ys[n_test:]))
-        Y_test = scaler.transform(np.concatenate(Ys[:n_test]))
-        if verbose:
-            console.log(f"Fitting RidgeCV on X: {X_train.shape} and Y: {Y_train.shape}")
         model = model.fit(X_train, Y_train)
         output = {}
         for t, (X, Y) in [
@@ -167,12 +176,14 @@ def train(
             Y_pred = model.predict(X)
             for key, value in scores(Y, Y_pred).items():
                 output[f"{t}_{key}"] = value
-            output[f"{t}_ranks"] = latent_rank(Y, Y_pred)
-            output[f"{t}_median_rank"] = np.median(output[f"{t}_ranks"])
 
         console.log(
-            f"Train median rank: {output['train_median_rank']}, "
-            f"test median rank: {output['test_median_rank']}"
+            f"Train median rank: {output['train_median_rank']} "
+            f"(size {output["train_size"]}), "
+            f"valid median rank: {output['valid_median_rank']} "
+            f"(size {output["valid_size"]})"
+            f"test median rank: {output['test_median_rank']} "
+            f"(size {output["test_size"]})"
         )
 
         return output, model, scaler

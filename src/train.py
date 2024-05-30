@@ -85,7 +85,7 @@ def fetch_data(
 
     return Xs, Ys, np.array(stories)
 
-
+@memory.cache(ignore=["verbose", "n_jobs"])
 def train(
     subject: str = "UTS00",
     decoder: str = "ridge",

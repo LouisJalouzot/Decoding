@@ -200,6 +200,8 @@ def ridge(
         X_train = np.vstack([X_train, X_valid])
         Y_train = np.vstack([Y_train, Y_valid])
         model.fit(X_train, Y_train)
+        if verbose:
+            progress.update(task, advance=1)
         output["coefs"] = model.coef_
 
         for t, (X, Y) in [

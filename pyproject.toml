@@ -8,7 +8,7 @@ readme = "README.md"
 [tool.poetry.dependencies]
 python = "^3.12"
 rich = "^13.7.1"
-torch = "^2.3.0"
+torch = "^2.2.0"
 joblib = "^1.4.2"
 numpy = "^1.26.4"
 clip = {git = "https://github.com/openai/CLIP.git"}

@@ -20,6 +20,7 @@ scikit-learn = "^1.4.2"
 wandb = "^0.17.0"
 h5py = "^3.11.0"
 transformers = "^4.41.1"
+skorch = "^1.0.0"
 
 
 [tool.poetry.group.dev.dependencies]

@@ -4,14 +4,15 @@ from typing import List, Tuple, Union
 
 import h5py
 import numpy as np
+import torch
 from sklearn.linear_model import RidgeCV
 from sklearn.preprocessing import RobustScaler
 
 from src.metrics import scores
 from src.prepare_latents import prepare_latents
 from src.ridge import fast_ridge, fast_ridge_cv, ridge
-from src.skorch import simple_MLP
-from src.utils import _get_progress, console, device, memory
+from src.skorch import skorch
+from src.utils import _get_progress, console, device, ignore, memory
 
 """
 train.py
@@ -87,7 +88,7 @@ def fetch_data(
     return Xs, Ys, np.array(stories)
 
 
-@memory.cache(ignore=["verbose", "n_jobs"])
+# @memory.cache(ignore=ignore)
 def train(
     subject: str = "UTS00",
     decoder: str = "ridge",
@@ -99,9 +100,8 @@ def train(
     valid_ratio: float = 0.2,
     test_ratio: float = 0.1,
     seed: int = 0,
-    alphas: Union[List[float], np.ndarray] = np.logspace(-3, 10, 10),
-    verbose: bool = False,
-    n_jobs: int = -2,
+    verbose: bool = True,
+    **decoder_params,
 ) -> Union[dict, Tuple[dict, RidgeCV, RobustScaler]]:
     """
 
@@ -125,6 +125,7 @@ def train(
         Union[dict, Tuple[dict, RidgeCV, RobustScaler]]: The training results.
 
     """
+    setup_config = {key: value for key, value in locals().items() if key not in ignore and key != "decoder_params"}
     np.random.seed(seed)
     Xs, Ys, stories = fetch_data(
         subject,
@@ -172,11 +173,11 @@ def train(
             Y_train,
             Y_valid,
             Y_test,
-            alphas=alphas,
             verbose=verbose,
+            **decoder_params,
         )
     elif decoder.lower() == "fast_ridge_cv":
-        output = fast_ridge_cv(Xs, Ys, alphas=alphas, verbose=verbose)
+        output = fast_ridge_cv(Xs, Ys, verbose=verbose, **decoder_params)
     elif decoder.lower() == "ridge":
         output = ridge(
             X_train,
@@ -185,26 +186,32 @@ def train(
             Y_train,
             Y_valid,
             Y_test,
-            alphas=alphas,
             verbose=verbose,
+            **decoder_params,
         )
-    elif decoder.lower() == "simple_mlp":
-        output = simple_MLP(
+    else:
+        output = skorch(
             X_train,
             Y_train,
             X_valid,
             Y_valid,
             X_test,
             Y_test,
-            verbose=verbose
+            seed=seed,
+            decoder=decoder,
+            setup_config=setup_config,
+            verbose=verbose,
+            **decoder_params,
         )
+        
+    torch.cuda.empty_cache()
 
     console.log(
-        f"Train median rank: {output["train_median_rank"]} "
+        f"Train relative median rank: {output["train_relative_median_rank"]:.3f} "
         f"(size {output["train_size"]})"
     )
     console.log(
-        f"Test median rank: {output["test_median_rank"]} "
+        f"Test relative median rank: {output["test_relative_median_rank"]:.3f} "
         f"(size {output["test_size"]})"
     )
     

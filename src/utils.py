@@ -26,6 +26,8 @@ DEFAULT_BAD_WORDS = frozenset(
     ["sentence_start", "sentence_end", "br", "lg", "ls", "ns", ""]
 )
 
+ignore = ["verbose", "n_jobs"]
+
 
 def get_textgrid(textgrid_path):
     textgrid = TextGrid(textgrid_path)
@@ -77,4 +79,4 @@ if torch.cuda.is_available():
 else:
     device = torch.device("cpu")
 
-console.log("Running on device:", device)
+console.log("Running on device", device)

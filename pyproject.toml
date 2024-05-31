@@ -21,6 +21,7 @@ wandb = "^0.17.0"
 h5py = "^3.11.0"
 transformers = "^4.41.1"
 skorch = "^1.0.0"
+torchmetrics = "^1.4.0.post0"
 
 
 [tool.poetry.group.dev.dependencies]

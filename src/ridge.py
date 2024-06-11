@@ -103,7 +103,7 @@ def fast_ridge_cv(
     scaler = RobustScaler()
     for score in ["mse", "r", "r2"]:
         for type in ["train", "test"]:
-            output[f"{type}_{score}"] = np.zeros(n_features)
+            output[f"{type}/{score}"] = np.zeros(n_features)
     with _get_progress(transient=not verbose) as progress:
         task = progress.add_task(f"Nested CV", total=len(n_scans) ** 2)
         for i, n in enumerate(n_scans):

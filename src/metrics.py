@@ -2,7 +2,7 @@ from typing import Dict, List, Union
 
 import numpy as np
 import torch
-import torchmetrics
+import torchmetrics.functional as tmf
 from sklearn.metrics import pairwise_distances, r2_score
 
 from src.utils import console
@@ -50,9 +50,11 @@ def corr(
 def retrieval_metrics(
     Y_true: Union[np.ndarray, torch.Tensor],
     Y_pred: Union[np.ndarray, torch.Tensor],
+    negatives: Union[np.ndarray, torch.Tensor],
     metric: str,
     top_k_accuracies: List[int],
-    n_jobs: int,
+    n_jobs: int = -2,
+    return_ranks: bool = False,
 ) -> Dict[str, float]:
     """
     Calculate retrieval rank metrics between true and predicted values.
@@ -60,6 +62,7 @@ def retrieval_metrics(
     Args:
         Y_true: True values.
         Y_pred: Predicted values.
+        negatives: Negative values for contrastive loss.
         metric: Distance metric to use for calculating pairwise distances.
         top_k_accuracies: List of top-k values for accuracy calculation.
         n_jobs: Number of parallel jobs to run for pairwise distance calculation.
@@ -68,11 +71,16 @@ def retrieval_metrics(
         Dictionary with batch size, median relative rank, and top-k accuracies.
 
     """
-    size = Y_true.shape[0]
-    if size != Y_pred.shape[0]:
-        console.log(f"[bold red]Batch size mismatch:[/] {size} {Y_pred.shape[0]}")
+    if Y_true.shape[0] != Y_pred.shape[0]:
+        console.log(
+            f"[bold red]Batch size mismatch:[/] {Y_true.shape[0]} {Y_pred.shape[0]}"
+        )
+    if negatives is None:
+        negatives = Y_true
+    size = len(negatives)
     output = {"size": size}
     if isinstance(Y_true, np.ndarray) and isinstance(Y_pred, np.ndarray):
+        # TODO Adapt the numpy part to mimic the pytorch part with negatives
         pdists = pairwise_distances(
             Y_true,
             Y_pred,
@@ -80,37 +88,49 @@ def retrieval_metrics(
             n_jobs=n_jobs,
         )
         ground_truth_dist = pdists.diagonal()[:, None]
-        retrieval_ranks = (pdists < ground_truth_dist).sum(1)
-        output["relative_median_rank"] = (np.median(retrieval_ranks) - 1) / (size - 1)
+        ranks = (pdists < ground_truth_dist).sum(1)
+        output["relative_median_rank"] = (np.median(ranks) - 1) / (size - 1)
         for top_k in top_k_accuracies:
-            accuracy = (retrieval_ranks < top_k).mean()
+            accuracy = (ranks < top_k).mean()
             output[f"top_{top_k}_accuracy"] = accuracy
-    elif isinstance(Y_true, torch.Tensor) and isinstance(Y_pred, torch.Tensor):
+    elif (
+        isinstance(Y_true, torch.Tensor)
+        and isinstance(Y_pred, torch.Tensor)
+        and isinstance(negatives, torch.Tensor)
+    ):
         if metric == "cosine":
-            pdists = 1 - torchmetrics.functional.pairwise_cosine_similarity(
-                Y_true, Y_pred
-            )
-        elif metric == "euclidean":
-            pdists = torchmetrics.functional.pairwise_euclidean_distance(
-                Y_true,
+            dist_to_negatives = 1 - tmf.pairwise_cosine_similarity(
                 Y_pred,
+                negatives,
+            )
+            dist_to_ground_truth = torch.cosine_similarity(
+                Y_true, Y_pred, dim=1
+            ).reshape(-1, 1)
+        elif metric == "euclidean":
+            dist_to_negatives = tmf.pairwise_euclidean_distance(
+                Y_pred,
+                negatives,
+            )
+            dist_to_ground_truth = (
+                ((Y_true - Y_pred) ** 2).sum(dim=1).sqrt().reshape(-1, 1)
             )
         else:
             raise ValueError(
                 "Metric not supported. Supported metrics are cosine and euclidean."
             )
-        ground_truth_dist = pdists.diagonal()[:, None]
-        retrieval_ranks = (pdists < ground_truth_dist).sum(1).float()
-        output["relative_median_rank"] = (
-            torch.quantile(retrieval_ranks, q=0.5).item() - 1
-        ) / (size - 1)
+        ranks = (dist_to_ground_truth > dist_to_negatives).sum(0).float() - 1
+        output["relative_median_rank"] = torch.quantile(ranks, q=0.5).item() / (
+            size - 1
+        )
         for top_k in top_k_accuracies:
-            accuracy = (retrieval_ranks < top_k).float().mean().item()
+            accuracy = (ranks < top_k).float().mean().item()
             output[f"top_{top_k}_accuracy"] = accuracy
     else:
         raise ValueError(
             "Input types not supported. Supported types are np.ndarray and torch.Tensor."
         )
+    if return_ranks:
+        output["ranks"] = ranks
     return output
 
 
@@ -144,6 +164,7 @@ def scores(
         retrieval_metrics(
             Y_true,
             Y_pred,
+            None,
             metric,
             top_k_accuracies,
             n_jobs,

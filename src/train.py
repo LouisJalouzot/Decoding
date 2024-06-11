@@ -8,7 +8,7 @@ import torch
 from sklearn.linear_model import RidgeCV
 from sklearn.preprocessing import RobustScaler
 
-from src.metrics import scores
+from src.brain_decoder import train_brain_decoder
 from src.prepare_latents import prepare_latents
 from src.ridge import fast_ridge, fast_ridge_cv, ridge
 from src.skorch import skorch
@@ -24,8 +24,7 @@ This module contains functions for training and fetching data.
 
 def fetch_data(
     subject: str,
-    model_class: str,
-    model_name: str,
+    model: str,
     tr: int,
     context_length: int,
     lag: int,
@@ -36,8 +35,7 @@ def fetch_data(
 
     Args:
         subject (str): The subject identifier.
-        model_class (str): The model class.
-        model_name (str): The model name.
+        model (str): The model to use.
         tr (int): The tr value.
         context_length (int): The context length.
         lag (int, optional): The lag value. Defaults to 0.
@@ -65,8 +63,7 @@ def fetch_data(
             X = np.nan_to_num(X, nan=0)
             Y = prepare_latents(
                 textgrids_path / f"{story}.TextGrid",
-                model_class=model_class,
-                model_name=model_name,
+                model=model,
                 tr=tr,
                 context_length=context_length,
             )
@@ -92,8 +89,7 @@ def fetch_data(
 def train(
     subject: str = "UTS00",
     decoder: str = "ridge",
-    model_class: str = "clip",
-    model_name: str = "ViT-L/14",
+    model: str = "clip",
     context_length: int = 2,
     tr: int = 2,
     lag: int = 2,
@@ -110,8 +106,7 @@ def train(
     Args:
         subject (str, optional): The subject identifier. Defaults to "UTS00".
         decoder (str, optional): The decoder type. Defaults to "ridge".
-        model_class (str, optional): The model class. Defaults to "clip".
-        model_name (str, optional): The model name. Defaults to "ViT-L/14".
+        model (str, optional): The model to use. Defaults to "clip".
         context_length (int, optional): The context length. Defaults to 2.
         tr (int, optional): The tr value. Defaults to 2.
         valid_ratio (float, optional): The validation ratio. Defaults to 0.2.
@@ -129,8 +124,7 @@ def train(
     np.random.seed(seed)
     Xs, Ys, stories = fetch_data(
         subject,
-        model_class,
-        model_name,
+        model,
         tr,
         context_length,
         lag,
@@ -189,7 +183,7 @@ def train(
             verbose=verbose,
             **decoder_params,
         )
-    else:
+    elif decoder.lower() in ["simple_mlp", "simple_mlp_contrastive", "brain_decoder_contrastive",]:
         output = skorch(
             X_train,
             Y_train,
@@ -203,16 +197,29 @@ def train(
             verbose=verbose,
             **decoder_params,
         )
+    elif decoder.lower() == "brain_decoder":
+        output = train_brain_decoder(
+            X_train,
+            Y_train,
+            X_valid,
+            Y_valid,
+            X_test,
+            Y_test,
+            seed=seed,
+            setup_config=setup_config,
+            verbose=verbose,
+            **decoder_params,
+        )
         
     torch.cuda.empty_cache()
 
     console.log(
-        f"Train relative median rank: {output["train_relative_median_rank"]:.3f} "
-        f"(size {output["train_size"]})"
+        f"Train relative median rank: {output["train/relative_median_rank"]:.3f} "
+        f"(size {output["train/size"]})"
     )
     console.log(
-        f"Test relative median rank: {output["test_relative_median_rank"]:.3f} "
-        f"(size {output["test_size"]})"
+        f"Test relative median rank: {output["test/relative_median_rank"]:.3f} "
+        f"(size {output["test/size"]})"
     )
     
     return output

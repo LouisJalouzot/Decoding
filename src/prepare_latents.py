@@ -7,23 +7,21 @@ from src.utils import device, get_textgrid, memory
 
 
 def get_model(
-    model_class: str,
-    model_name: str,
+    model: str,
 ) -> Callable[[str], np.ndarray]:
     """
     Get the model for encoding text.
 
     Args:
-        model_class (str): The class of the model.
-        model_name (str): The name of the model.
+        model (str): Which model to use. Either "clip" or a model name from Hugging Face.
 
     Returns:
         Callable[[str], np.ndarray]: The model function that takes a text input and returns the encoded features.
     """
     import torch
 
-    if model_class.lower() == "clip":
-        clip_model, _ = clip.load(model_name, device=device)
+    if model.lower() == "clip":
+        clip_model, _ = clip.load("ViT-L/14", device=device)
 
         def model(text: str) -> np.ndarray:
             with torch.no_grad():
@@ -35,8 +33,8 @@ def get_model(
     else:
         from transformers import AutoModel, AutoTokenizer
 
-        tokenizer = AutoTokenizer.from_pretrained(model_name)
-        auto_model = AutoModel.from_pretrained(model_name).to(device)
+        tokenizer = AutoTokenizer.from_pretrained(model)
+        auto_model = AutoModel.from_pretrained(model).to(device)
         auto_model.eval()
 
         def model(text: str) -> np.ndarray:
@@ -80,8 +78,7 @@ def compute_chunks(textgrid_path: str, tr: int, context_length: int) -> List[str
 @memory.cache
 def prepare_latents(
     textgrid_path: str,
-    model_class: str = "clip",
-    model_name: str = "ViT-L/14",
+    model: str = "clip",
     tr: int = 2,
     context_length: int = 0,
 ) -> Tuple[np.ndarray, List[str]]:
@@ -91,7 +88,6 @@ def prepare_latents(
     Args:
         textgrid_path (str): The path to the textgrid file.
         model_class (str, optional): The class of the model. Defaults to "clip".
-        model_name (str, optional): The name of the model. Defaults to "ViT-L/14".
         tr (int, optional): The time resolution. Defaults to 2.
         context_length (int, optional): The number of previous chunks to include for context. Defaults to 0.
         verbose (bool, optional): Whether to display progress. Defaults to False.
@@ -100,6 +96,6 @@ def prepare_latents(
         Tuple[np.ndarray, List[str]]: The encoded features and the aggregated chunks of text.
     """
     chunks = compute_chunks(textgrid_path, tr, context_length)
-    model = get_model(model_class, model_name)
+    model = get_model(model)
     latents = model(chunks).cpu().numpy()
     return latents

@@ -47,7 +47,6 @@ def get_model(
         return model
 
 
-@memory.cache
 def compute_chunks(textgrid_path: str, tr: int, context_length: int) -> List[str]:
     """
     Compute the chunks of text from the given textgrid file.

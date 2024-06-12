@@ -50,9 +50,9 @@ def corr(
 def retrieval_metrics(
     Y_true: Union[np.ndarray, torch.Tensor],
     Y_pred: Union[np.ndarray, torch.Tensor],
-    negatives: Union[np.ndarray, torch.Tensor],
-    metric: str,
-    top_k_accuracies: List[int],
+    negatives: Union[np.ndarray, torch.Tensor] = None,
+    metric: str = "cosine",
+    top_k_accuracies: List[int] = [],
     n_jobs: int = -2,
     return_ranks: bool = False,
 ) -> Dict[str, float]:
@@ -103,7 +103,7 @@ def retrieval_metrics(
                 Y_pred,
                 negatives,
             )
-            dist_to_ground_truth = torch.cosine_similarity(
+            dist_to_ground_truth = 1 - torch.cosine_similarity(
                 Y_true, Y_pred, dim=1
             ).reshape(-1, 1)
         elif metric == "euclidean":
@@ -118,19 +118,18 @@ def retrieval_metrics(
             raise ValueError(
                 "Metric not supported. Supported metrics are cosine and euclidean."
             )
-        ranks = (dist_to_ground_truth > dist_to_negatives).sum(0).float() - 1
-        output["relative_median_rank"] = torch.quantile(ranks, q=0.5).item() / (
-            size - 1
-        )
+        ranks = (dist_to_ground_truth > dist_to_negatives).sum(1).float()
+        output["relative_median_rank"] = torch.quantile(ranks, q=0.5).item() / size
         for top_k in top_k_accuracies:
             accuracy = (ranks < top_k).float().mean().item()
             output[f"top_{top_k}_accuracy"] = accuracy
+        ranks = ranks.cpu()
     else:
         raise ValueError(
             "Input types not supported. Supported types are np.ndarray and torch.Tensor."
         )
     if return_ranks:
-        output["ranks"] = ranks
+        output["relative_ranks"] = ranks / size
     return output
 
 

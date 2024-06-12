@@ -1,11 +1,14 @@
 from collections import defaultdict
 from functools import partial
 from pathlib import Path
+from time import time
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from rich.live import Live
+from rich.table import Table
 from torch.utils.data import DataLoader, TensorDataset
 
 import wandb
@@ -125,7 +128,7 @@ class BrainDecoder(nn.Module):
         out_dim,
         hidden_size_backbone=512,
         hidden_size_projector=512,
-        dropout=0.2,
+        dropout=0.7,
         n_res_blocks=2,
         n_proj_blocks=1,
         norm_type="ln",
@@ -203,12 +206,13 @@ class BrainDecoder(nn.Module):
 
         x = self.lin1(x)
 
-        return x, self.projector(x)
+        return self.projector(x)
 
 
 def evaluate(dl, decoder, negatives, top_k_accuracies, temperature):
     decoder.eval()
     metrics = defaultdict(list)
+    negatives = negatives.to(device)
     for X, Y in dl:
         with torch.no_grad():
             with torch.cuda.amp.autocast():
@@ -223,7 +227,7 @@ def evaluate(dl, decoder, negatives, top_k_accuracies, temperature):
                     return_ranks=True,
                     top_k_accuracies=top_k_accuracies,
                 ).items():
-                    metrics["val/" + key].append(value)
+                    metrics[key].append(value)
                 # Evaluate symmetrical NCE loss
                 Y_preds_norm = nn.functional.normalize(Y_preds, dim=-1)
                 Y_true_norm = nn.functional.normalize(Y, dim=-1)
@@ -252,6 +256,11 @@ def evaluate(dl, decoder, negatives, top_k_accuracies, temperature):
                     select=select,
                 )
                 metrics["mixco_loss"].append(mixco_loss.item())
+    for key, value in metrics.items():
+        if len(value) > 0 and isinstance(value[0], torch.Tensor):
+            metrics[key] = wandb.Histogram(torch.cat(value).cpu(), num_bins=100)
+        else:
+            metrics[key] = np.mean(value)
     return metrics
 
 
@@ -262,16 +271,15 @@ def train_brain_decoder(
     Y_valid,
     X_test,
     Y_test,
-    decoder,
     patience=10,
-    monitor="val/median_retrieval_rank",
+    monitor="val/relative_median_rank",
     seed=0,
     setup_config={},
     verbose=True,
-    weight_decay=0.0,
+    weight_decay=1e-6,
     lr=1e-4,
     max_epochs=100,
-    batch_size=1024,
+    batch_size=128,
     temperature=0.01,
     checkpoints_path=None,
     **decoder_params,
@@ -281,13 +289,13 @@ def train_brain_decoder(
     X_train = torch.from_numpy(X_train)
     Y_train = torch.from_numpy(Y_train)
     X_valid = torch.from_numpy(X_valid)
-    Y_valid = torch.from_numpy(Y_valid)
+    Y_valid = torch.from_numpy(Y_valid).to(device)
     X_test = torch.from_numpy(X_test)
     Y_test = torch.from_numpy(Y_test)
     in_dim = X_train.shape[1]
     out_dim = Y_train.shape[1]
     config = {
-        "decoder": decoder,
+        "decoder": "brain_decoder",
         "patience": patience,
         "seed": seed,
         "weight_decay": weight_decay,
@@ -295,7 +303,6 @@ def train_brain_decoder(
         "max_epochs": max_epochs,
         "batch_size": batch_size,
         "temperature": temperature,
-        "n_retrieval_set": len(X_valid),
     }
     config.update(decoder_params)
     name = "_".join([f"{key}={value}" for key, value in config.items()])
@@ -307,10 +314,14 @@ def train_brain_decoder(
         save_code=True,
     )
 
-    decoder = BrainDecoder(in_dim=in_dim, out_dim=out_dim, **decoder_params)
+    decoder = BrainDecoder(
+        in_dim=in_dim,
+        out_dim=out_dim,
+        **decoder_params,
+    ).to(device)
     if verbose:
         console.log(
-            f"Decoder has {sum([p.numel() for p in decoder.parameters()])} parameters."
+            f"Decoder has {sum([p.numel() for p in decoder.parameters()]):.3g} parameters."
         )
     no_decay = ["bias", "LayerNorm.weight"]
     opt_grouped_parameters = [
@@ -345,15 +356,21 @@ def train_brain_decoder(
     val_dl = DataLoader(TensorDataset(X_valid, Y_valid), batch_size=batch_size)
     test_dl = DataLoader(TensorDataset(X_test, Y_test), batch_size=batch_size)
 
-    top_k_accuracies = [1, 5, 10, int(len(negatives) / 10), int(len(negatives) / 5)]
-    negatives = X_valid.to(device)
+    # top_k_accuracies = [1, 5, 10, int(len(Y_valid) / 10), int(len(Y_valid) / 5)]
+    top_k_accuracies = []
+    best_monitor_metric, patience_counter = np.inf, 0
     torch.autograd.set_detect_anomaly(True)
 
-    with _get_progress(transient=not verbose) as progress:
-        if verbose:
-            task = progress.add_task("Training loop", total=max_epochs)
-
-        for current_epoch in range(max_epochs):
+    table = Table(
+        "Epoch",
+        "Monitor",
+        "Patience",
+        "Duration",
+        title="Training loop",
+    )
+    with Live(table, console=console):
+        for epoch in range(1, max_epochs + 1):
+            t = time()
             decoder.train()
             train_metrics = defaultdict(list)
             for X, Y in train_dl:
@@ -399,9 +416,8 @@ def train_brain_decoder(
                 train_metrics["lr"].append(optimizer.param_groups[-1]["lr"])
 
             # Validation step
-            decoder.eval()
             val_metrics = evaluate(
-                val_dl, decoder, negatives, top_k_accuracies, temperature
+                val_dl, decoder, Y_valid, top_k_accuracies, temperature
             )
 
             # Log metrics
@@ -410,70 +426,66 @@ def train_brain_decoder(
                     "train/" + key: np.mean(values)
                     for key, values in train_metrics.items()
                 },
-                **{
-                    "val/"
-                    + key: (
-                        wandb.Histogram(np.array(values), num_bins=100)
-                        if isinstance(values[0], torch.Tensor)
-                        else np.mean(values)
-                    )
-                    for key, values in val_metrics.items()
-                },
+                **{"val/" + key: value for key, value in val_metrics.items()},
             }
+            if epoch == 1:
+                for key in output:
+                    if not key.endswith("ranks"):
+                        table.add_column(key)
+                for col in table.columns:
+                    col.overflow = "fold"
             wandb.log(output)
 
             # Save checkpoint
             if checkpoints_path is not None:
                 torch.save(
                     {
-                        "epoch": current_epoch,
+                        "epoch": epoch,
                         "model_state_dict": decoder.state_dict(),
                         "optimizer_state_dict": optimizer.state_dict(),
                     },
-                    Path(checkpoints_path) / f"checkpoint_{current_epoch:03d}.pt",
+                    Path(checkpoints_path) / f"checkpoint_{epoch:03d}.pt",
                 )
 
             # Early stopping
-            monitor_metric = np.mean(val_metrics[monitor])
+            monitor_metric = np.mean(output[monitor])
             if monitor_metric < best_monitor_metric:
                 best_monitor_metric = monitor_metric
                 patience_counter = 0
+                monitor_metric = f"[green]{monitor_metric:.5g}"
             else:
                 patience_counter += 1
+                monitor_metric = f"[red]{monitor_metric:.5g}"
                 if patience_counter >= patience:
                     console.log(
-                        f"Early stopping at epoch {current_epoch} as {monitor} did not improve for {patience} epochs."
+                        f"Early stopping at epoch {epoch} as {monitor} did not improve for {patience} epochs."
                     )
                     break
-
-            # TODO log metrics in console
-
-            progress.update(task, advance=1)
-
-    test_metrics = evaluate(
-        test_dl,
-        decoder,
-        negatives,
-        top_k_accuracies,
-        temperature,
-    )
-    test_metrics = (
-        {
-            "test/"
-            + key: (
-                wandb.Histogram(np.array(values), num_bins=100)
-                if isinstance(values[0], torch.Tensor)
-                else np.mean(values)
+            table.add_row(
+                f"{epoch} / {max_epochs}",
+                monitor_metric,
+                str(patience - patience_counter),
+                f"{time() - t:.3g}s",
+                *[f"{v:.3g}" for k, v in output.items() if not k.endswith("ranks")],
             )
-            for key, values in test_metrics.items()
-        },
-    )
-    wandb.log(test_metrics)
 
+    for split, dl, negatives in [
+        ("train/", train_dl, Y_train),
+        ("test/", test_dl, Y_test),
+    ]:
+        metrics = evaluate(
+            dl,
+            decoder,
+            negatives,
+            top_k_accuracies,
+            temperature,
+        )
+        for key, value in metrics.items():
+            output[split + key] = value
+    wandb.log(output)
     wandb.finish()
     wandb_run.finish()
 
-    output.update(test_metrics)
     for key, value in output.items():
         if isinstance(value, wandb.Histogram):
             output[key] = {"bins": value.bins, "histogram": value.histogram}

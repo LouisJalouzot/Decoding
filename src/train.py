@@ -51,7 +51,6 @@ def fetch_data(
     stories = [story.replace(".hf5", "") for story in os.listdir(brain_features_path)]
     Xs, Ys = [], []
     with _get_progress(transient=not verbose) as progress:
-
         if verbose:
             task = progress.add_task(
                 f"Loading latents and brain images for subject {subject}",
@@ -120,7 +119,11 @@ def train(
         Union[dict, Tuple[dict, RidgeCV, RobustScaler]]: The training results.
 
     """
-    setup_config = {key: value for key, value in locals().items() if key not in ignore and key != "decoder_params"}
+    setup_config = {
+        key: value
+        for key, value in locals().items()
+        if key not in ignore and key != "decoder_params"
+    }
     np.random.seed(seed)
     Xs, Ys, stories = fetch_data(
         subject,
@@ -146,17 +149,13 @@ def train(
     Y_valid = scaler.transform(np.concatenate(Ys[n_test : n_test + n_valid]))
     Y_test = scaler.transform(np.concatenate(Ys[:n_test]))
     if verbose and not decoder.endswith("_cv"):
-        console.log(f"X_train: {X_train.shape}, Y_train: {Y_train.shape}")
-        console.log(f"X_valid: {X_valid.shape}, Y_valid: {Y_valid.shape}")
-        console.log(f"X_test: {X_test.shape}, Y_test: {Y_test.shape}")
         console.log(
-            f"{n_train} train stories: {', '.join(stories[n_test+n_valid:])}",
-        )
-        console.log(
-            f"{n_valid} valid stories: {', '.join(stories[n_test:n_test+n_valid])}",
-        )
-        console.log(
-            f"{n_test} test stories: {', '.join(stories[:n_test])}",
+            f"X_train: {X_train.shape}, Y_train: {Y_train.shape}\n"
+            f"X_valid: {X_valid.shape}, Y_valid: {Y_valid.shape}\n"
+            f"X_test: {X_test.shape}, Y_test: {Y_test.shape}\n"
+            f"{n_train} train stories: {', '.join(stories[n_test+n_valid:])}\n"
+            f"{n_valid} valid stories: {', '.join(stories[n_test:n_test+n_valid])}\n"
+            f"{n_test} test stories: {', '.join(stories[:n_test])}"
         )
 
     if decoder.lower() == "fast_ridge":
@@ -183,7 +182,11 @@ def train(
             verbose=verbose,
             **decoder_params,
         )
-    elif decoder.lower() in ["simple_mlp", "simple_mlp_contrastive", "brain_decoder_contrastive",]:
+    elif decoder.lower() in [
+        "simple_mlp",
+        "simple_mlp_contrastive",
+        "brain_decoder_contrastive",
+    ]:
         output = skorch(
             X_train,
             Y_train,
@@ -210,16 +213,14 @@ def train(
             verbose=verbose,
             **decoder_params,
         )
-        
+
     torch.cuda.empty_cache()
 
     console.log(
-        f"Train relative median rank: {output["train/relative_median_rank"]:.3f} "
-        f"(size {output["train/size"]})"
+        f"Train relative median rank: {output['train/relative_median_rank']:.3f} "
+        f"(size {int(output['train/size'])})\n"
+        f"Test relative median rank: {output['test/relative_median_rank']:.3f} "
+        f"(size {int(output['test/size'])})"
     )
-    console.log(
-        f"Test relative median rank: {output["test/relative_median_rank"]:.3f} "
-        f"(size {output["test/size"]})"
-    )
-    
+
     return output

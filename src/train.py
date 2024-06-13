@@ -1,18 +1,17 @@
 import os
 from pathlib import Path
-from typing import List, Tuple, Union
+from typing import List, Tuple
 
 import h5py
 import numpy as np
 import torch
-from sklearn.linear_model import RidgeCV
-from sklearn.preprocessing import RobustScaler
+from sklearn.preprocessing import StandardScaler
 
 from src.brain_decoder import train_brain_decoder
 from src.prepare_latents import prepare_latents
 from src.ridge import fast_ridge, fast_ridge_cv, ridge
 from src.skorch import skorch
-from src.utils import _get_progress, console, device, ignore, memory
+from src.utils import _get_progress, console, ewma, ignore
 
 """
 train.py
@@ -28,6 +27,7 @@ def fetch_data(
     tr: int,
     context_length: int,
     lag: int,
+    halflife: int,
     verbose: bool = False,
 ) -> Tuple[List[np.ndarray], List[np.ndarray], np.ndarray]:
     """
@@ -68,15 +68,10 @@ def fetch_data(
             )
             # If Y.shape[0] > X.shape[0] this means that the first brain scans where removed so we drop the corresponding latents
             Y = Y[-X.shape[0] :]
-            if lag > 0:
-                Y_init = Y.copy()
-                count = np.ones(Y.shape[0])
-                for i in range(lag):
-                    Y[i + 1 :] += Y_init[: -i - 1]
-                    count[i + 1 :] += 1
-                Y /= count[:, None]
-            Xs.append(X.astype(np.float32))
-            Ys.append(Y.astype(np.float32))
+            if halflife > 0:
+                X = ewma(X, halflife)
+            Xs.append(X.astype(np.float32)[lag:])
+            Ys.append(Y.astype(np.float32)[:-lag])
 
             if verbose:
                 progress.update(task, description=f"Story: {story}", advance=1)
@@ -92,12 +87,13 @@ def train(
     context_length: int = 2,
     tr: int = 2,
     lag: int = 2,
+    halflife: int = 2,
     valid_ratio: float = 0.2,
     test_ratio: float = 0.1,
     seed: int = 0,
     verbose: bool = True,
     **decoder_params,
-) -> Union[dict, Tuple[dict, RidgeCV, RobustScaler]]:
+) -> dict:
     """
 
     Trains the model.
@@ -126,11 +122,12 @@ def train(
     }
     np.random.seed(seed)
     Xs, Ys, stories = fetch_data(
-        subject,
-        model,
-        tr,
-        context_length,
-        lag,
+        subject=subject,
+        model=model,
+        tr=tr,
+        context_length=context_length,
+        lag=lag,
+        halflife=halflife,
         verbose=verbose,
     )
     n_stories = len(stories)
@@ -141,10 +138,10 @@ def train(
     n_valid = max(1, int(valid_ratio * n_stories))
     n_test = max(1, int(test_ratio * n_stories))
     n_train = n_stories - n_valid - n_test
-    X_train = np.concatenate(Xs[n_test + n_valid :])
-    X_valid = np.concatenate(Xs[n_test : n_test + n_valid])
-    X_test = np.concatenate(Xs[:n_test])
-    scaler = RobustScaler()
+    scaler = StandardScaler()
+    X_train = scaler.fit_transform(np.concatenate(Xs[n_test + n_valid :]))
+    X_valid = scaler.transform(np.concatenate(Xs[n_test : n_test + n_valid]))
+    X_test = scaler.transform(np.concatenate(Xs[:n_test]))
     Y_train = scaler.fit_transform(np.concatenate(Ys[n_test + n_valid :]))
     Y_valid = scaler.transform(np.concatenate(Ys[n_test : n_test + n_valid]))
     Y_test = scaler.transform(np.concatenate(Ys[:n_test]))

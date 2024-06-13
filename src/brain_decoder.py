@@ -1,4 +1,5 @@
 from collections import defaultdict
+from copy import deepcopy
 from functools import partial
 from pathlib import Path
 from time import time
@@ -413,7 +414,6 @@ def train_brain_decoder(
 
                 train_metrics["mixco_loss"].append(mixco_loss.item())
                 train_metrics["symm_nce_loss"].append(symm_nce_loss.item())
-                train_metrics["lr"].append(optimizer.param_groups[-1]["lr"])
 
             # Validation step
             val_metrics = evaluate(
@@ -436,23 +436,17 @@ def train_brain_decoder(
                     col.overflow = "fold"
             wandb.log(output)
 
-            # Save checkpoint
-            if checkpoints_path is not None:
-                torch.save(
-                    {
-                        "epoch": epoch,
-                        "model_state_dict": decoder.state_dict(),
-                        "optimizer_state_dict": optimizer.state_dict(),
-                    },
-                    Path(checkpoints_path) / f"checkpoint_{epoch:03d}.pt",
-                )
-
             # Early stopping
             monitor_metric = np.mean(output[monitor])
             if monitor_metric < best_monitor_metric:
                 best_monitor_metric = monitor_metric
                 patience_counter = 0
                 monitor_metric = f"[green]{monitor_metric:.5g}"
+                best_decoder_state_dict = deepcopy(decoder.state_dict())
+                # For saving
+                if checkpoints_path is not None:
+                    best_epoch = epoch
+                    best_optimizer_state_dict = optimizer.state_dict().copy()
             else:
                 patience_counter += 1
                 monitor_metric = f"[red]{monitor_metric:.5g}"
@@ -468,6 +462,19 @@ def train_brain_decoder(
                 f"{time() - t:.3g}s",
                 *[f"{v:.3g}" for k, v in output.items() if not k.endswith("ranks")],
             )
+
+    # Restore best model
+    decoder.load_state_dict(best_decoder_state_dict)
+    # Saving best model
+    if checkpoints_path is not None:
+        torch.save(
+            {
+                "epoch": best_epoch,
+                "model_state_dict": best_decoder_state_dict,
+                "optimizer_state_dict": best_optimizer_state_dict,
+            },
+            Path(checkpoints_path) / f"checkpoint_{epoch:03d}.pt",
+        )
 
     for split, dl, negatives in [
         ("train/", train_dl, Y_train),

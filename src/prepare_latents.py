@@ -6,6 +6,16 @@ import numpy as np
 from src.utils import device, get_textgrid, memory
 
 
+def mean_pooling(model_output, attention_mask):
+    token_embeddings = model_output[0]
+    input_mask_expanded = (
+        attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
+    )
+    return (token_embeddings * input_mask_expanded).sum(
+        dim=1
+    ) / input_mask_expanded.sum(1).clamp(min=1e-9)
+
+
 def get_model(
     model: str,
 ) -> Callable[[str], np.ndarray]:
@@ -42,7 +52,8 @@ def get_model(
                 text, return_tensors="pt", padding=True, truncation=True
             ).to(device)
             with torch.no_grad():
-                return auto_model(**inputs).last_hidden_state.mean(dim=1)
+                model_output = auto_model(**inputs)
+                return mean_pooling(model_output, inputs.attention_mask)
 
         return model
 

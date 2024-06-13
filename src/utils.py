@@ -80,3 +80,16 @@ else:
     device = torch.device("cpu")
 
 console.log("Running on device", device)
+
+
+def ewma(data, halflife):
+    alpha_rev = np.exp(-np.log(2) / halflife)
+    n = data.shape[0]
+    pows = alpha_rev ** (np.arange(n + 1))
+    scale_arr = 1 / pows[:-1]
+    offsets = data[0] * pows[1:, None]
+    pw0 = (1 - alpha_rev) * alpha_rev ** (n - 1)
+    mult = data * pw0 * scale_arr[:, None]
+    cumsums = mult.cumsum(0)
+    out = offsets + cumsums * scale_arr[::-1, None]
+    return out

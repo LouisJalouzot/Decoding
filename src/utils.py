@@ -83,6 +83,9 @@ console.log("Running on device", device)
 
 
 def ewma(data, halflife):
+    # TODO make it robust to division by 0
+    if halflife == 0:
+        return data
     alpha_rev = np.exp(-np.log(2) / halflife)
     n = data.shape[0]
     pows = alpha_rev ** (np.arange(n + 1))

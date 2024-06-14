@@ -4,6 +4,7 @@ from typing import List, Tuple
 
 import h5py
 import numpy as np
+import pandas as pd
 import torch
 from sklearn.preprocessing import StandardScaler
 
@@ -11,7 +12,7 @@ from src.brain_decoder import train_brain_decoder
 from src.prepare_latents import prepare_latents
 from src.ridge import fast_ridge, fast_ridge_cv, ridge
 from src.skorch import skorch
-from src.utils import _get_progress, console, ewma, ignore
+from src.utils import _get_progress, console, ewma, ignore, memory
 
 """
 train.py
@@ -26,8 +27,9 @@ def fetch_data(
     model: str,
     tr: int,
     context_length: int,
+    smooth: int,
+    # halflife: float,
     lag: int,
-    halflife: int,
     verbose: bool = False,
 ) -> Tuple[List[np.ndarray], List[np.ndarray], np.ndarray]:
     """
@@ -60,18 +62,26 @@ def fetch_data(
             X = h5py.File(brain_features_path / f"{story}.hf5", "r")["data"][:]
             # Some voxels are NaNs, we replace them with zeros
             X = np.nan_to_num(X, nan=0)
+            # Smoothing brain signal using moving average
+            new_X = X.copy()
+            count = np.ones((X.shape[0], 1))
+            for i in range(1, smooth + 1):
+                new_X[i:] += X[:-i]
+                count[i:] += 1
+            X = new_X / count
+            # if halflife > 0:
+            #     X = pd.DataFrame(X).ewm(halflife=halflife).mean().to_numpy()
+            X = X[lag:]
             Y = prepare_latents(
                 textgrids_path / f"{story}.TextGrid",
                 model=model,
                 tr=tr,
                 context_length=context_length,
-            )
+            )[:-lag]
             # If Y.shape[0] > X.shape[0] this means that the first brain scans where removed so we drop the corresponding latents
             Y = Y[-X.shape[0] :]
-            if halflife > 0:
-                X = ewma(X, halflife)
-            Xs.append(X.astype(np.float32)[lag:])
-            Ys.append(Y.astype(np.float32)[:-lag])
+            Xs.append(X.astype(np.float32))
+            Ys.append(Y.astype(np.float32))
 
             if verbose:
                 progress.update(task, description=f"Story: {story}", advance=1)
@@ -87,10 +97,12 @@ def train(
     context_length: int = 2,
     tr: int = 2,
     lag: int = 2,
-    halflife: int = 2,
+    # halflife: int = 2,
+    smooth: int = 1,
     valid_ratio: float = 0.2,
     test_ratio: float = 0.1,
     seed: int = 0,
+    subsample_voxels: int = None,
     verbose: bool = True,
     **decoder_params,
 ) -> dict:
@@ -126,13 +138,18 @@ def train(
         model=model,
         tr=tr,
         context_length=context_length,
+        smooth=smooth,
         lag=lag,
-        halflife=halflife,
         verbose=verbose,
     )
     n_stories = len(stories)
     shuffled_indices = np.random.permutation(n_stories)
-    Xs = [Xs[i] for i in shuffled_indices]
+    n_voxels = Xs[0].shape[1]
+    if subsample_voxels is not None:
+        selected_voxels = np.random.permutation(n_voxels)[:subsample_voxels]
+    else:
+        selected_voxels = np.arange(n_voxels)
+    Xs = [Xs[i][:, selected_voxels] for i in shuffled_indices]
     Ys = [Ys[i] for i in shuffled_indices]
     stories = stories[shuffled_indices]
     n_valid = max(1, int(valid_ratio * n_stories))

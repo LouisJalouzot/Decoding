@@ -412,8 +412,8 @@ def train_brain_decoder(
                             temperature=temperature,
                         )
 
-                train_metrics["mixco_loss"].append(mixco_loss.item())
                 train_metrics["symm_nce_loss"].append(symm_nce_loss.item())
+                train_metrics["mixco_loss"].append(mixco_loss.item())
 
             # Validation step
             val_metrics = evaluate(

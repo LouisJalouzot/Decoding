@@ -11,8 +11,7 @@ from sklearn.preprocessing import StandardScaler
 from src.brain_decoder import train_brain_decoder
 from src.prepare_latents import prepare_latents
 from src.ridge import fast_ridge, fast_ridge_cv, ridge
-from src.skorch import skorch
-from src.utils import _get_progress, console, ewma, ignore, memory
+from src.utils import _get_progress, console, ignore, memory
 
 """
 train.py
@@ -71,13 +70,15 @@ def fetch_data(
             X = new_X / count
             # if halflife > 0:
             #     X = pd.DataFrame(X).ewm(halflife=halflife).mean().to_numpy()
-            X = X[lag:]
             Y = prepare_latents(
                 textgrids_path / f"{story}.TextGrid",
                 model=model,
                 tr=tr,
                 context_length=context_length,
-            )[:-lag]
+            )
+            if lag > 0:
+                X = X[lag:]
+                Y = Y[:-lag]
             # If Y.shape[0] > X.shape[0] this means that the first brain scans where removed so we drop the corresponding latents
             Y = Y[-X.shape[0] :]
             Xs.append(X.astype(np.float32))
@@ -196,25 +197,7 @@ def train(
             verbose=verbose,
             **decoder_params,
         )
-    elif decoder.lower() in [
-        "simple_mlp",
-        "simple_mlp_contrastive",
-        "brain_decoder_contrastive",
-    ]:
-        output = skorch(
-            X_train,
-            Y_train,
-            X_valid,
-            Y_valid,
-            X_test,
-            Y_test,
-            seed=seed,
-            decoder=decoder,
-            setup_config=setup_config,
-            verbose=verbose,
-            **decoder_params,
-        )
-    elif decoder.lower() == "brain_decoder":
+    else:
         output = train_brain_decoder(
             X_train,
             Y_train,
@@ -222,6 +205,7 @@ def train(
             Y_valid,
             X_test,
             Y_test,
+            decoder=decoder,
             seed=seed,
             setup_config=setup_config,
             verbose=verbose,

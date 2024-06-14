@@ -122,6 +122,34 @@ def mixco_symmetrical_nce_loss(
         return loss
 
 
+class SimpleMLP(nn.Module):
+    def __init__(self, in_dim, out_dim, hidden_size=1024, dropout=0.7):
+        super().__init__()
+        self.fc1 = nn.Sequential(
+            nn.Linear(in_features=in_dim, out_features=hidden_size),
+            nn.LayerNorm(hidden_size),
+            nn.Dropout(p=dropout),
+            nn.ReLU(),
+        )
+        self.fc2 = nn.Sequential(
+            nn.Linear(in_features=hidden_size, out_features=hidden_size),
+            nn.LayerNorm(hidden_size),
+            nn.Dropout(p=dropout),
+            nn.ReLU(),
+        )
+        self.fc3 = nn.Sequential(
+            nn.Linear(in_features=hidden_size, out_features=out_dim),
+            nn.LayerNorm(out_dim),
+            nn.Dropout(p=dropout),
+        )
+
+    def forward(self, X):
+        X = self.fc1(X)
+        X = self.fc2(X)
+        X = self.fc3(X)
+        return X
+
+
 class BrainDecoder(nn.Module):
     def __init__(
         self,
@@ -272,7 +300,8 @@ def train_brain_decoder(
     Y_valid,
     X_test,
     Y_test,
-    patience=10,
+    patience=5,
+    decoder="brain_decoder",
     monitor="val/relative_median_rank",
     seed=0,
     setup_config={},
@@ -296,7 +325,7 @@ def train_brain_decoder(
     in_dim = X_train.shape[1]
     out_dim = Y_train.shape[1]
     config = {
-        "decoder": "brain_decoder",
+        "decoder": decoder,
         "patience": patience,
         "seed": seed,
         "weight_decay": weight_decay,
@@ -315,7 +344,11 @@ def train_brain_decoder(
         save_code=True,
     )
 
-    decoder = BrainDecoder(
+    if decoder.lower() == "brain_decoder":
+        decoder_class = BrainDecoder
+    elif decoder.lower() == "simple_mlp":
+        decoder_class = SimpleMLP
+    decoder = decoder_class(
         in_dim=in_dim,
         out_dim=out_dim,
         **decoder_params,

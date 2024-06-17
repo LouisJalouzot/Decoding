@@ -1,6 +1,7 @@
 from collections import defaultdict
 from copy import deepcopy
 from functools import partial
+from hashlib import sha1
 from pathlib import Path
 from time import time
 
@@ -329,21 +330,21 @@ def train_brain_decoder(
     out_dim = Y_train.shape[1]
     config = {
         "decoder": decoder,
-        "patience": patience,
-        "seed": seed,
-        "weight_decay": weight_decay,
         "lr": lr,
+        "temperature": temperature,
+        "weight_decay": weight_decay,
         "max_epochs": max_epochs,
         "batch_size": batch_size,
-        "temperature": temperature,
     }
-    config.update(decoder_params)
     name = "_".join([f"{key}={value}" for key, value in config.items()])
+    config["patience"] = (patience,)
+    config["seed"] = (seed,)
+    config.update(decoder_params)
     config.update(setup_config)
     wandb_run = wandb.init(
         name=name,
         config=config,
-        id=f"{hash(frozenset(config.items())):02x}",
+        id=sha1(repr(sorted(config.items())).encode()).hexdigest(),
         save_code=True,
     )
 

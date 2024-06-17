@@ -1,6 +1,6 @@
+from pathlib import Path
 from typing import Callable, List, Tuple
 
-import clip
 import numpy as np
 
 from src.utils import device, get_textgrid, memory
@@ -14,48 +14,6 @@ def mean_pooling(model_output, attention_mask):
     return (token_embeddings * input_mask_expanded).sum(
         dim=1
     ) / input_mask_expanded.sum(1).clamp(min=1e-9)
-
-
-def get_model(
-    model: str,
-) -> Callable[[str], np.ndarray]:
-    """
-    Get the model for encoding text.
-
-    Args:
-        model (str): Which model to use. Either "clip" or a model name from Hugging Face.
-
-    Returns:
-        Callable[[str], np.ndarray]: The model function that takes a text input and returns the encoded features.
-    """
-    import torch
-
-    if model.lower() == "clip":
-        clip_model, _ = clip.load("ViT-L/14", device=device)
-
-        def model(text: str) -> np.ndarray:
-            with torch.no_grad():
-                return clip_model.encode_text(
-                    clip.tokenize(text, truncate=True).to(device),
-                )
-
-        return model
-    else:
-        from transformers import AutoModel, AutoTokenizer
-
-        tokenizer = AutoTokenizer.from_pretrained(model)
-        auto_model = AutoModel.from_pretrained(model).to(device)
-        auto_model.eval()
-
-        def model(text: str) -> np.ndarray:
-            inputs = tokenizer(
-                text, return_tensors="pt", padding=True, truncation=True
-            ).to(device)
-            with torch.no_grad():
-                model_output = auto_model(**inputs)
-                return mean_pooling(model_output, inputs.attention_mask)
-
-        return model
 
 
 def compute_chunks(textgrid_path: str, tr: int, context_length: int) -> List[str]:
@@ -87,25 +45,74 @@ def compute_chunks(textgrid_path: str, tr: int, context_length: int) -> List[str
 
 @memory.cache
 def prepare_latents(
-    textgrid_path: str,
+    story: str,
     model: str = "clip",
     tr: int = 2,
     context_length: int = 0,
 ) -> Tuple[np.ndarray, List[str]]:
     """
-    Prepare the latents for the given textgrid file.
+    Prepare the latents for the given story.
 
     Args:
-        textgrid_path (str): The path to the textgrid file.
+        story (str): Story name.
         model_class (str, optional): The class of the model. Defaults to "clip".
         tr (int, optional): The time resolution. Defaults to 2.
         context_length (int, optional): The number of previous chunks to include for context. Defaults to 0.
         verbose (bool, optional): Whether to display progress. Defaults to False.
 
     Returns:
-        Tuple[np.ndarray, List[str]]: The encoded features and the aggregated chunks of text.
+        np.ndarray: Latents.
     """
-    chunks = compute_chunks(textgrid_path, tr, context_length)
-    model = get_model(model)
-    latents = model(chunks).cpu().numpy()
-    return latents
+    path = Path("data/lebel")
+    if model.lower() == "mel":
+        import torchaudio
+
+        path = path / "stimuli" / (story + ".wav")
+        wav, sample_rate = torchaudio.load(str(path))
+        n_channels = wav.shape[0] if len(wav.shape) > 1 else 1
+        mel = torchaudio.transforms.MelSpectrogram(
+            sample_rate=sample_rate,
+            n_fft=sample_rate * tr * context_length,
+            hop_length=sample_rate * tr,
+            n_mels=768 // n_channels,
+            normalized=True,
+        ).to(device)
+        latents = mel(wav.to(device)).reshape(768, -1).T.cpu().numpy()
+        return latents
+    else:
+        import torch
+
+        path = path / "derivative" / "TextGrids" / (story + ".TextGrid")
+        chunks = compute_chunks(path, tr, context_length)
+
+        if model.lower() == "clip":
+            import clip
+
+            clip_model, _ = clip.load("ViT-L/14", device=device)
+            clip_model.eval()
+            with torch.no_grad():
+                return (
+                    clip_model.encode_text(
+                        clip.tokenize(chunks, truncate=True).to(device),
+                    )
+                    .cpu()
+                    .numpy()
+                )
+        else:
+            import torch.nn.functional as F
+            from transformers import AutoModel, AutoTokenizer
+
+            tokenizer = AutoTokenizer.from_pretrained(model)
+            auto_model = AutoModel.from_pretrained(model).to(device)
+            auto_model.eval()
+
+            inputs = tokenizer(
+                chunks, return_tensors="pt", padding=True, truncation=True
+            ).to(device)
+            with torch.no_grad():
+                model_output = auto_model(**inputs)
+                latents = mean_pooling(
+                    model_output,
+                    inputs.attention_mask,
+                )
+                return F.normalize(latents, p=2, dim=1).cpu().numpy()

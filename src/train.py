@@ -46,9 +46,7 @@ def fetch_data(
         Tuple[List[np.ndarray], List[np.ndarray], np.ndarray]: The fetched data.
 
     """
-    data_path = Path("data/lebel/derivative")
-    brain_features_path = data_path / "preprocessed_data" / subject
-    textgrids_path = data_path / "TextGrids"
+    brain_features_path = Path("data/lebel/derivative/preprocessed_data") / subject
     stories = [story.replace(".hf5", "") for story in os.listdir(brain_features_path)]
     Xs, Ys = [], []
     with _get_progress(transient=not verbose) as progress:
@@ -71,7 +69,7 @@ def fetch_data(
             # if halflife > 0:
             #     X = pd.DataFrame(X).ewm(halflife=halflife).mean().to_numpy()
             Y = prepare_latents(
-                textgrids_path / f"{story}.TextGrid",
+                story,
                 model=model,
                 tr=tr,
                 context_length=context_length,
@@ -79,8 +77,10 @@ def fetch_data(
             if lag > 0:
                 X = X[lag:]
                 Y = Y[:-lag]
-            # If Y.shape[0] > X.shape[0] this means that the first brain scans where removed so we drop the corresponding latents
-            Y = Y[-X.shape[0] :]
+            if Y.shape[0] > X.shape[0]:
+                # More latents than brain scans (first brain scans where removed)
+                # We drop the corresponding latents
+                Y = Y[-X.shape[0] :]
             Xs.append(X.astype(np.float32))
             Ys.append(Y.astype(np.float32))
 
@@ -156,13 +156,14 @@ def train(
     n_valid = max(1, int(valid_ratio * n_stories))
     n_test = max(1, int(test_ratio * n_stories))
     n_train = n_stories - n_valid - n_test
-    scaler = StandardScaler()
+    scaler = StandardScaler(copy=False)
     X_train = scaler.fit_transform(np.concatenate(Xs[n_test + n_valid :]))
     X_valid = scaler.transform(np.concatenate(Xs[n_test : n_test + n_valid]))
     X_test = scaler.transform(np.concatenate(Xs[:n_test]))
     Y_train = scaler.fit_transform(np.concatenate(Ys[n_test + n_valid :]))
     Y_valid = scaler.transform(np.concatenate(Ys[n_test : n_test + n_valid]))
     Y_test = scaler.transform(np.concatenate(Ys[:n_test]))
+
     if verbose and not decoder.endswith("_cv"):
         console.log(
             f"X_train: {X_train.shape}, Y_train: {Y_train.shape}\n"

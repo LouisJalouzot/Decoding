@@ -1,6 +1,7 @@
 logs
 data
 tang-2023-reproduction/
+brainmagick/
 poetry.lock
 *.ipynb
 

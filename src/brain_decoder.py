@@ -286,10 +286,13 @@ def evaluate(dl, decoder, negatives, top_k_accuracies, temperature):
                 )
                 metrics["mixco_loss"].append(mixco_loss.item())
     for key, value in metrics.items():
-        if len(value) > 0 and isinstance(value[0], torch.Tensor):
-            metrics[key] = wandb.Histogram(torch.cat(value).cpu(), num_bins=100)
+        if key == "relative_ranks":
+            relative_ranks = torch.cat(value).cpu()
+            relative_median_rank = torch.quantile(relative_ranks, q=0.5).item()
+            metrics[key] = wandb.Histogram(relative_ranks, num_bins=100)
         else:
             metrics[key] = np.mean(value)
+    metrics["relative_median_rank"] = relative_median_rank
     return metrics
 
 

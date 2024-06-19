@@ -3,7 +3,7 @@ from typing import List, Tuple
 
 import numpy as np
 
-from src.utils import _get_progress, device, get_textgrid, memory
+from src.utils import device, get_textgrid, memory, progress
 
 
 def mean_pooling(model_output, attention_mask):
@@ -95,7 +95,7 @@ def prepare_latents(
             ).to(device)
             target_sample_rate = 44_100  # target sample rate (used by AudioCLIP)
             text_chunks = compute_chunks(textgrid_path, tr, context_length)
-            wav, sample_rate = torchaudio.load(audio_path)
+            wav, sample_rate = torchaudio.load(str(audio_path))
             wav = torchaudio.functional.resample(
                 wav,
                 sample_rate,
@@ -107,29 +107,29 @@ def prepare_latents(
             size = len(chunked_audio)
             model.eval()
             with torch.no_grad():
-                with _get_progress(transient=not verbose) as progress:
+                task = progress.add_task(
+                    f"Computing AudioCLIP latents for story {story}",
+                    total=size,
+                    visible=verbose,
+                )
+                for i in range(size):
+                    audio_chunk = torch.concat(
+                        chunked_audio[max(0, i - context_length) : i + 1], dim=-1
+                    ).to(device)
+                    if len(audio_chunk.shape) == 1:
+                        audio_chunk = audio_chunk.reshape(1, 1, -1)
+                    else:
+                        audio_chunk = audio_chunk[None]
+                    ((audio_latent, _, text_latent), _), _ = model(
+                        audio=audio_chunk, text=[[text_chunks[i]]]
+                    )
+                    latent = torch.concat(
+                        (text_latent.squeeze(), audio_latent.squeeze()),
+                    )
+                    latents.append(latent.cpu().numpy())
                     if verbose:
-                        task = progress.add_task(
-                            f"Computing AudioCLIP latents for story {story}",
-                            total=size,
-                        )
-                    for i in range(size):
-                        audio_chunk = torch.concat(
-                            chunked_audio[max(0, i - context_length) : i + 1], dim=-1
-                        ).to(device)
-                        if len(audio_chunk.shape) == 1:
-                            audio_chunk = audio_chunk.reshape(1, 1, -1)
-                        else:
-                            audio_chunk = audio_chunk[None]
-                        ((audio_latent, _, text_latent), _), _ = model(
-                            audio=audio_chunk, text=[[text_chunks[i]]]
-                        )
-                        latent = torch.concat(
-                            (text_latent.squeeze(), audio_latent.squeeze()),
-                        )
-                        latents.append(latent.cpu().numpy())
-                        if verbose:
-                            progress.update(task, advance=1)
+                        progress.update(task, advance=1)
+                progress.update(task, visible=False)
             latents = np.vstack(latents)
     else:
         chunks = compute_chunks(textgrid_path, tr, context_length)

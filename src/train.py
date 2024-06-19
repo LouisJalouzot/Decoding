@@ -11,7 +11,7 @@ from sklearn.preprocessing import StandardScaler
 from src.brain_decoder import train_brain_decoder
 from src.prepare_latents import prepare_latents
 from src.ridge import fast_ridge, fast_ridge_cv, ridge
-from src.utils import _get_progress, console, memory
+from src.utils import console, ignore, memory, progress
 
 """
 train.py
@@ -49,43 +49,41 @@ def fetch_data(
     brain_features_path = Path("data/lebel/derivative/preprocessed_data") / subject
     stories = [story.replace(".hf5", "") for story in os.listdir(brain_features_path)]
     Xs, Ys = [], []
-    with _get_progress(transient=not verbose) as progress:
-        if verbose:
-            task = progress.add_task(
-                f"Loading latents and brain images for subject {subject}",
-                total=len(stories),
-            )
-        for story in stories:
-            X = h5py.File(brain_features_path / f"{story}.hf5", "r")["data"][:]
-            # Some voxels are NaNs, we replace them with zeros
-            X = np.nan_to_num(X, nan=0)
-            # Smoothing brain signal using moving average
-            new_X = X.copy()
-            count = np.ones((X.shape[0], 1))
-            for i in range(1, smooth + 1):
-                new_X[i:] += X[:-i]
-                count[i:] += 1
-            X = new_X / count
-            # if halflife > 0:
-            #     X = pd.DataFrame(X).ewm(halflife=halflife).mean().to_numpy()
-            Y = prepare_latents(
-                story,
-                model=model,
-                tr=tr,
-                context_length=context_length,
-            )
-            if lag > 0:
-                X = X[lag:]
-                Y = Y[:-lag]
-            if Y.shape[0] > X.shape[0]:
-                # More latents than brain scans (first brain scans where removed)
-                # We drop the corresponding latents
-                Y = Y[-X.shape[0] :]
-            Xs.append(X.astype(np.float32))
-            Ys.append(Y.astype(np.float32))
+    task = progress.add_task(
+        f"Loading latents and brain images for subject {subject}",
+        total=len(stories),
+        visible=verbose,
+    )
+    for story in stories:
+        X = h5py.File(brain_features_path / f"{story}.hf5", "r")["data"][:]
+        # Some voxels are NaNs, we replace them with zeros
+        X = np.nan_to_num(X, nan=0)
+        # Smoothing brain signal using moving average
+        new_X = X.copy()
+        count = np.ones((X.shape[0], 1))
+        for i in range(1, smooth + 1):
+            new_X[i:] += X[:-i]
+            count[i:] += 1
+        X = new_X / count
+        # if halflife > 0:
+        #     X = pd.DataFrame(X).ewm(halflife=halflife).mean().to_numpy()
+        Y = prepare_latents(
+            story,
+            model=model,
+            tr=tr,
+            context_length=context_length,
+        )
+        if lag > 0:
+            X = X[lag:]
+            Y = Y[:-lag]
+        if Y.shape[0] > X.shape[0]:
+            # More latents than brain scans (first brain scans where removed)
+            # We drop the corresponding latents
+            Y = Y[-X.shape[0] :]
+        Xs.append(X.astype(np.float32))
+        Ys.append(Y.astype(np.float32))
 
-            if verbose:
-                progress.update(task, description=f"Story: {story}", advance=1)
+        progress.update(task, description=f"Story: {story}", advance=1)
 
     return Xs, Ys, np.array(stories)
 

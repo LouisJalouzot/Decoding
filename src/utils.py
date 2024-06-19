@@ -21,6 +21,7 @@ console = Console()
 
 memory = memory.Memory(location=".cache", compress=9, verbose=0)
 
+ignore = ["verbose", "n_jobs"]
 
 DEFAULT_BAD_WORDS = frozenset(
     ["sentence_start", "sentence_end", "br", "lg", "ls", "ns", ""]
@@ -54,6 +55,9 @@ def _get_progress(**kwargs):
         TimeRemainingColumn(),
         **kwargs,
     )
+
+
+progress = _get_progress()
 
 
 def _get_free_gpu():

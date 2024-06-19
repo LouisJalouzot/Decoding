@@ -1,6 +1,7 @@
 #!.env/bin/python
-from src.train import train
 import argparse
+
+from src.train import train
 
 parser = argparse.ArgumentParser(description="Argument parser")
 parser.add_argument("--subject", type=str, default="UTS03", help="Subject name")
@@ -19,6 +20,7 @@ parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
 parser.add_argument("--weight_decay", type=float, default=1e-6, help="Weight decay")
 parser.add_argument("--batch_size", type=int, default=1024, help="Batch size")
 parser.add_argument("--temperature", type=float, default=0.01, help="Temperature")
+parser.add_argument("--verbose", type=bool, default=True)
 
 args = parser.parse_args()
 

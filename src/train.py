@@ -11,7 +11,7 @@ from sklearn.preprocessing import StandardScaler
 from src.brain_decoder import train_brain_decoder
 from src.prepare_latents import prepare_latents
 from src.ridge import fast_ridge, fast_ridge_cv, ridge
-from src.utils import _get_progress, console, ignore, memory
+from src.utils import _get_progress, console, memory
 
 """
 train.py
@@ -90,7 +90,7 @@ def fetch_data(
     return Xs, Ys, np.array(stories)
 
 
-# @memory.cache(ignore=ignore)
+# @memory.cache(ignore=["verbose"])
 def train(
     subject: str = "UTS00",
     decoder: str = "ridge",

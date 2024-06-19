@@ -1,9 +1,9 @@
 from pathlib import Path
-from typing import Callable, List, Tuple
+from typing import List, Tuple
 
 import numpy as np
 
-from src.utils import device, get_textgrid, memory
+from src.utils import _get_progress, device, get_textgrid, memory
 
 
 def mean_pooling(model_output, attention_mask):
@@ -33,8 +33,8 @@ def compute_chunks(textgrid_path: str, tr: int, context_length: int) -> List[str
     offsets = np.array([x[1] for x in goodtranscript])
     words = [x[2].strip("{}").strip() for x in goodtranscript]
     words = np.array([(x if x == "I" else x.lower()) for x in words])
-    group_indices = np.array(offsets // tr, dtype=int)
-    unique_indices = np.arange(group_indices.max())
+    group_indices = offsets // tr
+    unique_indices = np.arange(group_indices.max() + 1)
 
     chunks = [" ".join(list(words[group_indices == idx])) for idx in unique_indices]
     return [
@@ -43,12 +43,13 @@ def compute_chunks(textgrid_path: str, tr: int, context_length: int) -> List[str
     ]
 
 
-@memory.cache
+@memory.cache(ignore=["verbose"])
 def prepare_latents(
     story: str,
     model: str = "clip",
     tr: int = 2,
     context_length: int = 0,
+    verbose: bool = False,
 ) -> Tuple[np.ndarray, List[str]]:
     """
     Prepare the latents for the given story.
@@ -63,43 +64,85 @@ def prepare_latents(
     Returns:
         np.ndarray: Latents.
     """
+    import torch
+
     path = Path("data/lebel")
-    if model.lower() == "mel":
+    audio_path = path / "stimuli" / (story + ".wav")
+    textgrid_path = path / "derivative" / "TextGrids" / (story + ".TextGrid")
+    if model.lower() in ["mel", "audioclip"]:
         import torchaudio
 
-        path = path / "stimuli" / (story + ".wav")
-        wav, sample_rate = torchaudio.load(str(path))
+        wav, sample_rate = torchaudio.load(str(audio_path))
         n_channels = wav.shape[0] if len(wav.shape) > 1 else 1
-        mel = torchaudio.transforms.MelSpectrogram(
-            sample_rate=sample_rate,
-            n_fft=sample_rate * tr * context_length,
-            hop_length=sample_rate * tr,
-            n_mels=768 // n_channels,
-            normalized=True,
-        ).to(device)
-        latents = mel(wav.to(device)).reshape(768, -1).T.cpu().numpy()
-        return latents
-    else:
-        import torch
+        if model.lower() == "mel":
+            mel = torchaudio.transforms.MelSpectrogram(
+                sample_rate=sample_rate,
+                n_fft=sample_rate * tr * context_length,
+                hop_length=sample_rate * tr,
+                n_mels=768 // n_channels,
+                normalized=True,
+            ).to(device)
+            latents = mel(wav.to(device)).reshape(768, -1).T.cpu().numpy()
+        elif model.lower() == "audioclip":
+            import sys
 
-        path = path / "derivative" / "TextGrids" / (story + ".TextGrid")
-        chunks = compute_chunks(path, tr, context_length)
+            sys.path.append("AudioCLIP")
 
-        if model.lower() == "clip":
-            import clip
+            from AudioCLIP.model import AudioCLIP
 
-            clip_model, _ = clip.load("ViT-L/14", device=device)
-            clip_model.eval()
+            model = AudioCLIP(
+                pretrained="AudioCLIP/assets/AudioCLIP-Full-Training.pt",
+            ).to(device)
+            target_sample_rate = 44_100  # target sample rate (used by AudioCLIP)
+            text_chunks = compute_chunks(textgrid_path, tr, context_length)
+            wav, sample_rate = torchaudio.load(audio_path)
+            wav = torchaudio.functional.resample(
+                wav,
+                sample_rate,
+                target_sample_rate,
+            )
+            audio_chunk_size = target_sample_rate * tr
+            chunked_audio = wav.split(audio_chunk_size, dim=-1)
+            latents = []
+            size = len(chunked_audio)
+            model.eval()
             with torch.no_grad():
-                return (
-                    clip_model.encode_text(
-                        clip.tokenize(chunks, truncate=True).to(device),
-                    )
-                    .cpu()
-                    .numpy()
-                )
+                with _get_progress(transient=not verbose) as progress:
+                    if verbose:
+                        task = progress.add_task(
+                            f"Computing AudioCLIP latents for story {story}",
+                            total=size,
+                        )
+                    for i in range(size):
+                        audio_chunk = torch.concat(
+                            chunked_audio[max(0, i - context_length) : i + 1], dim=-1
+                        ).to(device)
+                        if len(audio_chunk.shape) == 1:
+                            audio_chunk = audio_chunk.reshape(1, 1, -1)
+                        else:
+                            audio_chunk = audio_chunk[None]
+                        ((audio_latent, _, text_latent), _), _ = model(
+                            audio=audio_chunk, text=[[text_chunks[i]]]
+                        )
+                        latent = torch.concat(
+                            (text_latent.squeeze(), audio_latent.squeeze()),
+                        )
+                        latents.append(latent.cpu().numpy())
+                        if verbose:
+                            progress.update(task, advance=1)
+            latents = np.vstack(latents)
+    else:
+        chunks = compute_chunks(textgrid_path, tr, context_length)
+        if model.lower().startswith("sentence-transformers"):
+            from sentence_transformers import SentenceTransformer
+
+            model = SentenceTransformer(
+                model.replace("sentence-transformers/", ""),
+                device=device,
+                truncate_dim=None,
+            )
+            latents = model.encode(chunks)
         else:
-            import torch.nn.functional as F
             from transformers import AutoModel, AutoTokenizer
 
             tokenizer = AutoTokenizer.from_pretrained(model)
@@ -111,8 +154,12 @@ def prepare_latents(
             ).to(device)
             with torch.no_grad():
                 model_output = auto_model(**inputs)
-                latents = mean_pooling(
-                    model_output,
-                    inputs.attention_mask,
+                latents = (
+                    mean_pooling(
+                        model_output,
+                        inputs.attention_mask,
+                    )
+                    .cpu()
+                    .numpy()
                 )
-                return F.normalize(latents, p=2, dim=1).cpu().numpy()
+    return latents / np.linalg.norm(latents, ord=2, axis=1, keepdims=True)

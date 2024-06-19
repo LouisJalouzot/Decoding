@@ -12,7 +12,6 @@ rich = "^13.7.1"
 torch = "^2.2.0"
 joblib = "^1.4.2"
 numpy = "^1.26.4"
-clip = {git = "https://github.com/openai/CLIP.git"}
 ftfy = "^6.2.0"
 regex = "^2024.4.28"
 setuptools = "^69.5.1"

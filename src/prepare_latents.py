@@ -135,33 +135,13 @@ def prepare_latents(
             latents = np.vstack(latents)
     else:
         chunks = compute_chunks(textgrid_path, tr, context_length)
-        if model.lower().startswith("sentence-transformers"):
-            from sentence_transformers import SentenceTransformer
+        from sentence_transformers import SentenceTransformer
 
-            model = SentenceTransformer(
-                model.replace("sentence-transformers/", ""),
-                device=device,
-                truncate_dim=None,
-            )
-            latents = model.encode(chunks)
-        else:
-            from transformers import AutoModel, AutoTokenizer
-
-            tokenizer = AutoTokenizer.from_pretrained(model)
-            auto_model = AutoModel.from_pretrained(model).to(device)
-            auto_model.eval()
-
-            inputs = tokenizer(
-                chunks, return_tensors="pt", padding=True, truncation=True
-            ).to(device)
-            with torch.no_grad():
-                model_output = auto_model(**inputs)
-                latents = (
-                    mean_pooling(
-                        model_output,
-                        inputs.attention_mask,
-                    )
-                    .cpu()
-                    .numpy()
-                )
+        # If model is not a sentence transformer, mean pooling will be applied
+        model = SentenceTransformer(
+            model,
+            device=device,
+            truncate_dim=None,
+        )
+        latents = model.encode(chunks)
     return latents / np.linalg.norm(latents, ord=2, axis=1, keepdims=True)

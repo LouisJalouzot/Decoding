@@ -74,7 +74,7 @@ def mixco_symmetrical_nce_loss(
     select=None,
     bidirectional=True,
 ):
-    """Compute symmetical NCE loss with MixCo augmentation.
+    """Compute symmetrical NCE loss with MixCo augmentation.
 
     Parameters
     ----------
@@ -266,7 +266,6 @@ def evaluate(dl, decoder, negatives, top_k_accuracies, temperature):
                     Y_true_norm,
                     temperature=temperature,
                 )
-                metrics["symm_nce_loss"].append(symm_nce_loss.item())
                 # Evaluate mixco symmetrical NCE loss
                 (
                     X_mixco,
@@ -285,7 +284,9 @@ def evaluate(dl, decoder, negatives, top_k_accuracies, temperature):
                     betas=betas,
                     select=select,
                 )
+                metrics["symm_nce_loss"].append(symm_nce_loss.item())
                 metrics["mixco_loss"].append(mixco_loss.item())
+                metrics["aug_loss"].append(mixco_loss.item() - symm_nce_loss.item())
     for key, value in metrics.items():
         if key == "relative_ranks":
             relative_ranks = torch.cat(value).cpu()
@@ -435,8 +436,6 @@ def train_brain_decoder(
                         betas=betas,
                         select=select,
                     )
-                    mixco_loss.backward()
-                    optimizer.step()
 
                     # Evaluate symmetrical NCE loss
                     with torch.no_grad():
@@ -449,8 +448,14 @@ def train_brain_decoder(
                             temperature=temperature,
                         )
 
+                    mixco_loss.backward()
+                    optimizer.step()
+
                 train_metrics["symm_nce_loss"].append(symm_nce_loss.item())
                 train_metrics["mixco_loss"].append(mixco_loss.item())
+                train_metrics["aug_loss"].append(
+                    mixco_loss.item() - symm_nce_loss.item()
+                )
 
             # Validation step
             val_metrics = evaluate(

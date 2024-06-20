@@ -82,7 +82,9 @@ def fetch_data(
         Tuple[List[np.ndarray], List[np.ndarray], np.ndarray]: The fetched data.
 
     """
+    console.print(f"Fetching brain images for subject {subject}")
     Xs, stories = fetch_brain_images(subject, verbose)
+    console.print(f"Fetching latents for {len(stories)} stories")
     Ys = fetch_latents(stories, model, tr, context_length, verbose)
     for i, (X, Y) in enumerate(zip(Xs, Ys)):
         if smooth > 0:

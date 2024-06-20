@@ -21,6 +21,18 @@ console = Console()
 
 memory = memory.Memory(location=".cache", compress=9, verbose=0)
 
+progress = Progress(
+    SpinnerColumn(),
+    TaskProgressColumn(),
+    BarColumn(),
+    MofNCompleteColumn(),
+    TimeElapsedColumn(),
+    "<",
+    TimeRemainingColumn(),
+    TextColumn("[progress.description]{task.description}"),
+    console=console,
+)
+
 ignore = ["verbose", "n_jobs"]
 
 DEFAULT_BAD_WORDS = frozenset(
@@ -41,24 +53,6 @@ def get_textgrid(textgrid_path):
     if grtranscript[-1][2] == ",":
         grtranscript = grtranscript[:-1]
     return grtranscript
-
-
-def _get_progress(**kwargs):
-    return Progress(
-        SpinnerColumn(),
-        TaskProgressColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        MofNCompleteColumn(),
-        TimeElapsedColumn(),
-        "<",
-        TimeRemainingColumn(),
-        **kwargs,
-    )
-
-
-progress = _get_progress()
-
 
 def _get_free_gpu():
     rows = (

@@ -82,9 +82,9 @@ def fetch_data(
         Tuple[List[np.ndarray], List[np.ndarray], np.ndarray]: The fetched data.
 
     """
-    console.print(f"Fetching brain images for subject {subject}")
+    console.log(f"Fetching brain images for subject {subject}")
     Xs, stories = fetch_brain_images(subject, verbose)
-    console.print(f"Fetching latents for {len(stories)} stories")
+    console.log(f"Fetching latents for {len(stories)} stories")
     Ys = fetch_latents(stories, model, tr, context_length, verbose)
     for i, (X, Y) in enumerate(zip(Xs, Ys)):
         if smooth > 0:
@@ -106,7 +106,7 @@ def fetch_data(
     return Xs, Ys, np.array(stories)
 
 
-# @memory.cache(ignore=["verbose"])
+@memory.cache(ignore=["verbose"])
 def train(
     subject: str = "UTS00",
     decoder: str = "ridge",

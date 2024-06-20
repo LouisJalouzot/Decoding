@@ -5,7 +5,7 @@ from sklearn.linear_model import Ridge
 from sklearn.preprocessing import RobustScaler
 
 from src.metrics import scores
-from src.utils import _get_progress
+from src.utils import progress
 
 
 def fast_ridge(
@@ -21,7 +21,7 @@ def fast_ridge(
     n_features = X_train.shape[1]
     n_targets = Y_train.shape[1]
     output = {}
-    with _get_progress(transient=not verbose) as progress:
+    with progress:
         if verbose:
             task = progress.add_task("Fine-tuning", total=2 * len(alphas))
 
@@ -104,7 +104,7 @@ def fast_ridge_cv(
     for score in ["mse", "r", "r2"]:
         for type in ["train", "test"]:
             output[f"{type}/{score}"] = np.zeros(n_features)
-    with _get_progress(transient=not verbose) as progress:
+    with progress:
         task = progress.add_task(f"Nested CV", total=len(n_scans) ** 2)
         for i, n in enumerate(n_scans):
             train_mask = (indices < start) | (indices >= start + n)
@@ -182,7 +182,7 @@ def ridge(
 ) -> Dict[str, Union[np.ndarray, float]]:
     model = Ridge(fit_intercept=False)
 
-    with _get_progress(transient=not verbose) as progress:
+    with progress:
         if verbose:
             task = progress.add_task("Fine-tuning", total=len(alphas) + 1)
 

@@ -14,8 +14,8 @@ from rich.table import Table
 from torch.utils.data import DataLoader, TensorDataset
 
 import wandb
-from src.metrics import retrieval_metrics, scores
-from src.utils import _get_progress, console, device
+from src.metrics import retrieval_metrics
+from src.utils import console, device
 
 
 def mixco_sample_augmentation(samples, beta=0.15, s_thresh=0.5):

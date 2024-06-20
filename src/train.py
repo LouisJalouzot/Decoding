@@ -4,7 +4,6 @@ from typing import List, Tuple
 
 import h5py
 import numpy as np
-import pandas as pd
 import torch
 from sklearn.preprocessing import StandardScaler
 
@@ -21,13 +20,50 @@ This module contains functions for training and fetching data.
 """
 
 
+@memory.cache(ignore=["verbose"])
+def fetch_latents(stories, model, tr, context_length, verbose):
+    Ys = []
+    with progress:
+        task = progress.add_task(
+            f"Loading latents",
+            total=len(stories),
+            visible=verbose,
+        )
+        for story in stories:
+            Y = prepare_latents(story, model, tr, context_length, verbose)
+            Ys.append(Y.astype(np.float32))
+            progress.update(task, description=f"Story: {story}", advance=1)
+    progress.update(task, visible=False)
+    return Ys
+
+
+@memory.cache(ignore=["verbose"])
+def fetch_brain_images(subject, verbose):
+    Xs = []
+    brain_features_path = Path("data/lebel/derivative/preprocessed_data") / subject
+    stories = [story.replace(".hf5", "") for story in os.listdir(brain_features_path)]
+    with progress:
+        task = progress.add_task(
+            f"Loading brain images for subject {subject}",
+            total=len(stories),
+            visible=verbose,
+        )
+        for story in stories:
+            X = h5py.File(brain_features_path / f"{story}.hf5", "r")["data"][:]
+            # Some voxels are NaNs, we replace them with zeros
+            X = np.nan_to_num(X, nan=0)
+            Xs.append(X.astype(np.float32))
+            progress.update(task, description=f"Story: {story}", advance=1)
+    progress.update(task, visible=False)
+    return Xs, stories
+
+
 def fetch_data(
     subject: str,
     model: str,
     tr: int,
     context_length: int,
     smooth: int,
-    # halflife: float,
     lag: int,
     verbose: bool = False,
 ) -> Tuple[List[np.ndarray], List[np.ndarray], np.ndarray]:
@@ -46,47 +82,25 @@ def fetch_data(
         Tuple[List[np.ndarray], List[np.ndarray], np.ndarray]: The fetched data.
 
     """
-    brain_features_path = Path("data/lebel/derivative/preprocessed_data") / subject
-    stories = [story.replace(".hf5", "") for story in os.listdir(brain_features_path)]
-    Xs, Ys = [], []
-    with progress:
-        task = progress.add_task(
-            f"Loading latents and brain images for subject {subject}",
-            total=len(stories),
-            visible=verbose,
-        )
-        for story in stories:
-            X = h5py.File(brain_features_path / f"{story}.hf5", "r")["data"][:]
-            # Some voxels are NaNs, we replace them with zeros
-            X = np.nan_to_num(X, nan=0)
-            # Smoothing brain signal using moving average
+    Xs, stories = fetch_brain_images(subject, verbose)
+    Ys = fetch_latents(stories, model, tr, context_length, verbose)
+    for i, (X, Y) in enumerate(zip(Xs, Ys)):
+        if smooth > 0:
             new_X = X.copy()
             count = np.ones((X.shape[0], 1))
             for i in range(1, smooth + 1):
                 new_X[i:] += X[:-i]
                 count[i:] += 1
             X = new_X / count
-            # if halflife > 0:
-            #     X = pd.DataFrame(X).ewm(halflife=halflife).mean().to_numpy()
-            Y = prepare_latents(
-                story,
-                model=model,
-                tr=tr,
-                context_length=context_length,
-                verbose=verbose,
-            )
-            if lag > 0:
-                X = X[lag:]
-                Y = Y[:-lag]
-            if Y.shape[0] > X.shape[0]:
-                # More latents than brain scans (first brain scans where removed)
-                # We drop the corresponding latents
-                Y = Y[-X.shape[0] :]
-            Xs.append(X.astype(np.float32))
-            Ys.append(Y.astype(np.float32))
-
-            progress.update(task, description=f"Story: {story}", advance=1)
-
+        if lag > 0:
+            X = X[lag:]
+            Y = Y[:-lag]
+        if Y.shape[0] > X.shape[0]:
+            # More latents than brain scans (first brain scans where removed)
+            # We drop the corresponding latents
+            Y = Y[-X.shape[0] :]
+        Xs[i] = X
+        Ys[i] = Y
     return Xs, Ys, np.array(stories)
 
 

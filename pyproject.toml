@@ -23,6 +23,12 @@ skorch = "^1.0.0"
 torchmetrics = "^1.4.0.post0"
 torchaudio = "^2.3.0"
 pysoundfile = "^0.9.0.post1"
+termcolor = "^2.4.0"
+pytorch-ignite = "^0.5.0.post2"
+visdom = "^0.2.4"
+librosa = "^0.10.2.post1"
+sentence-transformers = "^3.0.1"
+torchvision = "^0.18.1"
 
 
 [tool.poetry.group.dev.dependencies]

@@ -104,7 +104,8 @@ def prepare_latents(
             audio_chunk_size = target_sample_rate * tr
             chunked_audio = wav.split(audio_chunk_size, dim=-1)
             latents = []
-            size = len(chunked_audio)
+            size = len(text_chunks)
+            chunked_audio = chunked_audio[:size]  # truncate audio to match text length
             model.eval()
             with torch.no_grad():
                 with progress:

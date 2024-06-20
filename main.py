@@ -16,6 +16,7 @@ parser.add_argument("--hidden_size_projector", type=int, default=512, help="Hidd
 parser.add_argument("--dropout", type=float, default=0.7, help="Dropout rate")
 parser.add_argument("--n_res_blocks", type=int, default=2, help="Number of residual blocks")
 parser.add_argument("--n_proj_blocks", type=int, default=1, help="Number of projection blocks")
+parser.add_argument("--patience", type=int, default=5)
 parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
 parser.add_argument("--weight_decay", type=float, default=1e-6, help="Weight decay")
 parser.add_argument("--batch_size", type=int, default=1024, help="Batch size")

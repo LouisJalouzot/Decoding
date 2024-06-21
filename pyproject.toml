@@ -27,6 +27,7 @@ visdom = "^0.2.4"
 librosa = "^0.10.2.post1"
 sentence-transformers = "^3.0.1"
 torchvision = "^0.18.1"
+transformers = "^4.41.2"
 
 
 [tool.poetry.group.dev.dependencies]

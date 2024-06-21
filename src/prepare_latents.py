@@ -43,13 +43,130 @@ def compute_chunks(textgrid_path: str, tr: int, context_length: int) -> List[str
     ]
 
 
-@memory.cache(ignore=["verbose"])
+def prepare_mel(audio_path: Path, tr: int, context_length: int):
+    import torchaudio
+
+    wav, sample_rate = torchaudio.load(str(audio_path))
+    n_channels = wav.shape[0] if len(wav.shape) > 1 else 1
+    mel = torchaudio.transforms.MelSpectrogram(
+        sample_rate=sample_rate,
+        n_fft=sample_rate * tr * context_length,
+        hop_length=sample_rate * tr,
+        n_mels=768 // n_channels,
+        normalized=True,
+    ).to(device)
+    return mel(wav.to(device)).reshape(768, -1).T.cpu().numpy()
+
+
+def prepare_audioclip(
+    story, textgrid_path, audio_path, tr, context_length, model, verbose
+):
+    import librosa
+    import torch
+
+    text_chunks = compute_chunks(textgrid_path, tr, context_length)
+    target_sample_rate = 44_100
+    wav, _ = librosa.load(audio_path, sr=target_sample_rate, mono=False)
+    wav = torch.from_numpy(wav)
+    audio_chunk_size = target_sample_rate * tr
+    chunked_audio = wav.split(audio_chunk_size, dim=-1)
+    size = len(text_chunks)
+    chunked_audio = chunked_audio[:size]  # truncate audio to match text length
+
+    latents = []
+    import sys
+
+    sys.path.append("AudioCLIP")
+    from AudioCLIP.model import AudioCLIP
+
+    model = AudioCLIP(
+        pretrained="AudioCLIP/assets/AudioCLIP-Full-Training.pt",
+    ).to(device)
+    model.eval()
+    with torch.no_grad():
+        with progress:
+            task = progress.add_task(
+                f"Computing AudioCLIP latents for story {story}",
+                total=size,
+                visible=verbose,
+            )
+            for i in range(size):
+                audio_chunk = torch.concat(
+                    chunked_audio[max(0, i - context_length) : i + 1], dim=-1
+                ).to(device)
+                if len(audio_chunk.shape) == 1:
+                    audio_chunk = audio_chunk.reshape(1, 1, -1)
+                else:
+                    audio_chunk = audio_chunk[None]
+                ((audio_latent, _, text_latent), _), _ = model(
+                    audio=audio_chunk, text=[[text_chunks[i]]]
+                )
+                latent = torch.concat(
+                    (text_latent.squeeze(), audio_latent.squeeze()),
+                )
+                latents.append(latent.cpu().numpy())
+                if verbose:
+                    progress.update(task, advance=1)
+            progress.update(task, visible=False)
+    return np.vstack(latents)
+
+
+def prepare_clap(
+    story, textgrid_path, audio_path, tr, context_length, batch_size, verbose
+):
+    import librosa
+    import torch
+    from transformers import AutoProcessor, ClapModel
+
+    text_chunks = compute_chunks(textgrid_path, tr, context_length)
+    target_sample_rate = 48_000
+    wav, _ = librosa.load(audio_path, sr=target_sample_rate, mono=True)
+    size = len(text_chunks)
+    audio_chunk_size = target_sample_rate * tr
+    chunked_audio = [
+        wav[
+            max(0, (i - context_length) * audio_chunk_size) : (i + 1) * audio_chunk_size
+        ]
+        for i in range(size)
+    ]
+
+    model = ClapModel.from_pretrained("laion/larger_clap_general").to(device)
+    processor = AutoProcessor.from_pretrained("laion/larger_clap_general")
+    latents = []
+    model.eval()
+    with torch.no_grad():
+        with progress:
+            task = progress.add_task(
+                f"Computing CLAP latents for story {story}",
+                total=-(-size // batch_size),
+                visible=verbose,
+            )
+        for i in range(0, size, batch_size):
+            inputs = processor(
+                text=text_chunks[i : i + batch_size],
+                audios=chunked_audio[i : i + batch_size],
+                return_tensors="pt",
+                padding=True,
+                sampling_rate=target_sample_rate,
+            ).to(device)
+            outputs = model(**inputs)
+            batch_latents = torch.cat(
+                (outputs.text_embeds, outputs.audio_embeds), dim=1
+            )
+            latents.append(batch_latents.cpu())
+            progress.update(task, advance=1)
+        progress.update(task, visible=False)
+    return np.vstack(latents)
+
+
+@memory.cache(ignore=["batch_size", "verbose"])
 def prepare_latents(
     story: str,
-    model: str = "clip",
-    tr: int = 2,
-    context_length: int = 0,
-    verbose: bool = False,
+    model: str,
+    tr: int,
+    context_length: int,
+    batch_size: int = 64,
+    verbose: bool = True,
 ) -> Tuple[np.ndarray, List[str]]:
     """
     Prepare the latents for the given story.
@@ -64,75 +181,20 @@ def prepare_latents(
     Returns:
         np.ndarray: Latents.
     """
-    import torch
-
     path = Path("data/lebel")
     audio_path = path / "stimuli" / (story + ".wav")
     textgrid_path = path / "derivative" / "TextGrids" / (story + ".TextGrid")
-    if model.lower() in ["mel", "audioclip"]:
-        import torchaudio
 
-        wav, sample_rate = torchaudio.load(str(audio_path))
-        n_channels = wav.shape[0] if len(wav.shape) > 1 else 1
-        if model.lower() == "mel":
-            mel = torchaudio.transforms.MelSpectrogram(
-                sample_rate=sample_rate,
-                n_fft=sample_rate * tr * context_length,
-                hop_length=sample_rate * tr,
-                n_mels=768 // n_channels,
-                normalized=True,
-            ).to(device)
-            latents = mel(wav.to(device)).reshape(768, -1).T.cpu().numpy()
-        elif model.lower() == "audioclip":
-            import sys
-
-            sys.path.append("AudioCLIP")
-
-            from AudioCLIP.model import AudioCLIP
-
-            model = AudioCLIP(
-                pretrained="AudioCLIP/assets/AudioCLIP-Full-Training.pt",
-            ).to(device)
-            target_sample_rate = 44_100  # target sample rate (used by AudioCLIP)
-            text_chunks = compute_chunks(textgrid_path, tr, context_length)
-            wav, sample_rate = torchaudio.load(str(audio_path))
-            wav = torchaudio.functional.resample(
-                wav,
-                sample_rate,
-                target_sample_rate,
-            )
-            audio_chunk_size = target_sample_rate * tr
-            chunked_audio = wav.split(audio_chunk_size, dim=-1)
-            latents = []
-            size = len(text_chunks)
-            chunked_audio = chunked_audio[:size]  # truncate audio to match text length
-            model.eval()
-            with torch.no_grad():
-                with progress:
-                    task = progress.add_task(
-                        f"Computing AudioCLIP latents for story {story}",
-                        total=size,
-                        visible=verbose,
-                    )
-                    for i in range(size):
-                        audio_chunk = torch.concat(
-                            chunked_audio[max(0, i - context_length) : i + 1], dim=-1
-                        ).to(device)
-                        if len(audio_chunk.shape) == 1:
-                            audio_chunk = audio_chunk.reshape(1, 1, -1)
-                        else:
-                            audio_chunk = audio_chunk[None]
-                        ((audio_latent, _, text_latent), _), _ = model(
-                            audio=audio_chunk, text=[[text_chunks[i]]]
-                        )
-                        latent = torch.concat(
-                            (text_latent.squeeze(), audio_latent.squeeze()),
-                        )
-                        latents.append(latent.cpu().numpy())
-                        if verbose:
-                            progress.update(task, advance=1)
-                    progress.update(task, visible=False)
-            latents = np.vstack(latents)
+    if model.lower() == "mel":
+        latents = prepare_mel(audio_path, tr, context_length)
+    elif model.lower() == "audioclip":
+        latents = prepare_audioclip(
+            story, textgrid_path, audio_path, tr, context_length, model, verbose
+        )
+    elif model.lower() == "clap":
+        latents = prepare_clap(
+            story, textgrid_path, audio_path, tr, context_length, batch_size, verbose
+        )
     else:
         chunks = compute_chunks(textgrid_path, tr, context_length)
         from sentence_transformers import SentenceTransformer
@@ -144,4 +206,6 @@ def prepare_latents(
             truncate_dim=None,
         )
         latents = model.encode(chunks)
-    return latents / np.linalg.norm(latents, ord=2, axis=1, keepdims=True)
+
+    latents /= np.linalg.norm(latents, ord=2, axis=1, keepdims=True)
+    return latents.astype(np.float32)

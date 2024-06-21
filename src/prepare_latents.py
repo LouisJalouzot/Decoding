@@ -204,6 +204,7 @@ def prepare_latents(
             model,
             device=device,
             truncate_dim=None,
+            trust_remote_code=True,
         )
         latents = model.encode(chunks)
 

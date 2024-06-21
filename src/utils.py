@@ -33,7 +33,7 @@ progress = Progress(
     console=console,
 )
 
-ignore = ["verbose", "n_jobs"]
+ignore = ["verbose", "n_jobs", "latents_batch_size"]
 
 DEFAULT_BAD_WORDS = frozenset(
     ["sentence_start", "sentence_end", "br", "lg", "ls", "ns", ""]
@@ -53,6 +53,7 @@ def get_textgrid(textgrid_path):
     if grtranscript[-1][2] == ",":
         grtranscript = grtranscript[:-1]
     return grtranscript
+
 
 def _get_free_gpu():
     rows = (

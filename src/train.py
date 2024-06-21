@@ -21,7 +21,7 @@ This module contains functions for training and fetching data.
 
 
 @memory.cache(ignore=["verbose"])
-def fetch_latents(stories, model, tr, context_length, verbose):
+def fetch_latents(stories, model, tr, context_length, batch_size, verbose):
     Ys = []
     with progress:
         task = progress.add_task(
@@ -30,7 +30,7 @@ def fetch_latents(stories, model, tr, context_length, verbose):
             visible=verbose,
         )
         for story in stories:
-            Y = prepare_latents(story, model, tr, context_length, verbose)
+            Y = prepare_latents(story, model, tr, context_length, batch_size, verbose)
             Ys.append(Y.astype(np.float32))
             progress.update(task, description=f"Story: {story}", advance=1)
     progress.update(task, visible=False)
@@ -65,6 +65,7 @@ def fetch_data(
     context_length: int,
     smooth: int,
     lag: int,
+    batch_size: int = 64,
     verbose: bool = False,
 ) -> Tuple[List[np.ndarray], List[np.ndarray], np.ndarray]:
     """
@@ -85,7 +86,7 @@ def fetch_data(
     console.log(f"Fetching brain images for subject {subject}")
     Xs, stories = fetch_brain_images(subject, verbose)
     console.log(f"Fetching latents for {len(stories)} stories")
-    Ys = fetch_latents(stories, model, tr, context_length, verbose)
+    Ys = fetch_latents(stories, model, tr, context_length, batch_size, verbose)
     for i, (X, Y) in enumerate(zip(Xs, Ys)):
         if smooth > 0:
             new_X = X.copy()
@@ -121,6 +122,7 @@ def train(
     seed: int = 0,
     subsample_voxels: int = None,
     verbose: bool = True,
+    latents_batch_size: int = 64,
     **decoder_params,
 ) -> dict:
     """
@@ -157,6 +159,7 @@ def train(
         context_length=context_length,
         smooth=smooth,
         lag=lag,
+        batch_size=latents_batch_size,
         verbose=verbose,
     )
     n_stories = len(stories)

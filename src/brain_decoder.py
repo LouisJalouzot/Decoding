@@ -68,7 +68,7 @@ def mixco_sample_augmentation(samples, beta=0.15, s_thresh=0.5):
 def mixco_symmetrical_nce_loss(
     preds,
     targs,
-    temperature=0.1,
+    temperature,
     perm=None,
     betas=None,
     select=None,
@@ -98,6 +98,8 @@ def mixco_symmetrical_nce_loss(
     torch.Tensor
         Symmetrical NCE loss.
     """
+    preds = nn.functional.normalize(preds, dim=-1)
+    targs = nn.functional.normalize(targs, dim=-1)
     brain_clip = (preds @ targs.T) / temperature
 
     if perm is not None and betas is not None and select is not None:
@@ -258,13 +260,11 @@ def evaluate(dl, decoder, negatives, top_k_accuracies, temperature):
                     top_k_accuracies=top_k_accuracies,
                 ).items():
                     metrics[key].append(value)
+                # Evaluate MSE loss
+                mse_loss = F.mse_loss(Y_preds, Y)
                 # Evaluate symmetrical NCE loss
-                Y_preds_norm = nn.functional.normalize(Y_preds, dim=-1)
-                Y_true_norm = nn.functional.normalize(Y, dim=-1)
                 symm_nce_loss = mixco_symmetrical_nce_loss(
-                    Y_preds_norm,
-                    Y_true_norm,
-                    temperature=temperature,
+                    Y_preds, Y, temperature=temperature
                 )
                 # Evaluate mixco symmetrical NCE loss
                 (
@@ -274,16 +274,15 @@ def evaluate(dl, decoder, negatives, top_k_accuracies, temperature):
                     select,
                 ) = mixco_sample_augmentation(X)
                 Y_preds = decoder(X_mixco)
-                Y_preds_norm = nn.functional.normalize(Y_preds, dim=-1)
-                Y_true_norm = nn.functional.normalize(Y, dim=-1)
                 mixco_loss = mixco_symmetrical_nce_loss(
-                    Y_preds_norm,
-                    Y_true_norm,
+                    Y_preds,
+                    Y,
                     temperature=temperature,
                     perm=perm,
                     betas=betas,
                     select=select,
                 )
+                metrics["mse_loss"].append(mse_loss.item())
                 metrics["symm_nce_loss"].append(symm_nce_loss.item())
                 metrics["mixco_loss"].append(mixco_loss.item())
                 metrics["aug_loss"].append(mixco_loss.item() - symm_nce_loss.item())
@@ -308,6 +307,7 @@ def train_brain_decoder(
     patience=5,
     decoder="brain_decoder",
     monitor="val/relative_median_rank",
+    loss="mixco",
     seed=0,
     setup_config={},
     verbose=True,
@@ -331,8 +331,9 @@ def train_brain_decoder(
     out_dim = Y_train.shape[1]
     config = {
         "decoder": decoder,
-        "lr": lr,
+        "loss": loss,
         "temperature": temperature,
+        "lr": lr,
         "weight_decay": weight_decay,
         "max_epochs": max_epochs,
         "batch_size": batch_size,
@@ -416,46 +417,51 @@ def train_brain_decoder(
                 with torch.cuda.amp.autocast():
                     X = X.to(device)
                     Y = Y.to(device)
-
-                    # Evaluate mixco loss and back-propagate on it
-                    (
-                        X_mixco,
-                        perm,
-                        betas,
-                        select,
-                    ) = mixco_sample_augmentation(X)
                     optimizer.zero_grad()
-                    Y_preds = decoder(X_mixco)
-                    Y_preds_norm = nn.functional.normalize(Y_preds, dim=-1)
-                    Y_true_norm = nn.functional.normalize(Y, dim=-1)
-                    mixco_loss = mixco_symmetrical_nce_loss(
-                        Y_preds_norm,
-                        Y_true_norm,
-                        temperature=temperature,
-                        perm=perm,
-                        betas=betas,
-                        select=select,
-                    )
 
-                    # Evaluate symmetrical NCE loss
-                    with torch.no_grad():
+                    with torch.set_grad_enabled(loss == "mse"):
+                        # Evaluate MSE loss
                         Y_preds = decoder(X)
-                        Y_preds_norm = nn.functional.normalize(Y_preds, dim=-1)
-                        Y_true_norm = nn.functional.normalize(Y, dim=-1)
+                        mse_loss = F.mse_loss(Y_preds, Y)
+                        train_metrics["mse_loss"].append(mse_loss.item())
+                        if loss == "mse":
+                            mse_loss.backward()
+
+                    with torch.set_grad_enabled(loss == "symm_nce"):
+                        # Evaluate symmetrical NCE loss
+                        Y_preds = decoder(X)
                         symm_nce_loss = mixco_symmetrical_nce_loss(
-                            Y_preds_norm,
-                            Y_true_norm,
-                            temperature=temperature,
+                            Y_preds, Y, temperature=temperature
                         )
+                        train_metrics["symm_nce_loss"].append(symm_nce_loss.item())
+                        if loss == "symm_nce":
+                            symm_nce_loss.backward()
 
-                    mixco_loss.backward()
+                    with torch.set_grad_enabled(loss == "mixco"):
+                        # Evaluate mixco loss and back-propagate on it
+                        (
+                            X_mixco,
+                            perm,
+                            betas,
+                            select,
+                        ) = mixco_sample_augmentation(X)
+                        Y_preds = decoder(X_mixco)
+                        mixco_loss = mixco_symmetrical_nce_loss(
+                            Y_preds,
+                            Y,
+                            temperature=temperature,
+                            perm=perm,
+                            betas=betas,
+                            select=select,
+                        )
+                        train_metrics["mixco_loss"].append(mixco_loss.item())
+                        train_metrics["aug_loss"].append(
+                            mixco_loss.item() - symm_nce_loss.item()
+                        )
+                        if loss == "mixco":
+                            mixco_loss.backward()
+
                     optimizer.step()
-
-                train_metrics["symm_nce_loss"].append(symm_nce_loss.item())
-                train_metrics["mixco_loss"].append(mixco_loss.item())
-                train_metrics["aug_loss"].append(
-                    mixco_loss.item() - symm_nce_loss.item()
-                )
 
             # Validation step
             val_metrics = evaluate(

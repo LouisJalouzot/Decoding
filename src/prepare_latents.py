@@ -141,21 +141,21 @@ def prepare_clap(
                 total=-(-size // batch_size),
                 visible=verbose,
             )
-        for i in range(0, size, batch_size):
-            inputs = processor(
-                text=text_chunks[i : i + batch_size],
-                audios=chunked_audio[i : i + batch_size],
-                return_tensors="pt",
-                padding=True,
-                sampling_rate=target_sample_rate,
-            ).to(device)
-            outputs = model(**inputs)
-            batch_latents = torch.cat(
-                (outputs.text_embeds, outputs.audio_embeds), dim=1
-            )
-            latents.append(batch_latents.cpu())
-            progress.update(task, advance=1)
-        progress.update(task, visible=False)
+            for i in range(0, size, batch_size):
+                inputs = processor(
+                    text=text_chunks[i : i + batch_size],
+                    audios=chunked_audio[i : i + batch_size],
+                    return_tensors="pt",
+                    padding=True,
+                    sampling_rate=target_sample_rate,
+                ).to(device)
+                outputs = model(**inputs)
+                batch_latents = torch.cat(
+                    (outputs.text_embeds, outputs.audio_embeds), dim=1
+                )
+                latents.append(batch_latents.cpu())
+                progress.update(task, advance=1)
+            progress.update(task, visible=False)
     return np.vstack(latents)
 
 
@@ -181,6 +181,8 @@ def prepare_latents(
     Returns:
         np.ndarray: Latents.
     """
+    import torch
+
     path = Path("data/lebel")
     audio_path = path / "stimuli" / (story + ".wav")
     textgrid_path = path / "derivative" / "TextGrids" / (story + ".TextGrid")
@@ -207,6 +209,6 @@ def prepare_latents(
             trust_remote_code=True,
         )
         latents = model.encode(chunks)
-
     latents /= np.linalg.norm(latents, ord=2, axis=1, keepdims=True)
+    torch.cuda.empty_cache()
     return latents.astype(np.float32)

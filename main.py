@@ -12,6 +12,7 @@ parser.add_argument(
     help="Model name",
 )
 parser.add_argument("--decoder", type=str, default="brain_decoder", help="Decoder name")
+parser.add_argument("--loss", type=str, default="mixco")
 parser.add_argument("--context_length", type=int, default=5, help="Context length")
 parser.add_argument("--lag", type=int, default=3, help="Lag")
 parser.add_argument("--smooth", type=int, default=0, help="Smooth")

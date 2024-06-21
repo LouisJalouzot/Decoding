@@ -33,7 +33,6 @@ def fetch_latents(stories, model, tr, context_length, batch_size, verbose):
             Y = prepare_latents(story, model, tr, context_length, batch_size, verbose)
             Ys.append(Y.astype(np.float32))
             progress.update(task, description=f"Story: {story}", advance=1)
-    progress.update(task, visible=False)
     return Ys
 
 

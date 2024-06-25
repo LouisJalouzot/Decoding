@@ -386,6 +386,9 @@ def train_brain_decoder(
         opt_grouped_parameters,
         lr=lr,
     )
+    losses = ["mixco", "symm_nce", "mse"]
+    if loss not in losses:
+        raise ValueError(f"Unsupported loss {loss}. Choose one of {losses}.")
 
     train_dl = DataLoader(
         TensorDataset(X_train, Y_train),
@@ -412,32 +415,27 @@ def train_brain_decoder(
         for epoch in range(1, max_epochs + 1):
             t = time()
             decoder.train()
-            train_metrics = defaultdict(list)
+            train_losses = []
             for X, Y in train_dl:
                 with torch.cuda.amp.autocast():
                     X = X.to(device)
                     Y = Y.to(device)
+
                     optimizer.zero_grad()
 
-                    with torch.set_grad_enabled(loss == "mse"):
+                    if loss == "mse":
                         # Evaluate MSE loss
                         Y_preds = decoder(X)
-                        mse_loss = F.mse_loss(Y_preds, Y)
-                        train_metrics["mse_loss"].append(mse_loss.item())
-                        if loss == "mse":
-                            mse_loss.backward()
+                        train_loss = F.mse_loss(Y_preds, Y)
 
-                    with torch.set_grad_enabled(loss == "symm_nce"):
+                    if loss == "symm_nce":
                         # Evaluate symmetrical NCE loss
                         Y_preds = decoder(X)
-                        symm_nce_loss = mixco_symmetrical_nce_loss(
+                        train_loss = mixco_symmetrical_nce_loss(
                             Y_preds, Y, temperature=temperature
                         )
-                        train_metrics["symm_nce_loss"].append(symm_nce_loss.item())
-                        if loss == "symm_nce":
-                            symm_nce_loss.backward()
 
-                    with torch.set_grad_enabled(loss == "mixco"):
+                    if loss == "mixco":
                         # Evaluate mixco loss and back-propagate on it
                         (
                             X_mixco,
@@ -446,7 +444,7 @@ def train_brain_decoder(
                             select,
                         ) = mixco_sample_augmentation(X)
                         Y_preds = decoder(X_mixco)
-                        mixco_loss = mixco_symmetrical_nce_loss(
+                        train_loss = mixco_symmetrical_nce_loss(
                             Y_preds,
                             Y,
                             temperature=temperature,
@@ -454,14 +452,10 @@ def train_brain_decoder(
                             betas=betas,
                             select=select,
                         )
-                        train_metrics["mixco_loss"].append(mixco_loss.item())
-                        train_metrics["aug_loss"].append(
-                            mixco_loss.item() - symm_nce_loss.item()
-                        )
-                        if loss == "mixco":
-                            mixco_loss.backward()
 
+                    train_loss.backward()
                     optimizer.step()
+                    train_losses.append(train_loss.item())
 
             # Validation step
             val_metrics = evaluate(
@@ -470,10 +464,7 @@ def train_brain_decoder(
 
             # Log metrics
             output = {
-                **{
-                    "train/" + key: np.mean(values)
-                    for key, values in train_metrics.items()
-                },
+                "train/" + loss: np.mean(train_losses),
                 **{"val/" + key: value for key, value in val_metrics.items()},
             }
             if epoch == 1:

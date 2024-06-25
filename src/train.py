@@ -114,7 +114,6 @@ def train(
     context_length: int = 2,
     tr: int = 2,
     lag: int = 2,
-    # halflife: int = 2,
     smooth: int = 1,
     valid_ratio: float = 0.2,
     test_ratio: float = 0.1,

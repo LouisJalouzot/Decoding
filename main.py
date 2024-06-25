@@ -38,7 +38,6 @@ parser.add_argument("--weight_decay", type=float, default=1e-6, help="Weight dec
 parser.add_argument("--batch_size", type=int, default=1024, help="Batch size")
 parser.add_argument("--temperature", type=float, default=0.05, help="Temperature")
 parser.add_argument("--latents_batch_size", type=int, default=64)
-parser.add_argument("--verbose", type=bool, default=True)
 
 args = parser.parse_args()
 

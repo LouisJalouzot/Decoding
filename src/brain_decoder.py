@@ -310,7 +310,6 @@ def train_brain_decoder(
     loss="mixco",
     seed=0,
     setup_config={},
-    verbose=True,
     weight_decay=1e-6,
     lr=1e-4,
     max_epochs=100,
@@ -339,16 +338,10 @@ def train_brain_decoder(
         "batch_size": batch_size,
     }
     name = "_".join([f"{key}={value}" for key, value in config.items()])
-    config["patience"] = (patience,)
-    config["seed"] = (seed,)
+    config["patience"] = patience
+    config["seed"] = seed
     config.update(decoder_params)
     config.update(setup_config)
-    wandb_run = wandb.init(
-        name=name,
-        config=config,
-        id=sha1(repr(sorted(config.items())).encode()).hexdigest(),
-        save_code=True,
-    )
 
     if decoder.lower() == "brain_decoder":
         decoder_class = BrainDecoder
@@ -359,10 +352,17 @@ def train_brain_decoder(
         out_dim=out_dim,
         **decoder_params,
     ).to(device)
-    if verbose:
-        console.log(
-            f"Decoder has {sum([p.numel() for p in decoder.parameters()]):.3g} parameters."
-        )
+    n_params = sum([p.numel() for p in decoder.parameters()])
+    console.log(f"Decoder has {n_params:.3g} parameters.")
+
+    config["n_params"] = n_params
+    wandb_run = wandb.init(
+        name=name,
+        config=config,
+        id=sha1(repr(sorted(config.items())).encode()).hexdigest(),
+        save_code=True,
+    )
+
     no_decay = ["bias", "LayerNorm.weight"]
     opt_grouped_parameters = [
         {
@@ -491,7 +491,7 @@ def train_brain_decoder(
                 monitor_metric = f"[red]{monitor_metric:.5g}"
                 if patience_counter >= patience:
                     console.log(
-                        f"Early stopping at epoch {epoch} as {monitor} did not improve for {patience} epochs."
+                        f"Early stopping at epoch {epoch} as [bold green]{monitor}[/] did not improve for {patience} epochs."
                     )
                     break
             table.add_row(

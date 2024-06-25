@@ -5,6 +5,7 @@ from typing import List, Tuple
 import h5py
 import numpy as np
 import torch
+from joblib import Parallel, delayed
 from sklearn.preprocessing import StandardScaler
 
 from src.brain_decoder import train_brain_decoder
@@ -20,52 +21,15 @@ This module contains functions for training and fetching data.
 """
 
 
-@memory.cache(ignore=["verbose"])
-def fetch_latents(stories, model, tr, context_length, batch_size, verbose):
-    Ys = []
-    with progress:
-        task = progress.add_task(
-            f"Loading latents",
-            total=len(stories),
-            visible=verbose,
-        )
-        for story in stories:
-            Y = prepare_latents(story, model, tr, context_length, batch_size, verbose)
-            Ys.append(Y.astype(np.float32))
-            progress.update(task, description=f"Story: {story}", advance=1)
-    return Ys
-
-
-@memory.cache(ignore=["verbose"])
-def fetch_brain_images(subject, verbose):
-    Xs = []
-    brain_features_path = Path("data/lebel/derivative/preprocessed_data") / subject
-    stories = [story.replace(".hf5", "") for story in os.listdir(brain_features_path)]
-    with progress:
-        task = progress.add_task(
-            f"Loading brain images for subject {subject}",
-            total=len(stories),
-            visible=verbose,
-        )
-        for story in stories:
-            X = h5py.File(brain_features_path / f"{story}.hf5", "r")["data"][:]
-            # Some voxels are NaNs, we replace them with zeros
-            X = np.nan_to_num(X, nan=0)
-            Xs.append(X.astype(np.float32))
-            progress.update(task, description=f"Story: {story}", advance=1)
-    progress.update(task, visible=False)
-    return Xs, stories
-
-
 def fetch_data(
     subject: str,
     model: str,
     tr: int,
     context_length: int,
+    subsample_voxels: int,
     smooth: int,
     lag: int,
     batch_size: int = 64,
-    verbose: bool = False,
 ) -> Tuple[List[np.ndarray], List[np.ndarray], np.ndarray]:
     """
     Fetches data for training.
@@ -82,21 +46,42 @@ def fetch_data(
         Tuple[List[np.ndarray], List[np.ndarray], np.ndarray]: The fetched data.
 
     """
-    console.log(f"Fetching brain images for subject {subject}")
-    Xs, stories = fetch_brain_images(subject, verbose)
-    console.log(f"Fetching latents for {len(stories)} stories")
-    Ys = fetch_latents(stories, model, tr, context_length, batch_size, verbose)
+    brain_images_path = Path("data/lebel/derivative/preprocessed_data") / subject
+    stories = [story.replace(".hf5", "") for story in os.listdir(brain_images_path)]
+    n_voxels = h5py.File(
+        brain_images_path / f"{stories[0]}.hf5",
+        "r",
+    )[
+        "data"
+    ].shape[1]
+    if subsample_voxels is not None:
+        selected_voxels = np.random.permutation(n_voxels)[:subsample_voxels]
+    else:
+        selected_voxels = np.arange(n_voxels)
+
+    console.log(f"Fetching brain images and latents for {len(stories)} stories")
+    Xs, Ys = [], []
+    with progress:
+        task = progress.add_task("", total=len(stories))
+        for story in stories:
+            file_path = brain_images_path / f"{story}.hf5"
+            file = h5py.File(file_path, "r")["data"]
+            X = file[:, selected_voxels].astype(np.float32)
+            X = np.nan_to_num(X, nan=0)
+            if smooth > 0:
+                new_X = X.copy()
+                count = np.ones((X.shape[0], 1))
+                for i in range(1, smooth + 1):
+                    new_X[i:] += X[:-i]
+                    count[i:] += 1
+                X = new_X / count
+            Xs.append(X[lag:])
+
+            Y = prepare_latents(story, model, tr, context_length, batch_size)
+            Ys.append(Y[:-lag])
+            progress.update(task, description=f"Story: {story}", advance=1)
+
     for i, (X, Y) in enumerate(zip(Xs, Ys)):
-        if smooth > 0:
-            new_X = X.copy()
-            count = np.ones((X.shape[0], 1))
-            for i in range(1, smooth + 1):
-                new_X[i:] += X[:-i]
-                count[i:] += 1
-            X = new_X / count
-        if lag > 0:
-            X = X[lag:]
-            Y = Y[:-lag]
         if Y.shape[0] > X.shape[0]:
             # More latents than brain scans (first brain scans where removed)
             # We drop the corresponding latents
@@ -106,7 +91,7 @@ def fetch_data(
     return Xs, Ys, np.array(stories)
 
 
-@memory.cache(ignore=["verbose"])
+# @memory.cache()
 def train(
     subject: str = "UTS00",
     decoder: str = "ridge",
@@ -119,7 +104,6 @@ def train(
     test_ratio: float = 0.1,
     seed: int = 0,
     subsample_voxels: int = None,
-    verbose: bool = True,
     latents_batch_size: int = 64,
     **decoder_params,
 ) -> dict:
@@ -155,19 +139,14 @@ def train(
         model=model,
         tr=tr,
         context_length=context_length,
+        subsample_voxels=subsample_voxels,
         smooth=smooth,
         lag=lag,
         batch_size=latents_batch_size,
-        verbose=verbose,
     )
     n_stories = len(stories)
     shuffled_indices = np.random.permutation(n_stories)
-    n_voxels = Xs[0].shape[1]
-    if subsample_voxels is not None:
-        selected_voxels = np.random.permutation(n_voxels)[:subsample_voxels]
-    else:
-        selected_voxels = np.arange(n_voxels)
-    Xs = [Xs[i][:, selected_voxels] for i in shuffled_indices]
+    Xs = [Xs[i] for i in shuffled_indices]
     Ys = [Ys[i] for i in shuffled_indices]
     stories = stories[shuffled_indices]
     n_valid = max(1, int(valid_ratio * n_stories))
@@ -181,14 +160,12 @@ def train(
     Y_valid = scaler.transform(np.concatenate(Ys[n_test : n_test + n_valid]))
     Y_test = scaler.transform(np.concatenate(Ys[:n_test]))
 
-    if verbose and not decoder.endswith("_cv"):
+    if not decoder.endswith("_cv"):
         console.log(
             f"X_train: {X_train.shape}, Y_train: {Y_train.shape}\n"
             f"X_valid: {X_valid.shape}, Y_valid: {Y_valid.shape}\n"
             f"X_test: {X_test.shape}, Y_test: {Y_test.shape}\n"
-            f"{n_train} train stories: {', '.join(stories[n_test+n_valid:])}\n"
-            f"{n_valid} valid stories: {', '.join(stories[n_test:n_test+n_valid])}\n"
-            f"{n_test} test stories: {', '.join(stories[:n_test])}"
+            f"{n_train} train stories, {n_valid} valid stories, {n_test} test stories"
         )
 
     if decoder.lower() == "fast_ridge":
@@ -199,11 +176,10 @@ def train(
             Y_train,
             Y_valid,
             Y_test,
-            verbose=verbose,
             **decoder_params,
         )
     elif decoder.lower() == "fast_ridge_cv":
-        output = fast_ridge_cv(Xs, Ys, verbose=verbose, **decoder_params)
+        output = fast_ridge_cv(Xs, Ys, **decoder_params)
     elif decoder.lower() == "ridge":
         output = ridge(
             X_train,
@@ -212,7 +188,6 @@ def train(
             Y_train,
             Y_valid,
             Y_test,
-            verbose=verbose,
             **decoder_params,
         )
     else:
@@ -226,7 +201,6 @@ def train(
             decoder=decoder,
             seed=seed,
             setup_config=setup_config,
-            verbose=verbose,
             **decoder_params,
         )
 

@@ -1,7 +1,7 @@
 #!.env/bin/python
 import argparse
 
-from src.train import train
+from src.main import main
 
 parser = argparse.ArgumentParser(description="Argument parser")
 parser.add_argument("--subject", type=str, default="UTS03", help="Subject name")
@@ -13,7 +13,7 @@ parser.add_argument(
 )
 parser.add_argument("--decoder", type=str, default="brain_decoder", help="Decoder name")
 parser.add_argument("--loss", type=str, default="mixco")
-parser.add_argument("--context_length", type=int, default=5, help="Context length")
+parser.add_argument("--context_length", type=int, default=6, help="Context length")
 parser.add_argument("--lag", type=int, default=3, help="Lag")
 parser.add_argument("--smooth", type=int, default=0, help="Smooth")
 parser.add_argument(
@@ -41,4 +41,4 @@ parser.add_argument("--latents_batch_size", type=int, default=64)
 
 args = parser.parse_args()
 
-train(**vars(args))
+main(**vars(args))

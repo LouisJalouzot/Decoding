@@ -1,7 +1,6 @@
 from collections import defaultdict
 from copy import deepcopy
 from functools import partial
-from hashlib import sha1
 from pathlib import Path
 from time import time
 
@@ -309,7 +308,6 @@ def train_brain_decoder(
     monitor="val/relative_median_rank",
     loss="mixco",
     seed=0,
-    setup_config={},
     weight_decay=1e-6,
     lr=1e-4,
     max_epochs=100,
@@ -328,40 +326,23 @@ def train_brain_decoder(
     Y_test = torch.from_numpy(Y_test)
     in_dim = X_train.shape[1]
     out_dim = Y_train.shape[1]
-    config = {
-        "decoder": decoder,
-        "loss": loss,
-        "temperature": temperature,
-        "lr": lr,
-        "weight_decay": weight_decay,
-        "max_epochs": max_epochs,
-        "batch_size": batch_size,
-    }
-    name = "_".join([f"{key}={value}" for key, value in config.items()])
-    config["patience"] = patience
-    config["seed"] = seed
-    config.update(decoder_params)
-    config.update(setup_config)
 
     if decoder.lower() == "brain_decoder":
-        decoder_class = BrainDecoder
+        decoder = BrainDecoder(
+            in_dim=in_dim,
+            out_dim=out_dim,
+            **decoder_params,
+        ).to(device)
     elif decoder.lower() == "simple_mlp":
-        decoder_class = SimpleMLP
-    decoder = decoder_class(
-        in_dim=in_dim,
-        out_dim=out_dim,
-        **decoder_params,
-    ).to(device)
+        decoder = SimpleMLP(
+            in_dim=in_dim,
+            out_dim=out_dim,
+            **decoder_params,
+        ).to(device)
+
     n_params = sum([p.numel() for p in decoder.parameters()])
     console.log(f"Decoder has {n_params:.3g} parameters.")
-
-    config["n_params"] = n_params
-    wandb_run = wandb.init(
-        name=name,
-        config=config,
-        id=sha1(repr(sorted(config.items())).encode()).hexdigest(),
-        save_code=True,
-    )
+    wandb.config["n_params"] = n_params
 
     no_decay = ["bias", "LayerNorm.weight"]
     opt_grouped_parameters = [
@@ -489,11 +470,7 @@ def train_brain_decoder(
             else:
                 patience_counter += 1
                 monitor_metric = f"[red]{monitor_metric:.5g}"
-                if patience_counter >= patience:
-                    console.log(
-                        f"Early stopping at epoch {epoch} as [bold green]{monitor}[/] did not improve for {patience} epochs."
-                    )
-                    break
+
             table.add_row(
                 f"{epoch} / {max_epochs}",
                 monitor_metric,
@@ -501,6 +478,12 @@ def train_brain_decoder(
                 f"{time() - t:.3g}s",
                 *[f"{v:.3g}" for k, v in output.items() if not k.endswith("ranks")],
             )
+
+            if patience_counter >= patience:
+                console.log(
+                    f"Early stopping at epoch {epoch} as [bold green]{monitor}[/] did not improve for {patience} epochs."
+                )
+                break
 
     # Restore best model
     decoder.load_state_dict(best_decoder_state_dict)
@@ -529,8 +512,6 @@ def train_brain_decoder(
         for key, value in metrics.items():
             output[split + key] = value
     wandb.log(output)
-    wandb.finish()
-    wandb_run.finish()
 
     for key, value in output.items():
         if isinstance(value, wandb.Histogram):

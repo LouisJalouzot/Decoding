@@ -271,6 +271,52 @@ class LSTM(nn.Module):
         return self.lstm(X)[0].data
 
 
+class RNN(nn.Module):
+    def __init__(
+        self,
+        in_dim,
+        out_dim,
+        num_layers=1,
+        dropout=0.7,
+        **rnn_params,
+    ):
+        super().__init__()
+        self.rnn = nn.RNN(
+            input_size=in_dim,
+            hidden_size=out_dim,
+            num_layers=num_layers,
+            dropout=dropout,
+            batch_first=True,
+            **rnn_params,
+        )
+
+    def forward(self, X):
+        return self.rnn(X)[0].data
+
+
+class GRU(nn.Module):
+    def __init__(
+        self,
+        in_dim,
+        out_dim,
+        num_layers=1,
+        dropout=0.7,
+        **gru_params,
+    ):
+        super().__init__()
+        self.gru = nn.GRU(
+            input_size=in_dim,
+            hidden_size=out_dim,
+            num_layers=num_layers,
+            dropout=dropout,
+            batch_first=True,
+            **gru_params,
+        )
+
+    def forward(self, X):
+        return self.gru(X)[0].data
+
+
 def evaluate(dl, decoder, negatives, top_k_accuracies, temperature):
     decoder.eval()
     metrics = defaultdict(list)
@@ -390,6 +436,18 @@ def train_brain_decoder(
         ).to(device)
     elif decoder.lower() == "simple_mlp":
         decoder = SimpleMLP(
+            in_dim=in_dim,
+            out_dim=out_dim,
+            **decoder_params,
+        ).to(device)
+    elif decoder.lower() == "rnn":
+        decoder = RNN(
+            in_dim=in_dim,
+            out_dim=out_dim,
+            **decoder_params,
+        ).to(device)
+    elif decoder.lower() == "gru":
+        decoder = GRU(
             in_dim=in_dim,
             out_dim=out_dim,
             **decoder_params,

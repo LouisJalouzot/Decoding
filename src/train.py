@@ -119,7 +119,7 @@ def train(
             **decoder_params,
         )
     else:
-        if decoder.lower() == "lstm":
+        if decoder.lower() in ["rnn", "gru", "lstm"]:
             X_train = np.split(X_train, np.cumsum(lengths_train)[:-1])
             X_valid = np.split(X_valid, np.cumsum(lengths_valid)[:-1])
             X_test = np.split(X_test, np.cumsum(lengths_test)[:-1])

@@ -398,7 +398,7 @@ def train_brain_decoder(
     # Monitor: name of the metric to monitor for early stopping, lower is better
     torch.manual_seed(seed)
 
-    if decoder.lower() == "lstm":
+    if decoder.lower() in ["rnn", "gru", "lstm"]:
         in_dim = X_train[0].shape[1]
         out_dim = Y_train[0].shape[1]
         train_dl = DataloaderTimeSeries(

@@ -614,10 +614,12 @@ def train_brain_decoder(
         ("train/", train_dl, Y_train),
         ("test/", test_dl, Y_test),
     ]:
+        if decoder.lower() in ["rnn", "gru", "lstm"]:
+            negatives = (torch.Tensor(np.concatenate(negatives)),)
         metrics = evaluate(
             dl,
             decoder,
-            torch.Tensor(np.concatenate(negatives)),
+            negatives,
             top_k_accuracies,
             temperature,
         )

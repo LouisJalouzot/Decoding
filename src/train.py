@@ -73,13 +73,17 @@ def train(
     Xs = [Xs[i] for i in shuffled_indices]
     Ys = [Ys[i] for i in shuffled_indices]
     stories = stories[shuffled_indices]
+    lengths = [x.shape[0] for x in Xs]
     n_valid = max(1, int(valid_ratio * n_stories))
     n_test = max(1, int(test_ratio * n_stories))
     n_train = n_stories - n_valid - n_test
     scaler = StandardScaler(copy=False)
     X_train = scaler.fit_transform(np.concatenate(Xs[n_test + n_valid :]))
+    lengths_train = lengths[n_test + n_valid :]
     X_valid = scaler.transform(np.concatenate(Xs[n_test : n_test + n_valid]))
+    lengths_valid = lengths[n_test : n_test + n_valid]
     X_test = scaler.transform(np.concatenate(Xs[:n_test]))
+    lengths_test = lengths[:n_test]
     Y_train = scaler.fit_transform(np.concatenate(Ys[n_test + n_valid :]))
     Y_valid = scaler.transform(np.concatenate(Ys[n_test : n_test + n_valid]))
     Y_test = scaler.transform(np.concatenate(Ys[:n_test]))
@@ -115,6 +119,13 @@ def train(
             **decoder_params,
         )
     else:
+        if decoder.lower() == "lstm":
+            X_train = np.split(X_train, np.cumsum(lengths_train)[:-1])
+            X_valid = np.split(X_valid, np.cumsum(lengths_valid)[:-1])
+            X_test = np.split(X_test, np.cumsum(lengths_test)[:-1])
+            Y_train = np.split(Y_train, np.cumsum(lengths_train)[:-1])
+            Y_valid = np.split(Y_valid, np.cumsum(lengths_valid)[:-1])
+            Y_test = np.split(Y_test, np.cumsum(lengths_test)[:-1])
         output = train_brain_decoder(
             X_train,
             Y_train,

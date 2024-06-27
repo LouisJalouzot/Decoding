@@ -1,4 +1,5 @@
 import subprocess
+from typing import List, Union
 
 import numpy as np
 import torch
@@ -14,6 +15,7 @@ from rich.progress import (
     TimeElapsedColumn,
     TimeRemainingColumn,
 )
+from torch.nn.utils.rnn import pack_sequence
 
 from src.textgrids import TextGrid
 
@@ -93,3 +95,64 @@ def ewma(data, halflife):
     cumsums = mult.cumsum(0)
     out = offsets + cumsums * scale_arr[::-1, None]
     return out
+
+
+class DataloaderTimeSeries:
+    def __init__(
+        self,
+        X: Union[List[torch.Tensor], List[np.array]],
+        Y: Union[List[torch.Tensor], List[np.array]],
+        batch_size: int,
+        shuffle: bool = True,
+    ) -> None:
+        self.X = [torch.Tensor(x) for x in X]
+        self.Y = [torch.Tensor(y) for y in Y]
+        self.lengths = np.array([x.shape[0] for x in X])
+        self.n_stories = len(self.lengths)
+        self.batch_size = batch_size
+        self.shuffle = shuffle
+
+        assert len(X) == len(Y)
+        assert all(x.shape[0] == y.shape[0] for x, y in zip(X, Y))
+
+        if np.all(self.lengths > batch_size):
+            raise ValueError(
+                f"All stories lengths are greater than the batch_size ({batch_size})."
+            )
+        elif np.any(self.lengths > batch_size):
+            console.log(
+                f"[red]{(self.lengths > batch_size).sum()} stories have a length greater than the batch_size ({batch_size}) so they won't be used."
+            )
+            self.X = [x for x in X if x.shape[0] <= batch_size]
+            self.Y = [y for y in Y if y.shape[0] <= batch_size]
+            self.lengths = [l for l in self.lengths if l <= batch_size]
+            self.n_stories = len(self.lengths)
+
+    def __iter__(self):
+        indices = np.arange(self.n_stories)
+        if self.shuffle:
+            np.random.shuffle(indices)
+        self.batches = []
+        sequence_index = 0
+        while sequence_index < self.n_stories:
+            batch_length = 0
+            batch_indices = []
+            while sequence_index < self.n_stories:
+                i = indices[sequence_index]
+                length = self.lengths[i]
+                if batch_length + length > self.batch_size:
+                    break
+                batch_indices.append(i)
+                sequence_index += 1
+                batch_length += length
+            self.batches.append(batch_indices)
+        return self
+
+    def __next__(self):
+        if self.batches == []:
+            raise StopIteration
+        else:
+            batch_indices = self.batches.pop(0)
+            X = pack_sequence([self.X[i] for i in batch_indices], enforce_sorted=False)
+            Y = torch.cat([self.Y[i] for i in batch_indices])
+            return X, Y

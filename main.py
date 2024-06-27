@@ -19,19 +19,7 @@ parser.add_argument("--smooth", type=int, default=0, help="Smooth")
 parser.add_argument(
     "--subsample_voxels", type=int, default=None, help="Number of voxels to subsample"
 )
-parser.add_argument(
-    "--hidden_size_backbone", type=int, default=512, help="Hidden size for backbone"
-)
-parser.add_argument(
-    "--hidden_size_projector", type=int, default=512, help="Hidden size for projector"
-)
 parser.add_argument("--dropout", type=float, default=0.7, help="Dropout rate")
-parser.add_argument(
-    "--n_res_blocks", type=int, default=2, help="Number of residual blocks"
-)
-parser.add_argument(
-    "--n_proj_blocks", type=int, default=1, help="Number of projection blocks"
-)
 parser.add_argument("--patience", type=int, default=5)
 parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
 parser.add_argument("--weight_decay", type=float, default=1e-6, help="Weight decay")

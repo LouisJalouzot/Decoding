@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Tuple, Union
 
 import h5py
 import numpy as np
@@ -22,7 +22,7 @@ This module contains functions for training and fetching data.
 
 @memory.cache
 def train(
-    subject: str = "UTS00",
+    subject: Union[str, List[str]] = "UTS00",
     decoder: str = "ridge",
     model: str = "clip",
     context_length: int = 2,
@@ -77,16 +77,15 @@ def train(
     n_valid = max(1, int(valid_ratio * n_stories))
     n_test = max(1, int(test_ratio * n_stories))
     n_train = n_stories - n_valid - n_test
-    scaler = StandardScaler(copy=False)
-    X_train = scaler.fit_transform(np.concatenate(Xs[n_test + n_valid :]))
+    X_train = np.concatenate(Xs[n_test + n_valid :])
     lengths_train = lengths[n_test + n_valid :]
-    X_valid = scaler.transform(np.concatenate(Xs[n_test : n_test + n_valid]))
+    X_valid = np.concatenate(Xs[n_test : n_test + n_valid])
     lengths_valid = lengths[n_test : n_test + n_valid]
-    X_test = scaler.transform(np.concatenate(Xs[:n_test]))
+    X_test = np.concatenate(Xs[:n_test])
     lengths_test = lengths[:n_test]
-    Y_train = scaler.fit_transform(np.concatenate(Ys[n_test + n_valid :]))
-    Y_valid = scaler.transform(np.concatenate(Ys[n_test : n_test + n_valid]))
-    Y_test = scaler.transform(np.concatenate(Ys[:n_test]))
+    Y_train = np.concatenate(Ys[n_test + n_valid :])
+    Y_valid = np.concatenate(Ys[n_test : n_test + n_valid])
+    Y_test = np.concatenate(Ys[:n_test])
 
     if not decoder.endswith("_cv"):
         console.log(

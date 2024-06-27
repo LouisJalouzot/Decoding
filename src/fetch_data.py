@@ -4,6 +4,7 @@ from typing import List, Tuple
 
 import h5py
 import numpy as np
+from sklearn.preprocessing import StandardScaler
 
 from src.prepare_latents import prepare_latents
 from src.utils import console, progress
@@ -64,10 +65,11 @@ def fetch_data(
                     new_X[i:] += X[:-i]
                     count[i:] += 1
                 X = new_X / count
-            Xs.append(X[lag:])
-
+            X = StandardScaler().fit_transform(X[lag:])
+            Xs.append(X)
             Y = prepare_latents(story, model, tr, context_length, batch_size)
-            Ys.append(Y[:-lag])
+            # Y = StandardScaler().fit_transform(Y[:-lag])
+            Ys.append(Y)
             progress.update(task, description=f"Story: {story}", advance=1)
 
     for i, (X, Y) in enumerate(zip(Xs, Ys)):

@@ -253,10 +253,13 @@ class LSTM(nn.Module):
     ):
         if hidden_size is None:
             hidden_size = out_dim
+            proj_size = None
+        else:
+            proj_size = out_dim
         super().__init__()
         self.lstm = nn.LSTM(
             input_size=in_dim,
-            proj_size=out_dim,
+            proj_size=proj_size,
             hidden_size=hidden_size,
             num_layers=num_layers,
             dropout=dropout,

@@ -50,7 +50,7 @@ def fetch_data(
         selected_voxels = np.arange(n_voxels)
 
     console.log(f"Fetching brain images and latents for {len(stories)} stories")
-    Xs, Ys = [], []
+    output = {}
     with progress:
         task = progress.add_task("", total=len(stories))
         for story in stories:
@@ -66,17 +66,13 @@ def fetch_data(
                     count[i:] += 1
                 X = new_X / count
             X = StandardScaler().fit_transform(X[lag:])
-            Xs.append(X)
             Y = prepare_latents(story, model, tr, context_length, batch_size)
             Y = StandardScaler().fit_transform(Y[:-lag])
-            Ys.append(Y)
+            if Y.shape[0] > X.shape[0]:
+                # More latents than brain scans (first brain scans where removed)
+                # We drop the corresponding latents
+                Y = Y[-X.shape[0] :]
+            output[story] = X, Y
             progress.update(task, description=f"Story: {story}", advance=1)
 
-    for i, (X, Y) in enumerate(zip(Xs, Ys)):
-        if Y.shape[0] > X.shape[0]:
-            # More latents than brain scans (first brain scans where removed)
-            # We drop the corresponding latents
-            Y = Y[-X.shape[0] :]
-        Xs[i] = X
-        Ys[i] = Y
-    return Xs, Ys, np.array(stories)
+    return output

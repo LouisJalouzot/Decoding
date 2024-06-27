@@ -68,7 +68,7 @@ def fetch_data(
             X = StandardScaler().fit_transform(X[lag:])
             Xs.append(X)
             Y = prepare_latents(story, model, tr, context_length, batch_size)
-            # Y = StandardScaler().fit_transform(Y[:-lag])
+            Y = StandardScaler().fit_transform(Y[:-lag])
             Ys.append(Y)
             progress.update(task, description=f"Story: {story}", advance=1)
 

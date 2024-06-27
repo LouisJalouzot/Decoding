@@ -1,7 +1,6 @@
 from collections import defaultdict
 from copy import deepcopy
 from functools import partial
-from hashlib import sha1
 from pathlib import Path
 from time import time
 
@@ -11,11 +10,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 from rich.live import Live
 from rich.table import Table
+from torch.nn.utils.rnn import PackedSequence
 from torch.utils.data import DataLoader, TensorDataset
 
 import wandb
 from src.metrics import retrieval_metrics
-from src.utils import console, device
+from src.utils import DataloaderTimeSeries, console, device
 
 
 def mixco_sample_augmentation(samples, beta=0.15, s_thresh=0.5):
@@ -241,6 +241,33 @@ class BrainDecoder(nn.Module):
         return self.projector(x)
 
 
+class LSTM(nn.Module):
+    def __init__(
+        self,
+        in_dim,
+        out_dim,
+        hidden_size=None,
+        num_layers=1,
+        dropout=0.7,
+        **lstm_params,
+    ):
+        if hidden_size is None:
+            hidden_size = out_dim
+        super().__init__()
+        self.lstm = nn.LSTM(
+            input_size=in_dim,
+            proj_size=out_dim,
+            hidden_size=hidden_size,
+            num_layers=num_layers,
+            dropout=dropout,
+            batch_first=True,
+            **lstm_params,
+        )
+
+    def forward(self, X):
+        return self.lstm(X)[0].data
+
+
 def evaluate(dl, decoder, negatives, top_k_accuracies, temperature):
     decoder.eval()
     metrics = defaultdict(list)
@@ -268,12 +295,14 @@ def evaluate(dl, decoder, negatives, top_k_accuracies, temperature):
                 )
                 # Evaluate mixco symmetrical NCE loss
                 (
-                    X_mixco,
+                    _,
                     perm,
                     betas,
                     select,
-                ) = mixco_sample_augmentation(X)
-                Y_preds = decoder(X_mixco)
+                ) = mixco_sample_augmentation(
+                    X.data if isinstance(X, PackedSequence) else X
+                )
+                Y_preds = decoder(X)
                 mixco_loss = mixco_symmetrical_nce_loss(
                     Y_preds,
                     Y,
@@ -282,10 +311,10 @@ def evaluate(dl, decoder, negatives, top_k_accuracies, temperature):
                     betas=betas,
                     select=select,
                 )
-                metrics["mse_loss"].append(mse_loss.item())
-                metrics["symm_nce_loss"].append(symm_nce_loss.item())
-                metrics["mixco_loss"].append(mixco_loss.item())
-                metrics["aug_loss"].append(mixco_loss.item() - symm_nce_loss.item())
+                metrics["mse"].append(mse_loss.item())
+                metrics["symm_nce"].append(symm_nce_loss.item())
+                metrics["mixco"].append(mixco_loss.item())
+                metrics["aug"].append(mixco_loss.item() - symm_nce_loss.item())
     for key, value in metrics.items():
         if key == "relative_ranks":
             relative_ranks = torch.cat(value).cpu()
@@ -309,7 +338,6 @@ def train_brain_decoder(
     monitor="val/relative_median_rank",
     loss="mixco",
     seed=0,
-    setup_config={},
     weight_decay=1e-6,
     lr=1e-4,
     max_epochs=100,
@@ -320,48 +348,59 @@ def train_brain_decoder(
 ):
     # Monitor: name of the metric to monitor for early stopping, lower is better
     torch.manual_seed(seed)
-    X_train = torch.from_numpy(X_train)
-    Y_train = torch.from_numpy(Y_train)
-    X_valid = torch.from_numpy(X_valid)
-    Y_valid = torch.from_numpy(Y_valid).to(device)
-    X_test = torch.from_numpy(X_test)
-    Y_test = torch.from_numpy(Y_test)
-    in_dim = X_train.shape[1]
-    out_dim = Y_train.shape[1]
-    config = {
-        "decoder": decoder,
-        "loss": loss,
-        "temperature": temperature,
-        "lr": lr,
-        "weight_decay": weight_decay,
-        "max_epochs": max_epochs,
-        "batch_size": batch_size,
-    }
-    name = "_".join([f"{key}={value}" for key, value in config.items()])
-    config["patience"] = patience
-    config["seed"] = seed
-    config.update(decoder_params)
-    config.update(setup_config)
+
+    if decoder.lower() == "lstm":
+        in_dim = X_train[0].shape[1]
+        out_dim = Y_train[0].shape[1]
+        train_dl = DataloaderTimeSeries(
+            X_train,
+            Y_train,
+            batch_size=batch_size,
+            shuffle=True,
+        )
+        val_dl = DataloaderTimeSeries(X_valid, Y_valid, batch_size=batch_size)
+        test_dl = DataloaderTimeSeries(X_test, Y_test, batch_size=batch_size)
+        Y_valid = torch.Tensor(np.concatenate(Y_valid)).to(device)
+    else:
+        X_train = torch.Tensor(X_train)
+        Y_train = torch.Tensor(Y_train)
+        X_valid = torch.Tensor(X_valid)
+        Y_valid = torch.Tensor(Y_valid).to(device)
+        X_test = torch.Tensor(X_test)
+        Y_test = torch.Tensor(Y_test)
+        in_dim = X_train.shape[1]
+        out_dim = Y_train.shape[1]
+        train_dl = DataLoader(
+            TensorDataset(X_train, Y_train),
+            batch_size=batch_size,
+            shuffle=True,
+            drop_last=True,
+        )
+        val_dl = DataLoader(TensorDataset(X_valid, Y_valid), batch_size=batch_size)
+        test_dl = DataLoader(TensorDataset(X_test, Y_test), batch_size=batch_size)
 
     if decoder.lower() == "brain_decoder":
-        decoder_class = BrainDecoder
+        decoder = BrainDecoder(
+            in_dim=in_dim,
+            out_dim=out_dim,
+            **decoder_params,
+        ).to(device)
     elif decoder.lower() == "simple_mlp":
-        decoder_class = SimpleMLP
-    decoder = decoder_class(
-        in_dim=in_dim,
-        out_dim=out_dim,
-        **decoder_params,
-    ).to(device)
+        decoder = SimpleMLP(
+            in_dim=in_dim,
+            out_dim=out_dim,
+            **decoder_params,
+        ).to(device)
+    elif decoder.lower() == "lstm":
+        decoder = LSTM(
+            in_dim=in_dim,
+            out_dim=out_dim,
+            **decoder_params,
+        ).to(device)
+
     n_params = sum([p.numel() for p in decoder.parameters()])
     console.log(f"Decoder has {n_params:.3g} parameters.")
-
-    config["n_params"] = n_params
-    wandb_run = wandb.init(
-        name=name,
-        config=config,
-        id=sha1(repr(sorted(config.items())).encode()).hexdigest(),
-        save_code=True,
-    )
+    wandb.config["n_params"] = n_params
 
     no_decay = ["bias", "LayerNorm.weight"]
     opt_grouped_parameters = [
@@ -389,15 +428,6 @@ def train_brain_decoder(
     losses = ["mixco", "symm_nce", "mse"]
     if loss not in losses:
         raise ValueError(f"Unsupported loss {loss}. Choose one of {losses}.")
-
-    train_dl = DataLoader(
-        TensorDataset(X_train, Y_train),
-        batch_size=batch_size,
-        shuffle=True,
-        drop_last=True,
-    )
-    val_dl = DataLoader(TensorDataset(X_valid, Y_valid), batch_size=batch_size)
-    test_dl = DataLoader(TensorDataset(X_test, Y_test), batch_size=batch_size)
 
     # top_k_accuracies = [1, 5, 10, int(len(Y_valid) / 10), int(len(Y_valid) / 5)]
     top_k_accuracies = []
@@ -438,12 +468,14 @@ def train_brain_decoder(
                     if loss == "mixco":
                         # Evaluate mixco loss and back-propagate on it
                         (
-                            X_mixco,
+                            _,
                             perm,
                             betas,
                             select,
-                        ) = mixco_sample_augmentation(X)
-                        Y_preds = decoder(X_mixco)
+                        ) = mixco_sample_augmentation(
+                            X.data if isinstance(X, PackedSequence) else X
+                        )
+                        Y_preds = decoder(X)
                         train_loss = mixco_symmetrical_nce_loss(
                             Y_preds,
                             Y,
@@ -489,11 +521,7 @@ def train_brain_decoder(
             else:
                 patience_counter += 1
                 monitor_metric = f"[red]{monitor_metric:.5g}"
-                if patience_counter >= patience:
-                    console.log(
-                        f"Early stopping at epoch {epoch} as [bold green]{monitor}[/] did not improve for {patience} epochs."
-                    )
-                    break
+
             table.add_row(
                 f"{epoch} / {max_epochs}",
                 monitor_metric,
@@ -501,6 +529,12 @@ def train_brain_decoder(
                 f"{time() - t:.3g}s",
                 *[f"{v:.3g}" for k, v in output.items() if not k.endswith("ranks")],
             )
+
+            if patience_counter >= patience:
+                console.log(
+                    f"Early stopping at epoch {epoch} as [bold green]{monitor}[/] did not improve for {patience} epochs."
+                )
+                break
 
     # Restore best model
     decoder.load_state_dict(best_decoder_state_dict)
@@ -522,15 +556,13 @@ def train_brain_decoder(
         metrics = evaluate(
             dl,
             decoder,
-            negatives,
+            torch.Tensor(np.concatenate(negatives)),
             top_k_accuracies,
             temperature,
         )
         for key, value in metrics.items():
             output[split + key] = value
     wandb.log(output)
-    wandb.finish()
-    wandb_run.finish()
 
     for key, value in output.items():
         if isinstance(value, wandb.Histogram):

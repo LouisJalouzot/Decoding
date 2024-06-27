@@ -5,13 +5,12 @@ from typing import List, Tuple
 import h5py
 import numpy as np
 import torch
-from joblib import Parallel, delayed
 from sklearn.preprocessing import StandardScaler
 
 from src.brain_decoder import train_brain_decoder
-from src.prepare_latents import prepare_latents
+from src.fetch_data import fetch_data
 from src.ridge import fast_ridge, fast_ridge_cv, ridge
-from src.utils import console, ignore, memory, progress
+from src.utils import console, ignore, memory
 
 """
 train.py
@@ -21,77 +20,7 @@ This module contains functions for training and fetching data.
 """
 
 
-def fetch_data(
-    subject: str,
-    model: str,
-    tr: int,
-    context_length: int,
-    subsample_voxels: int,
-    smooth: int,
-    lag: int,
-    batch_size: int = 64,
-) -> Tuple[List[np.ndarray], List[np.ndarray], np.ndarray]:
-    """
-    Fetches data for training.
-
-    Args:
-        subject (str): The subject identifier.
-        model (str): The model to use.
-        tr (int): The tr value.
-        context_length (int): The context length.
-        lag (int, optional): The lag value. Defaults to 0.
-        verbose (bool, optional): Whether to display progress. Defaults to False.
-
-    Returns:
-        Tuple[List[np.ndarray], List[np.ndarray], np.ndarray]: The fetched data.
-
-    """
-    brain_images_path = Path("data/lebel/derivative/preprocessed_data") / subject
-    stories = [story.replace(".hf5", "") for story in os.listdir(brain_images_path)]
-    n_voxels = h5py.File(
-        brain_images_path / f"{stories[0]}.hf5",
-        "r",
-    )[
-        "data"
-    ].shape[1]
-    if subsample_voxels is not None:
-        selected_voxels = np.random.permutation(n_voxels)[:subsample_voxels]
-    else:
-        selected_voxels = np.arange(n_voxels)
-
-    console.log(f"Fetching brain images and latents for {len(stories)} stories")
-    Xs, Ys = [], []
-    with progress:
-        task = progress.add_task("", total=len(stories))
-        for story in stories:
-            file_path = brain_images_path / f"{story}.hf5"
-            file = h5py.File(file_path, "r")["data"]
-            X = file[:, selected_voxels].astype(np.float32)
-            X = np.nan_to_num(X, nan=0)
-            if smooth > 0:
-                new_X = X.copy()
-                count = np.ones((X.shape[0], 1))
-                for i in range(1, smooth + 1):
-                    new_X[i:] += X[:-i]
-                    count[i:] += 1
-                X = new_X / count
-            Xs.append(X[lag:])
-
-            Y = prepare_latents(story, model, tr, context_length, batch_size)
-            Ys.append(Y[:-lag])
-            progress.update(task, description=f"Story: {story}", advance=1)
-
-    for i, (X, Y) in enumerate(zip(Xs, Ys)):
-        if Y.shape[0] > X.shape[0]:
-            # More latents than brain scans (first brain scans where removed)
-            # We drop the corresponding latents
-            Y = Y[-X.shape[0] :]
-        Xs[i] = X
-        Ys[i] = Y
-    return Xs, Ys, np.array(stories)
-
-
-# @memory.cache()
+@memory.cache
 def train(
     subject: str = "UTS00",
     decoder: str = "ridge",
@@ -128,11 +57,6 @@ def train(
         Union[dict, Tuple[dict, RidgeCV, RobustScaler]]: The training results.
 
     """
-    setup_config = {
-        key: value
-        for key, value in locals().items()
-        if key not in ignore and key != "decoder_params"
-    }
     np.random.seed(seed)
     Xs, Ys, stories = fetch_data(
         subject=subject,
@@ -149,13 +73,17 @@ def train(
     Xs = [Xs[i] for i in shuffled_indices]
     Ys = [Ys[i] for i in shuffled_indices]
     stories = stories[shuffled_indices]
+    lengths = [x.shape[0] for x in Xs]
     n_valid = max(1, int(valid_ratio * n_stories))
     n_test = max(1, int(test_ratio * n_stories))
     n_train = n_stories - n_valid - n_test
     scaler = StandardScaler(copy=False)
     X_train = scaler.fit_transform(np.concatenate(Xs[n_test + n_valid :]))
+    lengths_train = lengths[n_test + n_valid :]
     X_valid = scaler.transform(np.concatenate(Xs[n_test : n_test + n_valid]))
+    lengths_valid = lengths[n_test : n_test + n_valid]
     X_test = scaler.transform(np.concatenate(Xs[:n_test]))
+    lengths_test = lengths[:n_test]
     Y_train = scaler.fit_transform(np.concatenate(Ys[n_test + n_valid :]))
     Y_valid = scaler.transform(np.concatenate(Ys[n_test : n_test + n_valid]))
     Y_test = scaler.transform(np.concatenate(Ys[:n_test]))
@@ -191,6 +119,13 @@ def train(
             **decoder_params,
         )
     else:
+        if decoder.lower() == "lstm":
+            X_train = np.split(X_train, np.cumsum(lengths_train)[:-1])
+            X_valid = np.split(X_valid, np.cumsum(lengths_valid)[:-1])
+            X_test = np.split(X_test, np.cumsum(lengths_test)[:-1])
+            Y_train = np.split(Y_train, np.cumsum(lengths_train)[:-1])
+            Y_valid = np.split(Y_valid, np.cumsum(lengths_valid)[:-1])
+            Y_test = np.split(Y_test, np.cumsum(lengths_test)[:-1])
         output = train_brain_decoder(
             X_train,
             Y_train,
@@ -200,7 +135,6 @@ def train(
             Y_test,
             decoder=decoder,
             seed=seed,
-            setup_config=setup_config,
             **decoder_params,
         )
 

@@ -6,7 +6,7 @@ from src.utils import ignore
 
 
 def main(
-    subject: str = "UTS00",
+    subjects: str = "UTS00",
     decoder: str = "ridge",
     model: str = "clip",
     context_length: int = 2,

@@ -14,318 +14,33 @@ from torch.nn.utils.rnn import PackedSequence
 from torch.utils.data import DataLoader, TensorDataset
 
 import wandb
+from src.decoders import GRU, LSTM, RNN, BrainDecoder, SimpleMLP
+from src.losses import (
+    compute_mixco_symm_nce_loss,
+    compute_mse_loss,
+    compute_symm_nce_loss,
+)
 from src.metrics import retrieval_metrics
-from src.utils import DataloaderTimeSeries, console, device
+from src.utils import MultiSubjectDataloader, console, device
 
 
-def mixco_sample_augmentation(samples, beta=0.15, s_thresh=0.5):
-    """Augment samples with MixCo augmentation.
-
-    Parameters
-    ----------
-    samples : torch.Tensor
-        Samples to augment.
-    beta : float, optional
-        Beta parameter for the Beta distribution, by default 0.15
-    s_thresh : float, optional
-        Proportion of samples which should be affected by MixCo, by default 0.5
-
-    Returns
-    -------
-    samples : torch.Tensor
-        Augmented samples.
-    perm : torch.Tensor
-        Permutation of the samples.
-    betas : torch.Tensor
-        Betas for the MixCo augmentation.
-    select : torch.Tensor
-        Samples affected by MixCo augmentation
-    """
-    # Randomly select samples to augment
-    select = (torch.rand(samples.shape[0]) <= s_thresh).to(samples.device)
-
-    # Randomly select samples used for augmentation
-    perm = torch.randperm(samples.shape[0])
-    samples_shuffle = samples[perm].to(samples.device, dtype=samples.dtype)
-
-    # Sample MixCo coefficients from a Beta distribution
-    betas = (
-        torch.distributions.Beta(beta, beta)
-        .sample([samples.shape[0]])
-        .to(samples.device, dtype=samples.dtype)
-    )
-    betas[~select] = 1
-    betas_shape = [-1] + [1] * (len(samples.shape) - 1)
-
-    # Augment samples
-    samples[select] = samples[select] * betas[select].reshape(
-        *betas_shape
-    ) + samples_shuffle[select] * (1 - betas[select]).reshape(*betas_shape)
-
-    return samples, perm, betas, select
-
-
-def mixco_symmetrical_nce_loss(
-    preds,
-    targs,
-    temperature,
-    perm=None,
-    betas=None,
-    select=None,
-    bidirectional=True,
-):
-    """Compute symmetrical NCE loss with MixCo augmentation.
-
-    Parameters
-    ----------
-    preds : torch.Tensor
-        Predicted latent features.
-    targs : torch.Tensor
-        Target latent features.
-    temperature : float, optional
-        Temperature for the softmax, by default 0.1
-    perm : torch.Tensor, optional
-        Permutation of the samples, by default None
-    betas : torch.Tensor, optional
-        Betas for the MixCo augmentation, by default None
-    select : torch.Tensor, optional
-        Selection of the samples, by default None
-    bidirectional : bool, optional
-        Whether to compute the loss in both directions, by default True
-
-    Returns
-    -------
-    torch.Tensor
-        Symmetrical NCE loss.
-    """
-    preds = nn.functional.normalize(preds, dim=-1)
-    targs = nn.functional.normalize(targs, dim=-1)
-    brain_clip = (preds @ targs.T) / temperature
-
-    if perm is not None and betas is not None and select is not None:
-        probs = torch.diag(betas)
-        probs[torch.arange(preds.shape[0]).to(preds.device), perm] = 1 - betas
-
-        loss = -(brain_clip.log_softmax(-1) * probs).sum(-1).mean()
-        if bidirectional:
-            loss2 = -(brain_clip.T.log_softmax(-1) * probs.T).sum(-1).mean()
-            loss = (loss + loss2) / 2
-        return loss
-    else:
-        loss = F.cross_entropy(
-            brain_clip, torch.arange(brain_clip.shape[0]).to(brain_clip.device)
-        )
-        if bidirectional:
-            loss2 = F.cross_entropy(
-                brain_clip.T,
-                torch.arange(brain_clip.shape[0]).to(brain_clip.device),
-            )
-            loss = (loss + loss2) / 2
-
-        return loss
-
-
-class SimpleMLP(nn.Module):
-    def __init__(self, in_dim, out_dim, hidden_size=1024, dropout=0.7):
-        super().__init__()
-        self.fc1 = nn.Sequential(
-            nn.Linear(in_features=in_dim, out_features=hidden_size),
-            nn.LayerNorm(hidden_size),
-            nn.Dropout(p=dropout),
-            nn.ReLU(),
-        )
-        self.fc2 = nn.Sequential(
-            nn.Linear(in_features=hidden_size, out_features=hidden_size),
-            nn.LayerNorm(hidden_size),
-            nn.Dropout(p=dropout),
-            nn.ReLU(),
-        )
-        self.fc3 = nn.Sequential(
-            nn.Linear(in_features=hidden_size, out_features=out_dim),
-            nn.LayerNorm(out_dim),
-            nn.Dropout(p=dropout),
-        )
-
-    def forward(self, X):
-        X = self.fc1(X)
-        X = self.fc2(X)
-        X = self.fc3(X)
-        return X
-
-
-class BrainDecoder(nn.Module):
-    def __init__(
-        self,
-        in_dim,
-        out_dim,
-        hidden_size_backbone=512,
-        hidden_size_projector=512,
-        dropout=0.7,
-        n_res_blocks=2,
-        n_proj_blocks=1,
-        norm_type="ln",
-        activation_layer_first=False,
-    ):
-        super().__init__()
-
-        self.n_res_blocks = n_res_blocks
-
-        norm_backbone = (
-            partial(nn.BatchNorm1d, num_features=hidden_size_backbone)
-            if norm_type == "bn"
-            else partial(nn.LayerNorm, normalized_shape=hidden_size_backbone)
-        )
-        activation_backbone = (
-            partial(nn.ReLU, inplace=True) if norm_type == "bn" else nn.GELU
-        )
-        activation_and_norm = (
-            (activation_backbone, norm_backbone)
-            if activation_layer_first
-            else (norm_backbone, activation_backbone)
-        )
-
-        # First linear
-        self.lin0 = nn.Sequential(
-            nn.Linear(in_dim, hidden_size_backbone),
-            *[item() for item in activation_and_norm],
-            nn.Dropout(dropout),
-        )
-
-        # Residual blocks
-        self.mlp = nn.ModuleList(
-            [
-                nn.Sequential(
-                    nn.Linear(hidden_size_backbone, hidden_size_backbone),
-                    *[item() for item in activation_and_norm],
-                    nn.Dropout(dropout),
-                )
-                for _ in range(n_res_blocks)
-            ]
-        )
-
-        # Second linear
-        self.lin1 = nn.Linear(hidden_size_backbone, hidden_size_projector, bias=True)
-
-        # Projector
-        assert n_proj_blocks >= 0
-        projector_layers = []
-        for _ in range(n_proj_blocks):
-            projector_layers.extend(
-                [
-                    nn.LayerNorm(hidden_size_projector),
-                    nn.GELU(),
-                    nn.Linear(hidden_size_projector, hidden_size_projector),
-                ]
-            )
-        projector_layers.extend(
-            [
-                nn.LayerNorm(hidden_size_projector),
-                nn.GELU(),
-                nn.Linear(hidden_size_projector, out_dim),
-            ]
-        )
-        self.projector = nn.Sequential(*projector_layers)
-
-    def forward(self, x):
-        x = self.lin0(x)
-
-        residual = x
-        for res_block in range(self.n_res_blocks):
-            x = self.mlp[res_block](x)
-            x += residual
-            residual = x
-        x = x.reshape(len(x), -1)
-
-        x = self.lin1(x)
-
-        return self.projector(x)
-
-
-class LSTM(nn.Module):
-    def __init__(
-        self,
-        in_dim,
-        out_dim,
-        hidden_size=None,
-        num_layers=1,
-        dropout=0.7,
-        **lstm_params,
-    ):
-        if hidden_size is None:
-            hidden_size = out_dim
-            proj_size = 0
-        else:
-            proj_size = out_dim
-        super().__init__()
-        self.lstm = nn.LSTM(
-            input_size=in_dim,
-            proj_size=proj_size,
-            hidden_size=hidden_size,
-            num_layers=num_layers,
-            dropout=dropout,
-            batch_first=True,
-            **lstm_params,
-        )
-
-    def forward(self, X):
-        return self.lstm(X)[0].data
-
-
-class RNN(nn.Module):
-    def __init__(
-        self,
-        in_dim,
-        out_dim,
-        num_layers=1,
-        dropout=0.7,
-        **rnn_params,
-    ):
-        super().__init__()
-        self.rnn = nn.RNN(
-            input_size=in_dim,
-            hidden_size=out_dim,
-            num_layers=num_layers,
-            dropout=dropout,
-            batch_first=True,
-            **rnn_params,
-        )
-
-    def forward(self, X):
-        return self.rnn(X)[0].data
-
-
-class GRU(nn.Module):
-    def __init__(
-        self,
-        in_dim,
-        out_dim,
-        num_layers=1,
-        dropout=0.7,
-        **gru_params,
-    ):
-        super().__init__()
-        self.gru = nn.GRU(
-            input_size=in_dim,
-            hidden_size=out_dim,
-            num_layers=num_layers,
-            dropout=dropout,
-            batch_first=True,
-            **gru_params,
-        )
-
-    def forward(self, X):
-        return self.gru(X)[0].data
-
-
-def evaluate(dl, decoder, negatives, top_k_accuracies, temperature):
+def evaluate(dl, projector, decoder, negatives, top_k_accuracies, temperature):
     decoder.eval()
     metrics = defaultdict(list)
     negatives = negatives.to(device)
-    for X, Y in dl:
+    with torch.cuda.amp.autocast():
         with torch.no_grad():
-            with torch.cuda.amp.autocast():
-                X = X.to(device)
-                Y = Y.to(device)
+            for batchdl in dl:
+                X = []
+                Y = []
+                for i, subj_Xs, subj_Ys in batchdl:
+                    subj_Xs = torch.cat(subj_Xs).to(device)
+                    subj_Xs = projector[i](subj_Xs)
+                    subj_Ys = torch.cat(subj_Ys).to(device)
+                    X.append(subj_Xs)
+                    Y.append(subj_Ys)
+                X = torch.cat(X).to(device)
+                Y = torch.cat(Y).to(device)
                 Y_preds = decoder(X)
                 # Evaluate retrieval metrics
                 for key, value in retrieval_metrics(
@@ -336,30 +51,9 @@ def evaluate(dl, decoder, negatives, top_k_accuracies, temperature):
                     top_k_accuracies=top_k_accuracies,
                 ).items():
                     metrics[key].append(value)
-                # Evaluate MSE loss
-                mse_loss = F.mse_loss(Y_preds, Y)
-                # Evaluate symmetrical NCE loss
-                symm_nce_loss = mixco_symmetrical_nce_loss(
-                    Y_preds, Y, temperature=temperature
-                )
-                # Evaluate mixco symmetrical NCE loss
-                (
-                    _,
-                    perm,
-                    betas,
-                    select,
-                ) = mixco_sample_augmentation(
-                    X.data if isinstance(X, PackedSequence) else X
-                )
-                Y_preds = decoder(X)
-                mixco_loss = mixco_symmetrical_nce_loss(
-                    Y_preds,
-                    Y,
-                    temperature=temperature,
-                    perm=perm,
-                    betas=betas,
-                    select=select,
-                )
+                mse_loss = compute_mse_loss(X, Y, decoder)
+                symm_nce_loss = compute_symm_nce_loss(X, Y, decoder, temperature)
+                mixco_loss = compute_mixco_symm_nce_loss(X, Y, decoder, temperature)
                 metrics["mse"].append(mse_loss.item())
                 metrics["symm_nce"].append(symm_nce_loss.item())
                 metrics["mixco"].append(mixco_loss.item())
@@ -376,90 +70,52 @@ def evaluate(dl, decoder, negatives, top_k_accuracies, temperature):
 
 
 def train_brain_decoder(
-    X_train,
-    Y_train,
-    X_valid,
-    Y_valid,
-    X_test,
-    Y_test,
-    patience=5,
+    Xs,
+    Ys,
+    train_runs,
+    valid_runs,
+    test_runs,
     decoder="brain_decoder",
-    monitor="val/relative_median_rank",
+    # multi_subject_mode="random",
+    # projection_type="individual",
+    patience=5,
+    monitor="valid/relative_median_rank",
     loss="mixco",
-    seed=0,
     weight_decay=1e-6,
     lr=1e-4,
     max_epochs=100,
-    batch_size=128,
+    batch_size=4,
     temperature=0.01,
     checkpoints_path=None,
+    hidden_size=512,
     **decoder_params,
 ):
-    # Monitor: name of the metric to monitor for early stopping, lower is better
-    torch.manual_seed(seed)
+    train_dl = MultiSubjectDataloader(
+        Xs.loc[train_runs], Ys.loc[train_runs], batch_size, shuffle=True
+    )
+    valid_dl = MultiSubjectDataloader(
+        Xs.loc[valid_runs], Ys.loc[valid_runs], batch_size
+    )
+    Y_valid = torch.cat(tuple(Ys.loc[valid_runs].iloc[:, 0].dropna())).to(device)
+    test_dl = MultiSubjectDataloader(Xs.loc[test_runs], Ys.loc[test_runs], batch_size)
 
-    if decoder.lower() in ["rnn", "gru", "lstm"]:
-        in_dim = X_train[0].shape[1]
-        out_dim = Y_train[0].shape[1]
-        train_dl = DataloaderTimeSeries(
-            X_train,
-            Y_train,
-            batch_size=batch_size,
-            shuffle=True,
-        )
-        val_dl = DataloaderTimeSeries(X_valid, Y_valid, batch_size=batch_size)
-        test_dl = DataloaderTimeSeries(X_test, Y_test, batch_size=batch_size)
-        Y_valid = torch.Tensor(np.concatenate(Y_valid)).to(device)
-    else:
-        X_train = torch.Tensor(X_train)
-        Y_train = torch.Tensor(Y_train)
-        X_valid = torch.Tensor(X_valid)
-        Y_valid = torch.Tensor(Y_valid).to(device)
-        X_test = torch.Tensor(X_test)
-        Y_test = torch.Tensor(Y_test)
-        in_dim = X_train.shape[1]
-        out_dim = Y_train.shape[1]
-        train_dl = DataLoader(
-            TensorDataset(X_train, Y_train),
-            batch_size=batch_size,
-            shuffle=True,
-            drop_last=True,
-        )
-        val_dl = DataLoader(TensorDataset(X_valid, Y_valid), batch_size=batch_size)
-        test_dl = DataLoader(TensorDataset(X_test, Y_test), batch_size=batch_size)
-
-    if decoder.lower() == "brain_decoder":
-        decoder = BrainDecoder(
-            in_dim=in_dim,
-            out_dim=out_dim,
-            **decoder_params,
-        ).to(device)
-    elif decoder.lower() == "simple_mlp":
-        decoder = SimpleMLP(
-            in_dim=in_dim,
-            out_dim=out_dim,
-            **decoder_params,
-        ).to(device)
-    elif decoder.lower() == "rnn":
-        decoder = RNN(
-            in_dim=in_dim,
-            out_dim=out_dim,
-            **decoder_params,
-        ).to(device)
-    elif decoder.lower() == "gru":
-        decoder = GRU(
-            in_dim=in_dim,
-            out_dim=out_dim,
-            **decoder_params,
-        ).to(device)
-    elif decoder.lower() == "lstm":
-        decoder = LSTM(
-            in_dim=in_dim,
-            out_dim=out_dim,
-            **decoder_params,
-        ).to(device)
+    projector = nn.ModuleList(
+        [
+            nn.Linear(Xs[subject].dropna().iloc[0].shape[1], hidden_size)
+            for subject in Xs.columns
+        ]
+    ).to(device)
+    out_dim = Ys.iloc[0].dropna().iloc[0].shape[1]
+    decoder = BrainDecoder(
+        in_dim=hidden_size,
+        out_dim=out_dim,
+        hidden_size_backbone=hidden_size,
+        hidden_size_projector=hidden_size,
+        **decoder_params,
+    ).to(device)
 
     n_params = sum([p.numel() for p in decoder.parameters()])
+    n_params += sum([p.numel() for p in projector.parameters()])
     console.log(f"Decoder has {n_params:.3g} parameters.")
     wandb.config["n_params"] = n_params
 
@@ -470,6 +126,11 @@ def train_brain_decoder(
                 p
                 for n, p in decoder.named_parameters()
                 if not any(nd in n for nd in no_decay)
+            ]
+            + [
+                p
+                for n, p in projector.named_parameters()
+                if not any(nd in n for nd in no_decay)
             ],
             "weight_decay": weight_decay,
         },
@@ -477,6 +138,11 @@ def train_brain_decoder(
             "params": [
                 p
                 for n, p in decoder.named_parameters()
+                if any(nd in n for nd in no_decay)
+            ]
+            + [
+                p
+                for n, p in projector.named_parameters()
                 if any(nd in n for nd in no_decay)
             ],
             "weight_decay": 0.0,
@@ -507,43 +173,33 @@ def train_brain_decoder(
             t = time()
             decoder.train()
             train_losses = []
-            for X, Y in train_dl:
-                with torch.cuda.amp.autocast():
-                    X = X.to(device)
-                    Y = Y.to(device)
+            with torch.cuda.amp.autocast():
+                for batchdl in train_dl:
+                    X = []
+                    Y = []
+                    for i, subj_Xs, subj_Ys in batchdl:
+                        subj_Xs = torch.cat(subj_Xs).to(device)
+                        subj_Xs = projector[i](subj_Xs)
+                        subj_Ys = torch.cat(subj_Ys).to(device)
+                        X.append(subj_Xs)
+                        Y.append(subj_Ys)
+                    X = torch.cat(X).to(device)
+                    Y = torch.cat(Y).to(device)
 
                     optimizer.zero_grad()
 
                     if loss == "mse":
                         # Evaluate MSE loss
-                        Y_preds = decoder(X)
-                        train_loss = F.mse_loss(Y_preds, Y)
+                        train_loss = compute_mse_loss(X, Y, decoder)
 
                     if loss == "symm_nce":
                         # Evaluate symmetrical NCE loss
-                        Y_preds = decoder(X)
-                        train_loss = mixco_symmetrical_nce_loss(
-                            Y_preds, Y, temperature=temperature
-                        )
+                        train_loss = compute_symm_nce_loss(decoder(X), Y, temperature)
 
                     if loss == "mixco":
                         # Evaluate mixco loss and back-propagate on it
-                        (
-                            _,
-                            perm,
-                            betas,
-                            select,
-                        ) = mixco_sample_augmentation(
-                            X.data if isinstance(X, PackedSequence) else X
-                        )
-                        Y_preds = decoder(X)
-                        train_loss = mixco_symmetrical_nce_loss(
-                            Y_preds,
-                            Y,
-                            temperature=temperature,
-                            perm=perm,
-                            betas=betas,
-                            select=select,
+                        train_loss = compute_mixco_symm_nce_loss(
+                            X, Y, decoder, temperature
                         )
 
                     train_loss.backward()
@@ -552,13 +208,13 @@ def train_brain_decoder(
 
             # Validation step
             val_metrics = evaluate(
-                val_dl, decoder, Y_valid, top_k_accuracies, temperature
+                valid_dl, projector, decoder, Y_valid, top_k_accuracies, temperature
             )
 
             # Log metrics
             output = {
                 "train/" + loss: np.mean(train_losses),
-                **{"val/" + key: value for key, value in val_metrics.items()},
+                **{"valid/" + key: value for key, value in val_metrics.items()},
             }
             if epoch == 1:
                 for key in output:
@@ -610,14 +266,14 @@ def train_brain_decoder(
             Path(checkpoints_path) / f"checkpoint_{epoch:03d}.pt",
         )
 
-    for split, dl, negatives in [
-        ("train/", train_dl, Y_train),
-        ("test/", test_dl, Y_test),
+    for split, dl, Y_split in [
+        ("train/", train_dl, Ys.loc[train_runs]),
+        ("test/", test_dl, Ys.loc[test_runs]),
     ]:
-        if isinstance(negatives, list):
-            negatives = torch.Tensor(np.concatenate(negatives))
+        negatives = torch.cat(tuple(Y_split.iloc[:, 0].dropna()))
         metrics = evaluate(
             dl,
+            projector,
             decoder,
             negatives,
             top_k_accuracies,
@@ -630,5 +286,10 @@ def train_brain_decoder(
     for key, value in output.items():
         if isinstance(value, wandb.Histogram):
             output[key] = {"bins": value.bins, "histogram": value.histogram}
+
+    for split in ["Train", "Valid", "Test"]:
+        console.log(
+            f"{split} relative median rank {output[f'{split.lower()}/relative_median_rank']:.3g} (size {output[f'{split.lower()}/size']})"
+        )
 
     return output

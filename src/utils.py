@@ -2,6 +2,7 @@ import subprocess
 from typing import List, Union
 
 import numpy as np
+import pandas as pd
 import torch
 from joblib import memory
 from rich.console import Console
@@ -97,62 +98,41 @@ def ewma(data, halflife):
     return out
 
 
-class DataloaderTimeSeries:
-    def __init__(
-        self,
-        X: Union[List[torch.Tensor], List[np.array]],
-        Y: Union[List[torch.Tensor], List[np.array]],
-        batch_size: int,
-        shuffle: bool = True,
-    ) -> None:
-        self.X = [torch.Tensor(x) for x in X]
-        self.Y = [torch.Tensor(y) for y in Y]
-        self.lengths = np.array([x.shape[0] for x in X])
-        self.n_stories = len(self.lengths)
-        self.batch_size = batch_size
-        self.shuffle = shuffle
-
-        assert len(X) == len(Y)
-        assert all(x.shape[0] == y.shape[0] for x, y in zip(X, Y))
-
-        if np.all(self.lengths > batch_size):
-            raise ValueError(
-                f"All stories lengths are greater than the batch_size ({batch_size})."
-            )
-        elif np.any(self.lengths > batch_size):
-            console.log(
-                f"[red]{(self.lengths > batch_size).sum()} stories have a length greater than the batch_size ({batch_size}) so they won't be used."
-            )
-            self.X = [x for x in X if x.shape[0] <= batch_size]
-            self.Y = [y for y in Y if y.shape[0] <= batch_size]
-            self.lengths = [l for l in self.lengths if l <= batch_size]
-            self.n_stories = len(self.lengths)
+class MultiSubjectBatchloader:
+    def __init__(self, X: np.ndarray, Y: np.ndarray, subjects: np.ndarray):
+        self.X = X
+        self.Y = Y
+        self.subjects = subjects
+        self.unique_subjects = np.unique(subjects)
 
     def __iter__(self):
-        indices = np.arange(self.n_stories)
-        if self.shuffle:
-            np.random.shuffle(indices)
-        self.batches = []
-        sequence_index = 0
-        while sequence_index < self.n_stories:
-            batch_length = 0
-            batch_indices = []
-            while sequence_index < self.n_stories:
-                i = indices[sequence_index]
-                length = self.lengths[i]
-                if batch_length + length > self.batch_size:
-                    break
-                batch_indices.append(i)
-                sequence_index += 1
-                batch_length += length
-            self.batches.append(batch_indices)
-        return self
+        for i in range(len(self.unique_subjects)):
+            indices = self.subjects == self.unique_subjects[i]
+            yield i, tuple(self.X[indices]), tuple(self.Y[indices])
 
-    def __next__(self):
-        if self.batches == []:
-            raise StopIteration
-        else:
-            batch_indices = self.batches.pop(0)
-            X = pack_sequence([self.X[i] for i in batch_indices], enforce_sorted=False)
-            Y = torch.cat([self.Y[i] for i in batch_indices])
-            return X, Y
+
+class MultiSubjectDataloader:
+    def __init__(
+        self, Xs: pd.DataFrame, Ys: pd.DataFrame, batch_size: int, shuffle: bool = False
+    ):
+        self.Xs = Xs
+        self.Ys = Ys
+        self.batch_size = batch_size
+        self.shuffle = shuffle
+        indices = np.where(Xs.notna().values)
+        self.runs_indices = indices[0]
+        self.subjects_indices = indices[1]
+        self.n_runs = len(self.runs_indices)
+        self.indices = np.arange(self.n_runs)
+
+    def __iter__(self):
+        if self.shuffle:
+            np.random.shuffle(self.indices)
+        for i in range(0, self.n_runs, self.batch_size):
+            batch_indices = self.indices[i : i + self.batch_size]
+            runs_indices = self.runs_indices[batch_indices]
+            subjects_indices = self.subjects_indices[batch_indices]
+            X = self.Xs.values[runs_indices, subjects_indices]
+            Y = self.Ys.values[runs_indices, subjects_indices]
+            subjects = self.Xs.columns.values[subjects_indices]
+            yield MultiSubjectBatchloader(X, Y, subjects)

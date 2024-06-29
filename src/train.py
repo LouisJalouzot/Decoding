@@ -40,7 +40,7 @@ def train(
 
     if isinstance(subjects, str):
         subjects = [subjects]
-
+    subjects = sorted(subjects)
     Xs, Ys = {}, {}
     task = progress.add_task("", total=len(subjects))
     for subject in subjects:

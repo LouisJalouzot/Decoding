@@ -33,9 +33,9 @@ def evaluate(dl, projector, decoder, negatives, top_k_accuracies, temperature):
             for batchdl in dl:
                 X = []
                 Y = []
-                for i, subj_Xs, subj_Ys in batchdl:
+                for subject, subj_Xs, subj_Ys in batchdl:
                     subj_Xs = torch.cat(subj_Xs).to(device)
-                    subj_Xs = projector[i](subj_Xs)
+                    subj_Xs = projector[subject](subj_Xs)
                     subj_Ys = torch.cat(subj_Ys).to(device)
                     X.append(subj_Xs)
                     Y.append(subj_Ys)
@@ -96,14 +96,17 @@ def train_brain_decoder(
     valid_dl = MultiSubjectDataloader(
         Xs.loc[valid_runs], Ys.loc[valid_runs], batch_size
     )
-    Y_valid = torch.cat(tuple(Ys.loc[valid_runs].iloc[:, 0].dropna())).to(device)
+    Y_valid = Ys.loc[valid_runs]
+    first_notna = Y_valid.notna().values.argmax(axis=1)
+    Y_valid = Y_valid.values[np.arange(len(Y_valid)), first_notna]
+    Y_valid = torch.cat(tuple(Y_valid)).to(device)
     test_dl = MultiSubjectDataloader(Xs.loc[test_runs], Ys.loc[test_runs], batch_size)
 
-    projector = nn.ModuleList(
-        [
-            nn.Linear(Xs[subject].dropna().iloc[0].shape[1], hidden_size)
+    projector = nn.ModuleDict(
+        {
+            subject: nn.Linear(Xs[subject].dropna().iloc[0].shape[1], hidden_size)
             for subject in Xs.columns
-        ]
+        }
     ).to(device)
     out_dim = Ys.iloc[0].dropna().iloc[0].shape[1]
     decoder = BrainDecoder(
@@ -177,9 +180,9 @@ def train_brain_decoder(
                 for batchdl in train_dl:
                     X = []
                     Y = []
-                    for i, subj_Xs, subj_Ys in batchdl:
+                    for subject, subj_Xs, subj_Ys in batchdl:
                         subj_Xs = torch.cat(subj_Xs).to(device)
-                        subj_Xs = projector[i](subj_Xs)
+                        subj_Xs = projector[subject](subj_Xs)
                         subj_Ys = torch.cat(subj_Ys).to(device)
                         X.append(subj_Xs)
                         Y.append(subj_Ys)
@@ -270,12 +273,14 @@ def train_brain_decoder(
         ("train/", train_dl, Ys.loc[train_runs]),
         ("test/", test_dl, Ys.loc[test_runs]),
     ]:
-        negatives = torch.cat(tuple(Y_split.iloc[:, 0].dropna()))
+        first_notna = Y_split.notna().values.argmax(axis=1)
+        Y_split = Y_split.values[np.arange(len(Y_split)), first_notna]
+        Y_split = torch.cat(tuple(Y_split))
         metrics = evaluate(
             dl,
             projector,
             decoder,
-            negatives,
+            Y_split,
             top_k_accuracies,
             temperature,
         )

@@ -106,9 +106,9 @@ class MultiSubjectBatchloader:
         self.unique_subjects = np.unique(subjects)
 
     def __iter__(self):
-        for i in range(len(self.unique_subjects)):
-            indices = self.subjects == self.unique_subjects[i]
-            yield i, tuple(self.X[indices]), tuple(self.Y[indices])
+        for subject in self.unique_subjects:
+            indices = self.subjects == subject
+            yield subject, tuple(self.X[indices]), tuple(self.Y[indices])
 
 
 class MultiSubjectDataloader:

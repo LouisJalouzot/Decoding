@@ -21,49 +21,48 @@ def fast_ridge(
     n_features = X_train.shape[1]
     n_targets = Y_train.shape[1]
     output = {}
-    with progress:
+    if verbose:
+        task = progress.add_task("Fine-tuning", total=2 * len(alphas))
+
+    coefs = []
+    val_mse = []
+    for alpha in alphas:
+        c = (
+            np.linalg.pinv(X_train.T @ X_train + alpha * np.eye(n_features))
+            @ X_train.T
+            @ Y_train
+        )
+        coefs.append(c)
+        val_mse.append(((X_valid @ c - Y_valid) ** 2).mean(axis=0))
+
         if verbose:
-            task = progress.add_task("Fine-tuning", total=2 * len(alphas))
+            progress.update(task, advance=1)
+    val_mse = np.stack(val_mse)
+    best_alpha_index = val_mse.argmin(axis=0)
+    output["alpha"] = alphas[best_alpha_index]
 
-        coefs = []
-        val_mse = []
-        for alpha in alphas:
-            c = (
-                np.linalg.pinv(X_train.T @ X_train + alpha * np.eye(n_features))
-                @ X_train.T
-                @ Y_train
-            )
-            coefs.append(c)
-            val_mse.append(((X_valid @ c - Y_valid) ** 2).mean(axis=0))
+    X_train = np.vstack([X_train, X_valid])
+    Y_train = np.vstack([Y_train, Y_valid])
+    coefs = []
+    for alpha in alphas:
+        coefs.append(
+            np.linalg.pinv(X_train.T @ X_train + alpha * np.eye(n_features))
+            @ X_train.T
+            @ Y_train
+        )
 
-            if verbose:
-                progress.update(task, advance=1)
-        val_mse = np.stack(val_mse)
-        best_alpha_index = val_mse.argmin(axis=0)
-        output["alpha"] = alphas[best_alpha_index]
+        if verbose:
+            progress.update(task, description="Fitting", advance=1)
+    coefs = np.stack(coefs)
+    coefs = coefs[best_alpha_index, :, np.arange(n_targets)]
+    output["coefs"] = coefs
 
-        X_train = np.vstack([X_train, X_valid])
-        Y_train = np.vstack([Y_train, Y_valid])
-        coefs = []
-        for alpha in alphas:
-            coefs.append(
-                np.linalg.pinv(X_train.T @ X_train + alpha * np.eye(n_features))
-                @ X_train.T
-                @ Y_train
-            )
-
-            if verbose:
-                progress.update(task, description="Fitting", advance=1)
-        coefs = np.stack(coefs)
-        coefs = coefs[best_alpha_index, :, np.arange(n_targets)]
-        output["coefs"] = coefs
-
-        for t, Y_true, Y_pred in [
-            ("train", Y_train, X_train @ coefs.T),
-            ("test", Y_test, X_test @ coefs.T),
-        ]:
-            for key, value in scores(Y_true, Y_pred).items():
-                output[f"{t}_{key}"] = value
+    for t, Y_true, Y_pred in [
+        ("train", Y_train, X_train @ coefs.T),
+        ("test", Y_test, X_test @ coefs.T),
+    ]:
+        for key, value in scores(Y_true, Y_pred).items():
+            output[f"{t}_{key}"] = value
 
     return output
 
@@ -104,67 +103,66 @@ def fast_ridge_cv(
     for score in ["mse", "r", "r2"]:
         for type in ["train", "test"]:
             output[f"{type}/{score}"] = np.zeros(n_features)
-    with progress:
-        task = progress.add_task(f"Nested CV", total=len(n_scans) ** 2)
-        for i, n in enumerate(n_scans):
-            train_mask = (indices < start) | (indices >= start + n)
-            test_mask = (indices >= start) & (indices < start + n)
-            start_start = 0
-            val_mse = np.zeros((len(alphas), n_features))
-            for j, m in enumerate(n_scans):
-                if i != j:
-                    train_train_mask = train_mask & (
-                        (indices < start_start) | (indices >= start_start + m)
-                    )
-                    val_mask = (indices >= start_start) & (indices < start_start + m)
-                    X_train = X[train_train_mask]
-                    Y_train = scaler.fit_transform(Y[train_train_mask])
-                    coefs = (
-                        np.linalg.pinv(
-                            (X_train.T @ X_train)[None]
-                            + alphas[:, None, None] * np.eye(n_voxels)[None]
-                        )
-                        @ X_train.T
-                        @ Y_train
-                    ).swapaxes(1, 2)
-                    Y_val = scaler.fit_transform(Y[val_mask])
-                    val_mse += ((Y_val.T - coefs @ X[val_mask].T) ** 2).mean(axis=-1)
-                    if verbose:
-                        progress.update(task, advance=1)
-                start_start += m
-            best_alpha_index = val_mse.argmin(axis=0)
-            output["alpha"] += alphas[best_alpha_index]
-            X_train = X[train_mask]
-            Y_train = scaler.fit_transform(Y[train_mask])
-            output["center"] += scaler.center_
-            output["scale"] += scaler.scale_
-            coefs = (
-                np.linalg.pinv(
-                    (X_train.T @ X_train)[None]
-                    + alphas[:, None, None] * np.eye(n_voxels)[None]
+    task = progress.add_task(f"Nested CV", total=len(n_scans) ** 2)
+    for i, n in enumerate(n_scans):
+        train_mask = (indices < start) | (indices >= start + n)
+        test_mask = (indices >= start) & (indices < start + n)
+        start_start = 0
+        val_mse = np.zeros((len(alphas), n_features))
+        for j, m in enumerate(n_scans):
+            if i != j:
+                train_train_mask = train_mask & (
+                    (indices < start_start) | (indices >= start_start + m)
                 )
-                @ X_train.T
-                @ Y_train
+                val_mask = (indices >= start_start) & (indices < start_start + m)
+                X_train = X[train_train_mask]
+                Y_train = scaler.fit_transform(Y[train_train_mask])
+                coefs = (
+                    np.linalg.pinv(
+                        (X_train.T @ X_train)[None]
+                        + alphas[:, None, None] * np.eye(n_voxels)[None]
+                    )
+                    @ X_train.T
+                    @ Y_train
+                ).swapaxes(1, 2)
+                Y_val = scaler.fit_transform(Y[val_mask])
+                val_mse += ((Y_val.T - coefs @ X[val_mask].T) ** 2).mean(axis=-1)
+                if verbose:
+                    progress.update(task, advance=1)
+            start_start += m
+        best_alpha_index = val_mse.argmin(axis=0)
+        output["alpha"] += alphas[best_alpha_index]
+        X_train = X[train_mask]
+        Y_train = scaler.fit_transform(Y[train_mask])
+        output["center"] += scaler.center_
+        output["scale"] += scaler.scale_
+        coefs = (
+            np.linalg.pinv(
+                (X_train.T @ X_train)[None]
+                + alphas[:, None, None] * np.eye(n_voxels)[None]
             )
-            coefs = coefs[best_alpha_index, :, np.arange(n_features)]
-            output["coefs"] += coefs
-            for t, Y_true, Y_pred in [
-                (
-                    "train",
-                    Y_train,
-                    X[train_mask] @ coefs.T,
-                ),
-                (
-                    "test",
-                    scaler.transform(Y[test_mask]),
-                    X[test_mask] @ coefs.T,
-                ),
-            ]:
-                for key, value in scores(Y_true, Y_pred).items():
-                    output[f"{t}_{key}"] += value
-            start += n
-            if verbose:
-                progress.update(task, advance=1)
+            @ X_train.T
+            @ Y_train
+        )
+        coefs = coefs[best_alpha_index, :, np.arange(n_features)]
+        output["coefs"] += coefs
+        for t, Y_true, Y_pred in [
+            (
+                "train",
+                Y_train,
+                X[train_mask] @ coefs.T,
+            ),
+            (
+                "test",
+                scaler.transform(Y[test_mask]),
+                X[test_mask] @ coefs.T,
+            ),
+        ]:
+            for key, value in scores(Y_true, Y_pred).items():
+                output[f"{t}_{key}"] += value
+        start += n
+        if verbose:
+            progress.update(task, advance=1)
     for key in output:
         output[key] /= len(n_scans)
     return output
@@ -182,34 +180,33 @@ def ridge(
 ) -> Dict[str, Union[np.ndarray, float]]:
     model = Ridge(fit_intercept=False)
 
-    with progress:
-        if verbose:
-            task = progress.add_task("Fine-tuning", total=len(alphas) + 1)
+    if verbose:
+        task = progress.add_task("Fine-tuning", total=len(alphas) + 1)
 
-        val_mse = []
-        for alpha in alphas:
-            model.alpha = alpha
-            model = model.fit(X_train, Y_train)
-            val_mse.append(((model.predict(X_valid) - Y_valid) ** 2).mean(axis=0))
-            if verbose:
-                progress.update(task, advance=1)
-
-        best_alphas = alphas[np.stack(val_mse).argmin(axis=0)]
-        output = {"alpha": best_alphas}
-        model.alpha = best_alphas
-        X_train = np.vstack([X_train, X_valid])
-        Y_train = np.vstack([Y_train, Y_valid])
-        model.fit(X_train, Y_train)
+    val_mse = []
+    for alpha in alphas:
+        model.alpha = alpha
+        model = model.fit(X_train, Y_train)
+        val_mse.append(((model.predict(X_valid) - Y_valid) ** 2).mean(axis=0))
         if verbose:
             progress.update(task, advance=1)
-        output["coefs"] = model.coef_
 
-        for t, (X, Y) in [
-            ("train", (X_train, Y_train)),
-            ("test", (X_test, Y_test)),
-        ]:
-            Y_pred = model.predict(X)
-            for key, value in scores(Y, Y_pred).items():
-                output[f"{t}_{key}"] = value
+    best_alphas = alphas[np.stack(val_mse).argmin(axis=0)]
+    output = {"alpha": best_alphas}
+    model.alpha = best_alphas
+    X_train = np.vstack([X_train, X_valid])
+    Y_train = np.vstack([Y_train, Y_valid])
+    model.fit(X_train, Y_train)
+    if verbose:
+        progress.update(task, advance=1)
+    output["coefs"] = model.coef_
 
-        return output
+    for t, (X, Y) in [
+        ("train", (X_train, Y_train)),
+        ("test", (X_test, Y_test)),
+    ]:
+        Y_pred = model.predict(X)
+        for key, value in scores(Y, Y_pred).items():
+            output[f"{t}_{key}"] = value
+
+    return output

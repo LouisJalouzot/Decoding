@@ -24,7 +24,7 @@ from src.metrics import retrieval_metrics
 from src.utils import MultiSubjectDataloader, console, device
 
 
-def evaluate(dl, projector, decoder, negatives, top_k_accuracies, temperature):
+def evaluate(dl, decoder, negatives, top_k_accuracies, temperature):
     decoder.eval()
     metrics = defaultdict(list)
     negatives = negatives.to(device)
@@ -35,7 +35,7 @@ def evaluate(dl, projector, decoder, negatives, top_k_accuracies, temperature):
                 Y = []
                 for subject, subj_Xs, subj_Ys in batchdl:
                     subj_Xs = torch.cat(subj_Xs).to(device)
-                    subj_Xs = projector[subject](subj_Xs)
+                    subj_Xs = decoder.project_subject(subj_Xs, subject)
                     subj_Ys = torch.cat(subj_Ys).to(device)
                     X.append(subj_Xs)
                     Y.append(subj_Ys)
@@ -102,23 +102,16 @@ def train_brain_decoder(
     Y_valid = torch.cat(tuple(Y_valid)).to(device)
     test_dl = MultiSubjectDataloader(Xs.loc[test_runs], Ys.loc[test_runs], batch_size)
 
-    projector = nn.ModuleDict(
-        {
-            subject: nn.Linear(Xs[subject].dropna().iloc[0].shape[1], hidden_size)
-            for subject in Xs.columns
-        }
-    ).to(device)
     out_dim = Ys.iloc[0].dropna().iloc[0].shape[1]
     decoder = BrainDecoder(
-        in_dim=hidden_size,
+        in_dims={
+            subject: Xs[subject].dropna().iloc[0].shape[1] for subject in Xs.columns
+        },
         out_dim=out_dim,
-        hidden_size_backbone=hidden_size,
-        hidden_size_projector=hidden_size,
         **decoder_params,
     ).to(device)
 
     n_params = sum([p.numel() for p in decoder.parameters()])
-    n_params += sum([p.numel() for p in projector.parameters()])
     console.log(f"Decoder has {n_params:.3g} parameters.")
     wandb.config["n_params"] = n_params
 
@@ -129,11 +122,6 @@ def train_brain_decoder(
                 p
                 for n, p in decoder.named_parameters()
                 if not any(nd in n for nd in no_decay)
-            ]
-            + [
-                p
-                for n, p in projector.named_parameters()
-                if not any(nd in n for nd in no_decay)
             ],
             "weight_decay": weight_decay,
         },
@@ -141,11 +129,6 @@ def train_brain_decoder(
             "params": [
                 p
                 for n, p in decoder.named_parameters()
-                if any(nd in n for nd in no_decay)
-            ]
-            + [
-                p
-                for n, p in projector.named_parameters()
                 if any(nd in n for nd in no_decay)
             ],
             "weight_decay": 0.0,
@@ -182,7 +165,7 @@ def train_brain_decoder(
                     Y = []
                     for subject, subj_Xs, subj_Ys in batchdl:
                         subj_Xs = torch.cat(subj_Xs).to(device)
-                        subj_Xs = projector[subject](subj_Xs)
+                        subj_Xs = decoder.project_subject(subj_Xs, subject)
                         subj_Ys = torch.cat(subj_Ys).to(device)
                         X.append(subj_Xs)
                         Y.append(subj_Ys)
@@ -211,7 +194,7 @@ def train_brain_decoder(
 
             # Validation step
             val_metrics = evaluate(
-                valid_dl, projector, decoder, Y_valid, top_k_accuracies, temperature
+                valid_dl, decoder, Y_valid, top_k_accuracies, temperature
             )
 
             # Log metrics
@@ -278,7 +261,6 @@ def train_brain_decoder(
         Y_split = torch.cat(tuple(Y_split))
         metrics = evaluate(
             dl,
-            projector,
             decoder,
             Y_split,
             top_k_accuracies,

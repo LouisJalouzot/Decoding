@@ -35,30 +35,29 @@ def fetch_data(
         selected_voxels = np.arange(n_voxels)
 
     Xs, Ys = {}, {}
-    with progress:
-        task = progress.add_task("", total=len(runs))
-        for run in runs:
-            file_path = brain_images_path / f"{run}.hf5"
-            file = h5py.File(file_path, "r")["data"]
-            X = file[:, selected_voxels].astype(np.float32)
-            X = np.nan_to_num(X, nan=0)
-            if smooth > 0:
-                new_X = X.copy()
-                count = np.ones((X.shape[0], 1))
-                for i in range(1, smooth + 1):
-                    new_X[i:] += X[:-i]
-                    count[i:] += 1
-                X = new_X / count
-            X = StandardScaler().fit_transform(X[lag:])
-            Y = prepare_latents(run, model, tr, context_length, batch_size)
-            Y = StandardScaler().fit_transform(Y[:-lag])
-            if Y.shape[0] > X.shape[0]:
-                # More latents than brain scans (first brain scans where removed)
-                # We drop the corresponding latents
-                Y = Y[-X.shape[0] :]
-            Xs[run] = X
-            Ys[run] = Y
-            progress.update(task, description=f"Run: {run}", advance=1)
-        progress.update(task, visible=False)
+    task = progress.add_task("", total=len(runs))
+    for run in runs:
+        file_path = brain_images_path / f"{run}.hf5"
+        file = h5py.File(file_path, "r")["data"]
+        X = file[:, selected_voxels].astype(np.float32)
+        X = np.nan_to_num(X, nan=0)
+        if smooth > 0:
+            new_X = X.copy()
+            count = np.ones((X.shape[0], 1))
+            for i in range(1, smooth + 1):
+                new_X[i:] += X[:-i]
+                count[i:] += 1
+            X = new_X / count
+        X = StandardScaler().fit_transform(X[lag:])
+        Y = prepare_latents(run, model, tr, context_length, batch_size)
+        Y = StandardScaler().fit_transform(Y[:-lag])
+        if Y.shape[0] > X.shape[0]:
+            # More latents than brain scans (first brain scans where removed)
+            # We drop the corresponding latents
+            Y = Y[-X.shape[0] :]
+        Xs[run] = X
+        Ys[run] = Y
+        progress.update(task, description=f"Run: {run}", advance=1)
+    progress.remove_task(task)
 
     return Xs, Ys

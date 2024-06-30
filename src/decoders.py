@@ -109,7 +109,7 @@ class LSTM(nn.Module):
 class BrainDecoder(nn.Module):
     def __init__(
         self,
-        in_dim,
+        in_dims,
         out_dim,
         hidden_size_backbone=512,
         hidden_size_projector=512,
@@ -138,10 +138,15 @@ class BrainDecoder(nn.Module):
         )
 
         # First linear
-        self.lin0 = nn.Sequential(
-            nn.Linear(in_dim, hidden_size_backbone),
-            *[item() for item in activation_and_norm],
-            nn.Dropout(dropout),
+        self.lin0 = nn.ModuleDict(
+            {
+                subject: nn.Sequential(
+                    nn.Linear(in_dim, hidden_size_backbone),
+                    *[item() for item in activation_and_norm],
+                    nn.Dropout(dropout),
+                )
+                for subject, in_dim in in_dims.items()
+            }
         )
 
         # Residual blocks
@@ -179,9 +184,10 @@ class BrainDecoder(nn.Module):
         )
         self.projector = nn.Sequential(*projector_layers)
 
-    def forward(self, x):
-        x = self.lin0(x)
+    def project_subject(self, x, subject):
+        return self.lin0[subject](x)
 
+    def forward(self, x):
         residual = x
         for res_block in range(self.n_res_blocks):
             x = self.mlp[res_block](x)

@@ -20,6 +20,11 @@ parser.add_argument("--batch_size", type=int, default=12, help="Batch size")
 parser.add_argument("--temperature", type=float, default=0.05, help="Temperature")
 parser.add_argument("--latents_batch_size", type=int, default=64)
 parser.add_argument("--num_layers", type=int)
+parser.add_argument("--num_layers", type=int)
+parser.add_argument("--hidden_size_backbone", type=int)
+parser.add_argument("--hidden_size_projector", type=int)
+parser.add_argument("--n_res_blocks", type=int)
+parser.add_argument("--n_proj_blocks", type=int)
 
 args = parser.parse_args()
 args = {key: value for key, value in vars(args).items() if value is not None}

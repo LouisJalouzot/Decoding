@@ -6,18 +6,13 @@ from src.utils import ignore
 
 
 def main(
-    subjects: str = "UTS00",
-    decoder: str = "ridge",
-    model: str = "clip",
-    context_length: int = 2,
+    subjects: str = "UTS03",
+    decoder: str = "brain_decoder",
+    model: str = "bert-base-uncased",
+    context_length: int = 6,
     tr: int = 2,
     lag: int = 2,
-    smooth: int = 1,
-    valid_ratio: float = 0.2,
-    test_ratio: float = 0.1,
-    seed: int = 0,
-    subsample_voxels: int = None,
-    latents_batch_size: int = 64,
+    smooth: int = 0,
     **decoder_params,
 ):
     config = {

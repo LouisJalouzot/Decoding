@@ -36,11 +36,13 @@ def compute_chunks(textgrid_path: str, tr: int, context_length: int) -> List[str
     group_indices = offsets // tr
     unique_indices = np.arange(group_indices.max() + 1)
 
-    chunks = [" ".join(list(words[group_indices == idx])) for idx in unique_indices]
-    return [
-        " ".join([chunks[k] for k in range(max(0, i - context_length), i + 1)]).strip()
-        for i in range(len(chunks))
-    ]
+    chunks = [" ".join(words[group_indices == idx]) for idx in unique_indices]
+    chunks_with_context = []
+    for i in range(len(chunks)):
+        context_chunks = chunks[max(0, i - context_length) : i + 1]
+        context_chunks = [c for c in context_chunks if c != ""]
+        chunks_with_context.append(" ".join(context_chunks).strip())
+    return chunks_with_context
 
 
 def prepare_mel(audio_path: Path, tr: int, context_length: int):

@@ -28,13 +28,13 @@ def compute_chunks(textgrid_path: str, tr: int, context_length: int) -> List[str
     Returns:
         List[str]: The list of computed chunks of text.
     """
-    goodtranscript = get_textgrid(textgrid_path)
+    goodtranscript, xmax = get_textgrid(textgrid_path)
 
     offsets = np.array([x[1] for x in goodtranscript])
     words = [x[2].strip("{}").strip() for x in goodtranscript]
     words = np.array([(x if x == "I" else x.lower()) for x in words])
     group_indices = offsets // tr
-    unique_indices = np.arange(group_indices.max() + 1)
+    unique_indices = np.arange(int(np.ceil(xmax // tr)) + 1)
 
     chunks = [" ".join(words[group_indices == idx]) for idx in unique_indices]
     chunks_with_context = []

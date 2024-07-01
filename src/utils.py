@@ -51,7 +51,7 @@ def get_textgrid(textgrid_path):
         for start, stop, text in grtranscript
         if text.lower().strip("{}").strip() not in DEFAULT_BAD_WORDS
     ]
-    return grtranscript
+    return grtranscript, textgrid.xmax
 
 
 def _get_free_gpu():

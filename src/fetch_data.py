@@ -54,8 +54,7 @@ def fetch_data(
         Y = Y[5:-5]  # trim first and last 10 seconds on Lebel
         if Y.shape[0] > X.shape[0]:
             # More latents than brain scans, drop last seconds of run
-            console.log(f"[red]{Y.shape[0] - X.shape[0]} latents trimmed for run {run}")
-            Y = Y[-X.shape[0] :]
+            Y = Y[: X.shape[0]]
         Xs[run] = X
         Ys[run] = Y
         progress.update(task, description=f"Run: {run}", advance=1)

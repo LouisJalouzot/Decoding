@@ -7,7 +7,7 @@ from sklearn.preprocessing import StandardScaler
 
 from src.brain_decoder import train_brain_decoder
 from src.fetch_data import fetch_data
-from src.utils import console, memory, progress
+from src.utils import console, progress
 
 
 def scale_in_df(df, col):
@@ -17,7 +17,6 @@ def scale_in_df(df, col):
     df.loc[mask, col] = df.loc[mask, col].apply(scaler.transform)
 
 
-# @memory.cache
 def train(
     subjects: Union[str, List[str]] = "UTS03",
     decoder: str = "brain_decoder",
@@ -26,7 +25,7 @@ def train(
     tr: int = 2,
     lag: int = 3,
     smooth: int = 0,
-    valid_ratio: float = 0.2,
+    valid_ratio: float = 0.1,
     test_ratio: float = 0.1,
     seed: int = 0,
     subsample_voxels: int = None,

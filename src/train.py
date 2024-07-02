@@ -18,7 +18,7 @@ def scale_in_df(df, col):
 
 
 def train(
-    subjects: Union[str, List[str]] = "UTS03",
+    subjects: Union[str, List[str]] = "lebel2023/UTS03",
     decoder: str = "brain_decoder",
     model: str = "bert-base-uncased",
     context_length: int = 6,

@@ -1,8 +1,10 @@
 # Decoding
 To fetch datasets
 ```bash
-aws s3 sync --no-sign-request s3://openneuro.org/ds003020 data/lebel/ #Lebel2023
-aws s3 sync --no-sign-request s3://openneuro.org/ds003643 data/li/ #Li2022
+#Lebel2023
+aws s3 sync --no-sign-request s3://openneuro.org/ds003020 data/lebel2023/
+#Li2022
+aws s3 sync --no-sign-request s3://openneuro.org/ds003643 data/li2022/
 ```
 Requires
 ```bash

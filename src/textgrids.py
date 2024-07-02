@@ -1,5 +1,8 @@
 import re
 
+import chardet
+import pandas as pd
+
 TEXTTIER = "TextTier"
 INTERVALTIER = "IntervalTier"
 
@@ -51,8 +54,9 @@ class TextGrid(object):
         @type tiers:  A list of tier objects.
         """
 
-        with open(textgrid_path, "r") as f:
-            self.read_file = f.read()
+        with open(textgrid_path, "rb") as f:
+            text = f.read()
+            self.read_file = text.decode(chardet.detect(text)["encoding"])
         self.size = 0
         self.xmin = 0
         self.xmax = 0
@@ -319,6 +323,12 @@ class Tier(object):
             trans_xmin = r""
         trans_m = re.compile(trans_head + trans_xmin + trans_xmax + trans_text)
         self.simple_transcript = trans_m.findall(self.transcript)
+        self.simple_transcript = pd.DataFrame(
+            self.simple_transcript, columns=["xmin", "xmax", "text"]
+        )
+        self.simple_transcript[["xmin", "xmax"]] = self.simple_transcript[
+            ["xmin", "xmax"]
+        ].astype(float)
         return self.simple_transcript
 
     def transcript(self):
@@ -336,7 +346,7 @@ class Tier(object):
 
         total = 0.0
         if self.classid != TEXTTIER:
-            for time1, time2, utt in self.simple_transcript:
+            for _, (time1, time2, utt) in self.simple_transcript.iterrows():
                 utt = utt.strip()
                 if utt and not utt[0] == ".":
                     total += float(time2) - float(time1)

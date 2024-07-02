@@ -1,8 +1,10 @@
 import os
+import re
 from pathlib import Path
 from typing import Dict, Tuple
 
 import h5py
+import nibabel as nib
 import numpy as np
 from sklearn.preprocessing import StandardScaler
 
@@ -20,14 +22,19 @@ def fetch_data(
     lag: int,
     batch_size: int,
 ) -> Tuple[Dict[str, np.ndarray]]:
-    brain_images_path = Path("data/lebel/derivative/preprocessed_data") / subject
-    runs = [run.replace(".hf5", "") for run in os.listdir(brain_images_path)]
-    n_voxels = h5py.File(
-        brain_images_path / f"{runs[0]}.hf5",
-        "r",
-    )[
-        "data"
-    ].shape[1]
+    dataset, subject = subject.split("/")
+    if dataset.lower() == "lebel2023":
+        brain_images_path = (
+            Path("data/lebel2023/derivative/preprocessed_data") / subject
+        )
+        runs = sorted(os.listdir(brain_images_path))
+        n_voxels = h5py.File(brain_images_path / runs[0], "r")["data"].shape[1]
+    elif dataset.lower() == "li2022":
+        brain_images_path = Path("data/li2022/derivatives") / subject / "func"
+        runs = sorted(os.listdir(brain_images_path))
+        n_voxels = np.prod(nib.load(brain_images_path / runs[0]).shape[:-1])
+    else:
+        raise ValueError(f"Dataset {dataset} not supported")
     if subsample_voxels is not None:
         selected_voxels = np.random.permutation(n_voxels)[:subsample_voxels]
         selected_voxels = np.sort(selected_voxels)
@@ -36,9 +43,14 @@ def fetch_data(
 
     Xs, Ys = {}, {}
     task = progress.add_task("", total=len(runs))
-    for run in runs:
-        file_path = brain_images_path / f"{run}.hf5"
-        file = h5py.File(file_path, "r")["data"]
+    for i, run in enumerate(runs):
+        if dataset.lower() == "lebel2023":
+            file = h5py.File(brain_images_path / run, "r")["data"]
+            run = run.replace(".hf5", "")
+        elif dataset.lower() == "li2022":
+            file = nib.load(brain_images_path / run).get_fdata().swapaxes(0, -1)
+            file = file.reshape(file.shape[0], -1)
+            run = i + 1
         X = file[:, selected_voxels].astype(np.float32)
         X = np.nan_to_num(X, nan=0)
         if smooth > 0:
@@ -49,15 +61,16 @@ def fetch_data(
                 count[i:] += 1
             X = new_X / count
         X = StandardScaler().fit_transform(X[lag:])
-        Y = prepare_latents(run, model, tr, context_length, batch_size)
+        Y = prepare_latents(dataset, run, model, tr, context_length, batch_size)
         Y = StandardScaler().fit_transform(Y)
-        Y = Y[5:-5]  # trim first and last 10 seconds on Lebel
+        if dataset.lower() == "lebel2023":
+            Y = Y[5:-5]  # trim first and last 10 seconds on Lebel
         if lag > 0:
             Y = Y[:-lag]
         if Y.shape[0] > X.shape[0]:
             if Y.shape[0] > X.shape[0] + 1:
                 console.log(
-                    f"[red]{Y.shape[0] - X.shape[0]} > 1 latents trimmed for run {run}"
+                    f"[red]{Y.shape[0] - X.shape[0]} > 1 latents trimmed for subject {subject} and run {run}"
                 )
             # More latents than brain scans, drop last seconds of run
             Y = Y[: X.shape[0]]

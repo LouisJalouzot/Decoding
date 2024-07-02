@@ -1,5 +1,4 @@
 import subprocess
-from typing import List, Union
 
 import numpy as np
 import pandas as pd
@@ -16,9 +15,6 @@ from rich.progress import (
     TimeElapsedColumn,
     TimeRemainingColumn,
 )
-from torch.nn.utils.rnn import pack_sequence
-
-from src.textgrids import TextGrid
 
 console = Console()
 
@@ -37,21 +33,6 @@ progress = Progress(
 )
 
 ignore = ["verbose", "n_jobs", "latents_batch_size"]
-
-DEFAULT_BAD_WORDS = frozenset(
-    ["sentence_start", "sentence_end", "br", "lg", "ls", "ns", "sp", ""]
-)
-
-
-def get_textgrid(textgrid_path):
-    textgrid = TextGrid(textgrid_path)
-    grtranscript = textgrid.tiers[1].make_simple_transcript()
-    grtranscript = [
-        (float(start), float(stop), text)
-        for start, stop, text in grtranscript
-        if text.lower().strip("{}").strip() not in DEFAULT_BAD_WORDS
-    ]
-    return grtranscript, textgrid.xmax
 
 
 def _get_free_gpu():

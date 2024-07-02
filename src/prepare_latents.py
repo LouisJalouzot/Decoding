@@ -1,9 +1,15 @@
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Tuple, Union
 
 import numpy as np
+import pandas as pd
 
-from src.utils import device, get_textgrid, memory, progress
+from src.textgrids import TextGrid
+from src.utils import device, memory, progress
+
+DEFAULT_BAD_WORDS = frozenset(
+    ["sentence_start", "sentence_end", "br", "lg", "ls", "ns", "sp", ""]
+)
 
 
 def mean_pooling(model_output, attention_mask):
@@ -28,21 +34,22 @@ def compute_chunks(textgrid_path: str, tr: int, context_length: int) -> List[str
     Returns:
         List[str]: The list of computed chunks of text.
     """
-    goodtranscript, xmax = get_textgrid(textgrid_path)
-
-    offsets = np.array([x[1] for x in goodtranscript])
-    words = [x[2].strip("{}").strip() for x in goodtranscript]
-    words = np.array([(x if x == "I" else x.lower()) for x in words])
-    group_indices = offsets // tr
-    unique_indices = np.arange(int(np.ceil(xmax // tr)) + 1)
-
-    chunks = [" ".join(words[group_indices == idx]) for idx in unique_indices]
-    chunks_with_context = []
-    for i in range(len(chunks)):
-        context_chunks = chunks[max(0, i - context_length) : i + 1]
-        context_chunks = [c for c in context_chunks if c != ""]
-        chunks_with_context.append(" ".join(context_chunks).strip())
-    return chunks_with_context
+    transcript = TextGrid(textgrid_path).tiers[-1].simple_transcript
+    transcript["chunk_id"] = pd.Categorical(
+        transcript.xmax // tr,
+        categories=range(int(np.ceil(transcript.xmax.max() // tr))),
+    )
+    transcript["text"] = (
+        transcript["text"].str.lower().str.strip("{} ").replace("i", "I")
+    )
+    transcript = transcript[~transcript.text.isin(DEFAULT_BAD_WORDS)]
+    transcript = transcript.groupby("chunk_id", observed=False).text.apply(
+        lambda x: " ".join(x)
+    )
+    return [
+        w.str.cat(sep=" ").strip("# ").replace(" #", ",")
+        for w in transcript.rolling(context_length + 1)
+    ]
 
 
 def prepare_mel(audio_path: Path, tr: int, context_length: int):
@@ -61,7 +68,7 @@ def prepare_mel(audio_path: Path, tr: int, context_length: int):
 
 
 def prepare_audioclip(
-    story, textgrid_path, audio_path, tr, context_length, model, verbose
+    run, textgrid_path, audio_path, tr, context_length, model, verbose
 ):
     import librosa
     import torch
@@ -87,7 +94,7 @@ def prepare_audioclip(
     model.eval()
     with torch.no_grad():
         task = progress.add_task(
-            f"Computing AudioCLIP latents for story {story}",
+            f"Computing AudioCLIP latents for run {run}",
             total=size,
             visible=verbose,
         )
@@ -113,7 +120,7 @@ def prepare_audioclip(
 
 
 def prepare_clap(
-    story, textgrid_path, audio_path, tr, context_length, batch_size, verbose
+    run, textgrid_path, audio_path, tr, context_length, batch_size, verbose
 ):
     import librosa
     import torch
@@ -137,7 +144,7 @@ def prepare_clap(
     model.eval()
     with torch.no_grad():
         task = progress.add_task(
-            f"Computing CLAP latents for story {story}",
+            f"Computing CLAP latents for run {run}",
             total=-(-size // batch_size),
             visible=verbose,
         )
@@ -161,7 +168,8 @@ def prepare_clap(
 
 @memory.cache(ignore=["batch_size", "verbose"])
 def prepare_latents(
-    story: str,
+    dataset: str,
+    run: Union[str, int],
     model: str,
     tr: int,
     context_length: int,
@@ -169,10 +177,10 @@ def prepare_latents(
     verbose: bool = True,
 ) -> Tuple[np.ndarray, List[str]]:
     """
-    Prepare the latents for the given story.
+    Prepare the latents for the given run.
 
     Args:
-        story (str): Story name.
+        run (str): Run name.
         model_class (str, optional): The class of the model. Defaults to "clip".
         tr (int, optional): The time resolution. Defaults to 2.
         context_length (int, optional): The number of previous chunks to include for context. Defaults to 0.
@@ -183,19 +191,24 @@ def prepare_latents(
     """
     import torch
 
-    path = Path("data/lebel")
-    audio_path = path / "stimuli" / (story + ".wav")
-    textgrid_path = path / "derivative" / "TextGrids" / (story + ".TextGrid")
+    if dataset.lower() == "lebel2023":
+        path = Path("data/lebel2023")
+        audio_path = path / "stimuli" / (run + ".wav")
+        textgrid_path = path / "derivative" / "TextGrids" / (run + ".TextGrid")
+    elif dataset.lower() == "li2022":
+        path = Path("data/li2022")
+        audio_path = path / "stimuli" / f"task-lppEN_section-{run}.wav"
+        textgrid_path = path / "annotation" / "EN" / f"lppEN_section{run}.TextGrid"
 
     if model.lower() == "mel":
         latents = prepare_mel(audio_path, tr, context_length)
     elif model.lower() == "audioclip":
         latents = prepare_audioclip(
-            story, textgrid_path, audio_path, tr, context_length, model, verbose
+            run, textgrid_path, audio_path, tr, context_length, model, verbose
         )
     elif model.lower() == "clap":
         latents = prepare_clap(
-            story, textgrid_path, audio_path, tr, context_length, batch_size, verbose
+            run, textgrid_path, audio_path, tr, context_length, batch_size, verbose
         )
     else:
         chunks = compute_chunks(textgrid_path, tr, context_length)

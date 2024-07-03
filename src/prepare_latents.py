@@ -37,7 +37,7 @@ def compute_chunks(textgrid_path: str, tr: int, context_length: int) -> List[str
     transcript = TextGrid(textgrid_path).tiers[-1].simple_transcript
     transcript["chunk_id"] = pd.Categorical(
         transcript.xmax // tr,
-        categories=range(int(np.ceil(transcript.xmax.max() // tr))),
+        categories=range(int(np.ceil(transcript.xmax.max() / tr))),
     )
     transcript["text"] = (
         transcript["text"].str.lower().str.strip("{} ").replace("i", "I")

@@ -74,6 +74,7 @@ def fetch_data(
                 )
             # More latents than brain scans, drop last seconds of run
             Y = Y[: X.shape[0]]
+        assert Y.shape[0] == X.shape[0]
         Xs[run] = X
         Ys[run] = Y
         progress.update(task, description=f"Run: {run}", advance=1)

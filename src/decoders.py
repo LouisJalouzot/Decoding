@@ -111,6 +111,7 @@ class BrainDecoder(nn.Module):
         self,
         in_dims,
         out_dim,
+        multi_subject_mode="individual",
         hidden_size_backbone=512,
         hidden_size_projector=512,
         dropout=0.7,
@@ -121,6 +122,7 @@ class BrainDecoder(nn.Module):
     ):
         super().__init__()
 
+        self.multi_subject_mode = multi_subject_mode
         self.n_res_blocks = n_res_blocks
 
         norm_backbone = (
@@ -138,16 +140,28 @@ class BrainDecoder(nn.Module):
         )
 
         # First linear
-        self.lin0 = nn.ModuleDict(
-            {
-                subject: nn.Sequential(
-                    nn.Linear(in_dim, hidden_size_backbone),
-                    *[item() for item in activation_and_norm],
-                    nn.Dropout(dropout),
-                )
-                for subject, in_dim in in_dims.items()
-            }
-        )
+        if self.multi_subject_mode == "shared":
+            assert (
+                len(set(in_dim for _, in_dim in in_dims.items())) == 1
+            ), f"In multi_subject_mode 'shared', all subjects must have the same input dimension but got {in_dims}"
+            _, in_dim = list(in_dims.items())[0]
+            lin0 = nn.Sequential(
+                nn.Linear(in_dim, hidden_size_backbone),
+                *[item() for item in activation_and_norm],
+                nn.Dropout(dropout),
+            )
+            self.lin0 = nn.ModuleDict({subject: lin0 for subject in in_dims})
+        elif self.multi_subject_mode == "individual":
+            self.lin0 = nn.ModuleDict(
+                {
+                    subject: nn.Sequential(
+                        nn.Linear(in_dim, hidden_size_backbone),
+                        *[item() for item in activation_and_norm],
+                        nn.Dropout(dropout),
+                    )
+                    for subject, in_dim in in_dims.items()
+                }
+            )
 
         # Residual blocks
         self.mlp = nn.ModuleList(

@@ -5,6 +5,7 @@ from src.main import main
 
 parser = argparse.ArgumentParser(description="Argument parser")
 parser.add_argument("--subjects", nargs="*", default="UTS03", help="Subject name")
+parser.add_argument("--multi_subject_mode", type=str, choices=["individual", "shared"])
 parser.add_argument("--model", type=str, default="bert-base-uncased")
 parser.add_argument("--decoder", type=str, default="brain_decoder", help="Decoder name")
 parser.add_argument("--loss", type=str, default="mixco")
@@ -24,6 +25,8 @@ parser.add_argument("--hidden_size_backbone", type=int)
 parser.add_argument("--hidden_size_projector", type=int)
 parser.add_argument("--n_res_blocks", type=int)
 parser.add_argument("--n_proj_blocks", type=int)
+parser.add_argument("--scale_across_runs", type=bool)
+parser.add_argument("--scale_across_subjects", type=bool)
 
 args = parser.parse_args()
 args = {key: value for key, value in vars(args).items() if value is not None}

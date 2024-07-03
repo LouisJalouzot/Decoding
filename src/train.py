@@ -37,9 +37,6 @@ def train(
     np.random.seed(seed)
     torch.manual_seed(seed)
     with progress:
-        if isinstance(subjects, str):
-            subjects = [subjects]
-        subjects = sorted(subjects)
         Xs, Ys = {}, {}
         task = progress.add_task("", total=len(subjects))
         for subject in subjects:

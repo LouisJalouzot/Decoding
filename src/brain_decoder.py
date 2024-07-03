@@ -76,8 +76,6 @@ def train_brain_decoder(
     valid_runs,
     test_runs,
     decoder="brain_decoder",
-    # multi_subject_mode="random",
-    # projection_type="individual",
     patience=5,
     monitor="valid/relative_median_rank",
     loss="mixco",
@@ -87,7 +85,6 @@ def train_brain_decoder(
     batch_size=4,
     temperature=0.01,
     checkpoints_path=None,
-    hidden_size=512,
     **decoder_params,
 ):
     train_dl = MultiSubjectDataloader(

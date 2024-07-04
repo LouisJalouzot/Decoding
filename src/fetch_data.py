@@ -48,7 +48,8 @@ def fetch_data(
             file = h5py.File(brain_images_path / run, "r")["data"]
             run = run.replace(".hf5", "")
         elif dataset.lower() == "li2022":
-            file = nib.load(brain_images_path / run).get_fdata().swapaxes(0, -1)
+            file = nib.load(brain_images_path / run).get_fdata()
+            file = np.moveaxis(file, -1, 0)
             file = file.reshape(file.shape[0], -1)
             run = i + 1
         X = file[:, selected_voxels].astype(np.float32)

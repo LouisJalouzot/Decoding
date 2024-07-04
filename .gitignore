@@ -4,6 +4,7 @@ tang-2023-reproduction/
 AudioCLIP/
 brainmagick/
 scripts/
+figs/
 poetry.lock
 *.ipynb
 *.sh

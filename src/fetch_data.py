@@ -56,12 +56,14 @@ def fetch_data(
             file = nib.load(brain_images_path / run).get_fdata()
             file = np.moveaxis(file, -1, 0)
             file = file.reshape(file.shape[0], -1)
-            run = i + 1
         elif run.endswith(".npz"):
             file = np.load(brain_images_path / run)["arr_0"]
-            run = i + 1
         else:
             raise ValueError(f"File format not supported for {run}")
+        if dataset.lower() == "lebel2023":
+            run = run.replace(".hf5", "")
+        elif dataset.lower() == "li2022":
+            run = i + 1
         X = file[:, selected_voxels].astype(np.float32)
         X = np.nan_to_num(X, nan=0)
         if smooth > 0:

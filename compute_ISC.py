@@ -23,13 +23,12 @@ def average(run):
     subjects = [s for s in layout.get_subjects() if s.startswith(lang)]
     a = None
     affine = None
+    img = layout.get(subject=subjects[0])[0]
+    new_path = img.path.replace("sub-" + subjects[0], "sub-mean" + lang)
+    new_path = Path(new_path.replace(f"run-{img.entities['run']}", f"run-{run+1:02d}"))
+    if new_path.exists():
+        return
     for subject in tqdm(subjects, desc=f"Run {run}", leave=False):
-        new_path = img.path.replace("sub-" + subject, "sub-mean" + lang)
-        new_path = Path(
-            new_path.replace(f"run-{img.entities['run']}", f"run-{run+1:02d}")
-        )
-        if new_path.exists():
-            return
         imgs = sorted([f.path for f in layout.get(subject=subject)])
         assert len(imgs) == n_runs
         img = nib.load(imgs[run])
@@ -38,7 +37,6 @@ def average(run):
             affine = img.affine
         else:
             a += img.get_fdata()
-        img = layout.get(subject=subject)[0]
     new_path.parent.mkdir(parents=True, exist_ok=True)
     a /= len(subjects)
     nib.Nifti1Image(a, affine).to_filename(new_path)
@@ -63,13 +61,13 @@ def read(path):
 
 
 mean_imgs = sorted([f.path for f in layout.get(subject="meanEN")])
-mean_imgs = sorted(process_map(read, mean_imgs[:3]))
+mean_imgs = sorted(process_map(read, mean_imgs))
 mean_imgs = np.concatenate([m[1] for m in mean_imgs], axis=-1) * n_subjects
 
 corrs = []
 for subject in tqdm(subjects):
     subject_imgs = sorted([f.path for f in layout.get(subject=subject)])
-    subject_imgs = sorted(process_map(read, subject_imgs[:3], leave=False))
+    subject_imgs = sorted(process_map(read, subject_imgs, leave=False))
     subject_imgs = np.concatenate([m[1] for m in subject_imgs], axis=-1)
     c = corr(mean_imgs - subject_imgs, subject_imgs, axis=-1)
     corrs.append(c)
@@ -82,9 +80,9 @@ signif = np.where(zscores > thresh)
 
 df = pd.DataFrame(signif, index=["x", "y", "z"]).T
 df["zscore"] = zscores[signif]
-df.to_csv("data/li2022/ICS_voxels_EN.csv", index=False)
+df.to_csv(f"data/li2022/ISC_voxels_{lang}.csv", index=False)
 np.save(
-    "data/li2022/ICS_voxels_EN.npy",
+    f"data/li2022/ISC_voxels_{lang}.npy",
     {"pval": pvalues, "zscore": zscores, "thresh": thresh, "signif": signif},
 )
 

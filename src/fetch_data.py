@@ -37,7 +37,9 @@ def fetch_data(
     elif runs[0].endswith(".nii.gz"):
         n_voxels = np.prod(nib.load(brain_images_path / runs[0]).shape[:-1])
     elif runs[0].endswith(".npz"):
-        n_voxels = np.load(brain_images_path / runs[0])["arr_0"].shape[1]
+        n_voxels = np.load(brain_images_path / runs[0], allow_pickle=True)[
+            "arr_0"
+        ].shape[1]
     else:
         raise ValueError(f"File format not supported for {runs[0]}")
     if subsample_voxels is not None:
@@ -51,13 +53,12 @@ def fetch_data(
     for i, run in enumerate(runs):
         if run.endswith(".hf5"):
             file = h5py.File(brain_images_path / run, "r")["data"]
-            run = run.replace(".hf5", "")
         elif run.endswith(".nii.gz"):
             file = nib.load(brain_images_path / run).get_fdata()
             file = np.moveaxis(file, -1, 0)
             file = file.reshape(file.shape[0], -1)
         elif run.endswith(".npz"):
-            file = np.load(brain_images_path / run)["arr_0"]
+            file = np.load(brain_images_path / run, allow_pickle=True)["arr_0"]
         else:
             raise ValueError(f"File format not supported for {run}")
         if dataset.lower() == "lebel2023":

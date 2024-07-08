@@ -27,14 +27,19 @@ def fetch_data(
         brain_images_path = (
             Path("data/lebel2023/derivative/preprocessed_data") / subject
         )
-        runs = sorted(os.listdir(brain_images_path))
-        n_voxels = h5py.File(brain_images_path / runs[0], "r")["data"].shape[1]
     elif dataset.lower() == "li2022":
         brain_images_path = Path("data/li2022/derivatives") / subject / "func"
-        runs = sorted(os.listdir(brain_images_path))
-        n_voxels = np.prod(nib.load(brain_images_path / runs[0]).shape[:-1])
     else:
         raise ValueError(f"Dataset {dataset} not supported")
+    runs = sorted(os.listdir(brain_images_path))
+    if runs[0].endswith(".hf5"):
+        n_voxels = h5py.File(brain_images_path / runs[0], "r")["data"].shape[1]
+    elif runs[0].endswith(".nii.gz"):
+        n_voxels = np.prod(nib.load(brain_images_path / runs[0]).shape[:-1])
+    elif runs[0].endswith(".npz"):
+        n_voxels = np.load(brain_images_path / runs[0])["arr_0"].shape[1]
+    else:
+        raise ValueError(f"File format not supported for {runs[0]}")
     if subsample_voxels is not None:
         selected_voxels = np.random.permutation(n_voxels)[:subsample_voxels]
         selected_voxels = np.sort(selected_voxels)
@@ -44,14 +49,19 @@ def fetch_data(
     Xs, Ys = {}, {}
     task = progress.add_task("", total=len(runs))
     for i, run in enumerate(runs):
-        if dataset.lower() == "lebel2023":
+        if run.endswith(".hf5"):
             file = h5py.File(brain_images_path / run, "r")["data"]
             run = run.replace(".hf5", "")
-        elif dataset.lower() == "li2022":
+        elif run.endswith(".nii.gz"):
             file = nib.load(brain_images_path / run).get_fdata()
             file = np.moveaxis(file, -1, 0)
             file = file.reshape(file.shape[0], -1)
             run = i + 1
+        elif run.endswith(".npz"):
+            file = np.load(brain_images_path / run)["arr_0"]
+            run = i + 1
+        else:
+            raise ValueError(f"File format not supported for {run}")
         X = file[:, selected_voxels].astype(np.float32)
         X = np.nan_to_num(X, nan=0)
         if smooth > 0:

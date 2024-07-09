@@ -6,6 +6,8 @@ aws s3 sync --no-sign-request s3://openneuro.org/ds003020 data/lebel2023/
 #Li2022
 aws s3 sync --no-sign-request s3://openneuro.org/ds003643 data/li2022/
 ```
+For Li2022, brain mask available [here](https://nist.mni.mcgill.ca/colin-27-average-brain/).
+
 Requires
 ```bash
 sudo apt install awscli

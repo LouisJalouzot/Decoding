@@ -18,7 +18,8 @@ def scale_in_df(df, col):
 
 
 def train(
-    subjects: Union[str, List[str]] = "lebel2023/UTS03",
+    dataset: str = "lebel2023/all_subjects",
+    subjects: List[str] = None,
     decoder: str = "brain_decoder",
     model: str = "bert-base-uncased",
     context_length: int = 6,
@@ -36,13 +37,16 @@ def train(
 ) -> dict:
     np.random.seed(seed)
     torch.manual_seed(seed)
+    dataset_path = Path("data") / dataset
+    if subjects is None:
+        subjects = os.listdir(dataset_path)
     with progress:
         Xs, Ys = {}, {}
         task = progress.add_task("", total=len(subjects))
         for subject in subjects:
             progress.update(task, description=f"Fetching data for subject {subject}")
             subj_Xs, subj_Ys = fetch_data(
-                subject=subject,
+                subject_path=dataset_path / subject,
                 model=model,
                 tr=tr,
                 context_length=context_length,

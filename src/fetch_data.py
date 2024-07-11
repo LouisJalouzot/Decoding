@@ -13,7 +13,7 @@ from src.utils import console, progress
 
 
 def fetch_data(
-    subject: str,
+    subject_path: Union[Path, str],
     model: str,
     tr: int,
     context_length: int,
@@ -22,7 +22,6 @@ def fetch_data(
     lag: int,
     batch_size: int,
 ) -> Tuple[Dict[str, np.ndarray]]:
-    dataset, subject = subject.split("/")
     if dataset.lower() == "lebel2023":
         brain_images_path = (
             Path("data/lebel2023/derivative/preprocessed_data") / subject

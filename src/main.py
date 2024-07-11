@@ -1,3 +1,4 @@
+import os
 from hashlib import sha1
 from typing import List, Union
 
@@ -8,7 +9,7 @@ from src.utils import ignore, memory
 
 @memory.cache
 def main(
-    subjects: Union[str, List[str]] = "UTS03",
+    dataset: str = "lebel2023/all_subjects",
     decoder: str = "brain_decoder",
     model: str = "bert-base-uncased",
     context_length: int = 6,
@@ -18,9 +19,7 @@ def main(
     multi_subject_mode: str = "individual",
     **kwargs,
 ):
-    if isinstance(subjects, str):
-        subjects = [subjects]
-    subjects = sorted(subjects)
+    subjects = os.listdir(Path("data") / dataset)
     config = {
         key: value
         for key, value in locals().items()

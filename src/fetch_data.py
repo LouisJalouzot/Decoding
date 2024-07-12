@@ -13,7 +13,7 @@ from src.utils import console, progress
 
 
 def fetch_data(
-    subject: str,
+    subject_path: Union[Path, str],
     model: str,
     tr: int,
     context_length: int,
@@ -22,7 +22,6 @@ def fetch_data(
     lag: int,
     batch_size: int,
 ) -> Tuple[Dict[str, np.ndarray]]:
-    dataset, subject = subject.split("/")
     if dataset.lower() == "lebel2023":
         brain_images_path = (
             Path("data/lebel2023/derivative/preprocessed_data") / subject
@@ -33,7 +32,8 @@ def fetch_data(
         raise ValueError(f"Dataset {dataset} not supported")
     runs = sorted(os.listdir(brain_images_path))
     if runs[0].endswith(".hf5"):
-        n_voxels = h5py.File(brain_images_path / runs[0], "r")["data"].shape[1]
+        with h5py.File(brain_images_path / runs[0], "r") as f:
+            n_voxels = f["data"].shape[1]
     elif runs[0].endswith(".nii.gz"):
         n_voxels = np.prod(nib.load(brain_images_path / runs[0]).shape[:-1])
     elif runs[0].endswith(".npz"):
@@ -52,7 +52,8 @@ def fetch_data(
     task = progress.add_task("", total=len(runs))
     for i, run in enumerate(runs):
         if run.endswith(".hf5"):
-            file = h5py.File(brain_images_path / run, "r")["data"]
+            with h5py.File(brain_images_path / run, "r") as f:
+                file = f["data"][:]
         elif run.endswith(".nii.gz"):
             file = nib.load(brain_images_path / run).get_fdata()
             file = np.moveaxis(file, -1, 0)

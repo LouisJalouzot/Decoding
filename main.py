@@ -4,7 +4,7 @@ import argparse
 from src.main import main
 
 parser = argparse.ArgumentParser(description="Argument parser")
-parser.add_argument("--subjects", nargs="*", default="UTS03", help="Subject name")
+parser.add_argument("--dataset", default="lebel2023/all_subjects")
 parser.add_argument("--multi_subject_mode", type=str, choices=["individual", "shared"])
 parser.add_argument("--model", type=str, default="bert-base-uncased")
 parser.add_argument("--decoder", type=str, default="brain_decoder", help="Decoder name")

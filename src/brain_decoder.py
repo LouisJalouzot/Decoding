@@ -81,7 +81,7 @@ def train_brain_decoder(
     loss="mixco",
     weight_decay=1e-6,
     lr=1e-4,
-    max_epochs=100,
+    max_epochs=200,
     batch_size=4,
     temperature=0.01,
     checkpoints_path=None,

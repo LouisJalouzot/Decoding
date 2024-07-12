@@ -1,5 +1,4 @@
 import os
-import re
 from pathlib import Path
 from typing import Dict, Tuple
 
@@ -13,60 +12,35 @@ from src.utils import console, progress
 
 
 def fetch_data(
-    subject_path: Union[Path, str],
+    subject_path: str,
     model: str,
     tr: int,
     context_length: int,
-    subsample_voxels: int,
     smooth: int,
     lag: int,
     batch_size: int,
 ) -> Tuple[Dict[str, np.ndarray]]:
-    if dataset.lower() == "lebel2023":
-        brain_images_path = (
-            Path("data/lebel2023/derivative/preprocessed_data") / subject
-        )
-    elif dataset.lower() == "li2022":
-        brain_images_path = Path("data/li2022/derivatives") / subject / "func"
-    else:
-        raise ValueError(f"Dataset {dataset} not supported")
-    runs = sorted(os.listdir(brain_images_path))
-    if runs[0].endswith(".hf5"):
-        with h5py.File(brain_images_path / runs[0], "r") as f:
-            n_voxels = f["data"].shape[1]
-    elif runs[0].endswith(".nii.gz"):
-        n_voxels = np.prod(nib.load(brain_images_path / runs[0]).shape[:-1])
-    elif runs[0].endswith(".npz"):
-        n_voxels = np.load(brain_images_path / runs[0], allow_pickle=True)[
-            "arr_0"
-        ].shape[1]
-    else:
-        raise ValueError(f"File format not supported for {runs[0]}")
-    if subsample_voxels is not None:
-        selected_voxels = np.random.permutation(n_voxels)[:subsample_voxels]
-        selected_voxels = np.sort(selected_voxels)
-    else:
-        selected_voxels = np.arange(n_voxels)
-
+    working_dir = Path(os.getcwd())
+    # run names should not contain dots
+    runs = [Path(subject_path) / f.split(".")[0] for f in os.listdir(subject_path)]
+    runs = sorted(list(set(runs)))  # drop duplicates
     Xs, Ys = {}, {}
-    task = progress.add_task("", total=len(runs))
+    task = progress.add_task(f"Retrieving runs for {subject_path}", total=len(runs))
     for i, run in enumerate(runs):
-        if run.endswith(".hf5"):
-            with h5py.File(brain_images_path / run, "r") as f:
-                file = f["data"][:]
-        elif run.endswith(".nii.gz"):
-            file = nib.load(brain_images_path / run).get_fdata()
-            file = np.moveaxis(file, -1, 0)
-            file = file.reshape(file.shape[0], -1)
-        elif run.endswith(".npz"):
-            file = np.load(brain_images_path / run, allow_pickle=True)["arr_0"]
+        if run.with_suffix(".npy"):
+            X = np.load(run.with_suffix(".npy"))
+        elif run.with_suffix(".hf5"):
+            with h5py.File(run.with_suffix(".hf5"), "r") as f:
+                X = f["data"][:]
+        elif run.with_suffix(".nii.gz"):
+            X = nib.load(run.with_suffix(".nii.gz")).get_fdata()
+            X = np.moveaxis(X, -1, 0)
+            X = X.reshape(X.shape[0], -1)
+        elif run.with_suffix(".npz"):
+            X = np.load(run.with_suffix(".npz"), allow_pickle=True)["arr_0"]
         else:
-            raise ValueError(f"File format not supported for {run}")
-        if dataset.lower() == "lebel2023":
-            run = run.replace(".hf5", "")
-        elif dataset.lower() == "li2022":
-            run = i + 1
-        X = file[:, selected_voxels].astype(np.float32)
+            raise FileNotFoundError(f"No brain image found at {runs[0]}")
+        X = X.astype(np.float32)
         X = np.nan_to_num(X, nan=0)
         if smooth > 0:
             new_X = X.copy()
@@ -75,24 +49,40 @@ def fetch_data(
                 new_X[i:] += X[:-i]
                 count[i:] += 1
             X = new_X / count
-        X = StandardScaler().fit_transform(X[lag:])
-        Y = prepare_latents(dataset, run, model, tr, context_length, batch_size)
-        Y = StandardScaler().fit_transform(Y)
-        if dataset.lower() == "lebel2023":
+        # Resolve paths for more efficient caching
+        # Make paths relative for persistent caching across machines
+        textgrid_path = (
+            run.with_suffix(".TextGrid")
+            .resolve()
+            .relative_to(working_dir, walk_up=True)
+        )
+        audio_path = (
+            run.with_suffix(".wav").resolve().relative_to(working_dir, walk_up=True)
+        )
+        Y = prepare_latents(
+            textgrid_path, audio_path, model, tr, context_length, batch_size
+        )
+        if "lebel2023" in str(subject_path):
             Y = Y[5:-5]  # trim first and last 10 seconds on Lebel
         if lag > 0:
+            X = X[lag:]
             Y = Y[:-lag]
+        elif lag < 0:
+            X = X[:lag]
+            Y = Y[-lag:]
+        X = StandardScaler().fit_transform(X)
+        Y = StandardScaler().fit_transform(Y)
         if Y.shape[0] > X.shape[0]:
             if Y.shape[0] > X.shape[0] + 1:
                 console.log(
-                    f"[red]{Y.shape[0] - X.shape[0]} > 1 latents trimmed for subject {subject} and run {run}"
+                    f"[red]{Y.shape[0] - X.shape[0]} > 1 latents trimmed for subject {run}"
                 )
             # More latents than brain scans, drop last seconds of run
             Y = Y[: X.shape[0]]
         assert Y.shape[0] == X.shape[0]
         Xs[run] = X
         Ys[run] = Y
-        progress.update(task, description=f"Run: {run}", advance=1)
+        progress.update(task, advance=1)
     progress.remove_task(task)
 
     return Xs, Ys

@@ -2,7 +2,7 @@ import os
 import shutil
 from pathlib import Path
 
-from utils import create_symlink
+from src.utils import create_symlink
 
 
 def create_symlinks_lebel2023():

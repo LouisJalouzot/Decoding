@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import List, Union
 
 import numpy as np
@@ -18,7 +19,7 @@ def scale_in_df(df, col):
 
 
 def train(
-    dataset: str = "lebel2023/all_subjects",
+    datasets: Union[str, List[str]] = "lebel2023/all_subjects",
     subjects: List[str] = None,
     decoder: str = "brain_decoder",
     model: str = "bert-base-uncased",
@@ -29,7 +30,6 @@ def train(
     valid_ratio: float = 0.1,
     test_ratio: float = 0.1,
     seed: int = 0,
-    subsample_voxels: int = None,
     latents_batch_size: int = 64,
     scale_across_runs: bool = True,
     scale_across_subjects: bool = False,
@@ -37,20 +37,16 @@ def train(
 ) -> dict:
     np.random.seed(seed)
     torch.manual_seed(seed)
-    dataset_path = Path("data") / dataset
-    if subjects is None:
-        subjects = os.listdir(dataset_path)
     with progress:
         Xs, Ys = {}, {}
         task = progress.add_task("", total=len(subjects))
         for subject in subjects:
             progress.update(task, description=f"Fetching data for subject {subject}")
             subj_Xs, subj_Ys = fetch_data(
-                subject_path=dataset_path / subject,
+                subject_path=f"data/{subject}",
                 model=model,
                 tr=tr,
                 context_length=context_length,
-                subsample_voxels=subsample_voxels,
                 smooth=smooth,
                 lag=lag,
                 batch_size=latents_batch_size,

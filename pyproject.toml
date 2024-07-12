@@ -7,7 +7,7 @@ readme = "README.md"
 package-mode = false
 
 [tool.poetry.dependencies]
-python = "^3.10"
+python = "^3.12"
 rich = "^13.7.1"
 torch = "^2.2.0"
 joblib = "^1.4.2"
@@ -31,6 +31,7 @@ pandas = "^2.2.2"
 soundfile = "^0.12.1"
 nibabel = "^5.2.1"
 chardet = "^5.2.0"
+nilearn = "^0.10.4"
 
 
 [tool.poetry.group.dev.dependencies]

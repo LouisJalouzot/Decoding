@@ -67,9 +67,7 @@ def prepare_mel(audio_path: Path, tr: int, context_length: int):
     return mel(wav.to(device)).reshape(768, -1).T.cpu().numpy()
 
 
-def prepare_audioclip(
-    run, textgrid_path, audio_path, tr, context_length, model, verbose
-):
+def prepare_audioclip(textgrid_path, audio_path, tr, context_length, model, verbose):
     import librosa
     import torch
 
@@ -94,7 +92,7 @@ def prepare_audioclip(
     model.eval()
     with torch.no_grad():
         task = progress.add_task(
-            f"Computing AudioCLIP latents for run {run}",
+            f"Computing AudioCLIP latents for run {textgrid_path.stem}",
             total=size,
             visible=verbose,
         )
@@ -119,9 +117,7 @@ def prepare_audioclip(
     return np.vstack(latents)
 
 
-def prepare_clap(
-    run, textgrid_path, audio_path, tr, context_length, batch_size, verbose
-):
+def prepare_clap(textgrid_path, audio_path, tr, context_length, batch_size, verbose):
     import librosa
     import torch
     from transformers import AutoProcessor, ClapModel
@@ -144,7 +140,7 @@ def prepare_clap(
     model.eval()
     with torch.no_grad():
         task = progress.add_task(
-            f"Computing CLAP latents for run {run}",
+            f"Computing CLAP latents for run {textgrid_path.stem}",
             total=-(-size // batch_size),
             visible=verbose,
         )
@@ -168,8 +164,8 @@ def prepare_clap(
 
 @memory.cache(ignore=["batch_size", "verbose"])
 def prepare_latents(
-    dataset: str,
-    run: Union[str, int],
+    textgrid_path: Path,
+    audio_path: Path,
     model: str,
     tr: int,
     context_length: int,
@@ -191,24 +187,15 @@ def prepare_latents(
     """
     import torch
 
-    if dataset.lower() == "lebel2023":
-        path = Path("data/lebel2023")
-        audio_path = path / "stimuli" / (run + ".wav")
-        textgrid_path = path / "derivative" / "TextGrids" / (run + ".TextGrid")
-    elif dataset.lower() == "li2022":
-        path = Path("data/li2022")
-        audio_path = path / "stimuli" / f"task-lppEN_section-{run}.wav"
-        textgrid_path = path / "annotation" / "EN" / f"lppEN_section{run}.TextGrid"
-
     if model.lower() == "mel":
         latents = prepare_mel(audio_path, tr, context_length)
     elif model.lower() == "audioclip":
         latents = prepare_audioclip(
-            run, textgrid_path, audio_path, tr, context_length, model, verbose
+            textgrid_path, audio_path, tr, context_length, model, verbose
         )
     elif model.lower() == "clap":
         latents = prepare_clap(
-            run, textgrid_path, audio_path, tr, context_length, batch_size, verbose
+            textgrid_path, audio_path, tr, context_length, batch_size, verbose
         )
     else:
         chunks = compute_chunks(textgrid_path, tr, context_length)

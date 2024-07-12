@@ -37,8 +37,7 @@ ignore = ["verbose", "n_jobs", "latents_batch_size"]
 
 
 def create_symlink(input: Path, target: Path):
-    input = input.resolve()
-    input.symlink_to(target.resolve().relative_to(input.parent, walk_up=True))
+    input.symlink_to(target.relative_to(input.parent, walk_up=True))
 
 
 def _get_free_gpu():

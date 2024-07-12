@@ -9,7 +9,7 @@ from src.utils import ignore, memory
 
 @memory.cache
 def main(
-    dataset: str = "lebel2023/all_subjects",
+    datasets: Union[str, List[str]] = "lebel2023/all_subjects",
     decoder: str = "brain_decoder",
     model: str = "bert-base-uncased",
     context_length: int = 6,
@@ -19,7 +19,12 @@ def main(
     multi_subject_mode: str = "individual",
     **kwargs,
 ):
-    subjects = os.listdir(Path("data") / dataset)
+    if isinstance(datasets, str):
+        subjects = [f"{datasets}/{f}" for f in os.listdir(f"data/{datasets}")]
+    elif isinstance(datasets, list):
+        subjects = []
+        for dataset in datasets:
+            subjects.extend([f"{datasets}/{f}" for f in os.listdir(f"data/{dataset}")])
     config = {
         key: value
         for key, value in locals().items()

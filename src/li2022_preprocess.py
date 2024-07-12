@@ -1,5 +1,4 @@
 import os
-import re
 import shutil
 from pathlib import Path
 
@@ -8,8 +7,9 @@ import nibabel as nib
 import numpy as np
 from joblib import Parallel, delayed
 from nilearn import image
+from tqdm.auto import tqdm
 
-from src.utils import console, create_symlink, progress
+from src.utils import console, create_symlink
 
 n_runs = 9
 path = Path("data/li2022")
@@ -75,14 +75,12 @@ def resample_and_slice_brain(lang="EN", n_jobs=-1):
     def aux(subject, run):
         target_file = target_path / subject / f"{run}.npy"
         target_file.parent.mkdir(parents=True, exist_ok=True)
-        create_symlink(
-            target_path / subject / f"{run}.TextGrid",
-            text_file(lang, run),
-        )
-        create_symlink(
-            target_path / subject / f"{run}.wav",
-            audio_file(lang, run),
-        )
+        target_text = target_path / subject / f"{run}.TextGrid"
+        if not target_text.exists():
+            create_symlink(target_text, text_file(lang, run))
+        target_audio = target_path / subject / f"{run}.wav"
+        if not target_audio.exists():
+            create_symlink(target_audio, audio_file(lang, run))
         input_file = input_path / subject / f"{run}.nii.gz"
         if not input_file.exists():
             raise FileNotFoundError(
@@ -98,37 +96,49 @@ def resample_and_slice_brain(lang="EN", n_jobs=-1):
     )
 
 
-def build_mean_subject(dataset=path / "all_EN", mean_name="mean_EN", n_jobs=-1):
-    subjects = os.listdir(dataset)
+def build_mean_subject(lang="EN", input_path=None, target_path=None, n_jobs=-1):
+    if input_path is None:
+        input_path = path / f"all_{lang}"
+    else:
+        input_path = Path(input_path)
+    if target_path is None:
+        target_path = path / f"mean_{lang}" / f"mean_{lang}"
+    else:
+        target_path = Path(target_path)
+    subjects = os.listdir(input_path)
     n_subjects = len(subjects)
     console.log(f"Building mean subject for {n_subjects} subjects.")
     input("Subjects found are: " + ", ".join(subjects) + ". Continue?")
-    target_path = path / mean_name
+    target_path.mkdir(parents=True, exist_ok=True)
 
-    with progress:
+    def aux(run):
+        target_text = target_path / f"{run}.TextGrid"
+        if not target_text.exists():
+            create_symlink(target_text, text_file(lang, run))
+        target_audio = target_path / f"{run}.wav"
+        if not target_audio.exists():
+            create_symlink(target_audio, audio_file(lang, run))
+        if (target_path / f"{run}.npy").exists():
+            return
+        data = None
+        for subject in tqdm(subjects):
+            file = input_path / subject / str(run)
+            if file.with_suffix(".npy").exists():
+                subject_data = np.load(file.with_suffix(".npy"))
+            elif file.with_suffix(".nii.gz").exists():
+                subject_data = nib.load(file.with_suffix(".nii.gz")).get_fdata()
+            elif file.with_suffix(".hf5").exists():
+                with h5py.File(file.with_suffix(".hf5"), "r") as f:
+                    subject_data = f["data"][:]
+            else:
+                raise FileNotFoundError(
+                    f"Subject {subject} does not have a brain image for run {run} (supposed to be at {file})."
+                )
+            if data is None:
+                data = subject_data
+            else:
+                data += subject_data
+        data /= n_subjects
+        np.save(target_path / f"{run}.npy", data)
 
-        def aux(run):
-            task = progress.add_task(f"Fetching images for run {run}", total=n_subjects)
-            data = None
-            for subject in subjects:
-                file = dataset / subject / run
-                if file.with_suffix(".npy").exists():
-                    subject_data = np.load(file.with_suffix(".npy"))
-                elif file.with_suffix(".nii.gz").exists():
-                    subject_data = nib.load(file.with_suffix(".nii.gz")).get_fdata()
-                elif file.with_suffix(".hf5").exists():
-                    with h5py.File(file.with_suffix(".hf5"), "r") as f:
-                        subject_data = f["data"][:]
-                else:
-                    raise FileNotFoundError(
-                        f"Subject {subject} does not have a brain image for run {run}."
-                    )
-                if data is None:
-                    data = subject_data
-                else:
-                    data += subject_data
-                progress.update(task, advance=1)
-            data /= n_subjects
-            np.save(target_path / f"{run}.npy", data)
-
-        Parallel(n_jobs=n_jobs)(delayed(aux)(run) for run in range(n_runs))
+    Parallel(n_jobs=n_jobs)(delayed(aux)(run) for run in range(n_runs))

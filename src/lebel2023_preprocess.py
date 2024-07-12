@@ -2,17 +2,14 @@ import os
 import shutil
 from pathlib import Path
 
-path = Path("data/lebel2023")
-assert (
-    path.exists()
-), f"{path} does not exist, either the working directory {os.getcwd()} is not the root of the repo or the data has not been downloaded."
+from utils import create_symlink
 
 
-def create_symlink(input, target):
-    input.symlink_to(target.relative_to(input, walk_up=True))
-
-
-if __name__ == "__main__":
+def create_symlinks_lebel2023():
+    path = Path("data/lebel2023")
+    assert (
+        path.exists()
+    ), f"{path} does not exist, either the working directory {os.getcwd()} is not the root of the repo or the data has not been downloaded."
     data_dir = path / "derivative" / "preprocessed_data"
     subjects = sorted(os.listdir(data_dir))
     ### Building "all_subjects" directory

@@ -3,12 +3,13 @@ import re
 import shutil
 from pathlib import Path
 
+import h5py
 import nibabel as nib
 import numpy as np
 from joblib import Parallel, delayed
 from nilearn import image
 
-from src.utils import console, progress
+from src.utils import console, create_symlink, progress
 
 n_runs = 9
 path = Path("data/li2022")
@@ -22,10 +23,10 @@ def text_file(lang, run):
 
 
 def audio_file(lang, run):
-    return path / "stimuli" / f"task-lpp{lang}_section_{run+1}.wav"
+    return path / "stimuli" / f"task-lpp{lang}_section-{run+1}.wav"
 
 
-def create_symlinks(lang="EN"):
+def create_symlinks_li2022(lang="EN"):
     data_dir = path / "derivatives"
     subjects = [f for f in sorted(os.listdir(data_dir)) if lang in f]
     ### Building "all_lang" directory
@@ -38,11 +39,13 @@ def create_symlinks(lang="EN"):
         files = sorted(os.listdir(data_dir / subject / "func"))
         for run, file in enumerate(files):
             run_file = f"{run}.nii.gz"
-            (sub_target_dir / run_file).symlink_to(data_dir / subject / "func" / file)
+            create_symlink(
+                sub_target_dir / run_file, data_dir / subject / "func" / file
+            )
             run_file = run_file.replace(".nii.gz", ".TextGrid")
-            (sub_target_dir / run_file).symlink_to(text_file(lang, run))
+            create_symlink(sub_target_dir / run_file, text_file(lang, run))
             run_file = run_file.replace(".TextGrid", ".wav")
-            (sub_target_dir / run_file).symlink_to(audio_file(lang, run))
+            create_symlink(sub_target_dir / run_file, audio_file(lang, run))
 
 
 def resample_and_slice_brain(lang="EN", n_jobs=-1):
@@ -70,15 +73,23 @@ def resample_and_slice_brain(lang="EN", n_jobs=-1):
     mask = np.where(mask.get_fdata().astype(bool))
 
     def aux(subject, run):
+        target_file = target_path / subject / f"{run}.npy"
+        target_file.parent.mkdir(parents=True, exist_ok=True)
+        create_symlink(
+            target_path / subject / f"{run}.TextGrid",
+            text_file(lang, run),
+        )
+        create_symlink(
+            target_path / subject / f"{run}.wav",
+            audio_file(lang, run),
+        )
         input_file = input_path / subject / f"{run}.nii.gz"
         if not input_file.exists():
             raise FileNotFoundError(
                 f"File {input_file} does not exist for subject {subject} and run {run}."
             )
-        target_file = target_path / subject / f"{run}.npy"
         if target_file.exists():
             return
-        target_file.parent.mkdir(parents=True, exist_ok=True)
         img = image.resample_img(nib.load(input_file), target_affine=acquisition_affine)
         np.save(target_file, img.get_fdata()[mask].T)
 
@@ -87,44 +98,37 @@ def resample_and_slice_brain(lang="EN", n_jobs=-1):
     )
 
 
-def build_mean_subject(regex=r"sub-EN\d+brain", mean_name=None):
-    subjects = os.listdir(path)
-    subjects = [s for s in subjects if re.match(regex, s)]
+def build_mean_subject(dataset=path / "all_EN", mean_name="mean_EN", n_jobs=-1):
+    subjects = os.listdir(dataset)
     n_subjects = len(subjects)
     console.log(f"Building mean subject for {n_subjects} subjects.")
     input("Subjects found are: " + ", ".join(subjects) + ". Continue?")
+    target_path = path / mean_name
 
     with progress:
 
         def aux(run):
-            example_file = subject_files(subject[0])[0]
-            new_file
-            task = progress.add_task(
-                f"Fetching {n_subjects} images for run {run}", total=n_subjects
-            )
+            task = progress.add_task(f"Fetching images for run {run}", total=n_subjects)
             data = None
             for subject in subjects:
-                files = subject_files(subject)
-                assert (
-                    len(files) == n_runs
-                ), f"Subject {subject} has {len(files)} != {n_runs} runs."
-                file = files[run]
-                if str(file).endswith(".npy"):
-                    subject_data = np.load(file)
-                elif str(file).endswith(".nii.gz"):
-                    subject_data = nib.load(file).get_fdata()
-                elif str(file).endswith(".hf5"):
-                    subject_data = h5py.File(file, "r")["data"][...]
+                file = dataset / subject / run
+                if file.with_suffix(".npy").exists():
+                    subject_data = np.load(file.with_suffix(".npy"))
+                elif file.with_suffix(".nii.gz").exists():
+                    subject_data = nib.load(file.with_suffix(".nii.gz")).get_fdata()
+                elif file.with_suffix(".hf5").exists():
+                    with h5py.File(file.with_suffix(".hf5"), "r") as f:
+                        subject_data = f["data"][:]
+                else:
+                    raise FileNotFoundError(
+                        f"Subject {subject} does not have a brain image for run {run}."
+                    )
                 if data is None:
                     data = subject_data
                 else:
                     data += subject_data
                 progress.update(task, advance=1)
             data /= n_subjects
-            np.save(file, data)
+            np.save(target_path / f"{run}.npy", data)
 
-        Parallel(n_jobs=-1)(delayed(aux)(run) for run in range(n_runs))
-
-
-if __name__ == "__main__":
-    create_symlinks()
+        Parallel(n_jobs=n_jobs)(delayed(aux)(run) for run in range(n_runs))

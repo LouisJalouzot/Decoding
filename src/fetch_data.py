@@ -27,16 +27,16 @@ def fetch_data(
     Xs, Ys = {}, {}
     task = progress.add_task(f"Retrieving runs for {subject_path}", total=len(runs))
     for i, run in enumerate(runs):
-        if run.with_suffix(".npy"):
+        if run.with_suffix(".npy").exists():
             X = np.load(run.with_suffix(".npy"))
-        elif run.with_suffix(".hf5"):
+        elif run.with_suffix(".hf5").exists():
             with h5py.File(run.with_suffix(".hf5"), "r") as f:
                 X = f["data"][:]
-        elif run.with_suffix(".nii.gz"):
+        elif run.with_suffix(".nii.gz").exists():
             X = nib.load(run.with_suffix(".nii.gz")).get_fdata()
             X = np.moveaxis(X, -1, 0)
             X = X.reshape(X.shape[0], -1)
-        elif run.with_suffix(".npz"):
+        elif run.with_suffix(".npz").exists():
             X = np.load(run.with_suffix(".npz"), allow_pickle=True)["arr_0"]
         else:
             raise FileNotFoundError(f"No brain image found at {runs[0]}")

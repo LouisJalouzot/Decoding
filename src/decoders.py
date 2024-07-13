@@ -4,7 +4,9 @@ from torch import nn
 
 
 class SimpleMLP(nn.Module):
-    def __init__(self, in_dim, out_dim, hidden_size=512, num_layers=3, dropout=0.7):
+    def __init__(
+        self, in_dim, out_dim, hidden_size=512, num_layers=3, dropout=0.7, **kwargs
+    ):
         super().__init__()
         self.fc = [
             nn.Linear(in_features=in_dim, out_features=hidden_size),
@@ -33,20 +35,23 @@ class SimpleMLP(nn.Module):
 class RNN(nn.Module):
     def __init__(
         self,
-        in_dim,
         out_dim,
+        hidden_size=512,
         num_layers=1,
+        nonlinearity="tanh",
+        bias=True,
         dropout=0.7,
-        **rnn_params,
+        **kwargs,
     ):
         super().__init__()
         self.rnn = nn.RNN(
-            input_size=in_dim,
+            input_size=hidden_size,
             hidden_size=out_dim,
             num_layers=num_layers,
-            dropout=dropout,
+            nonlinearity=nonlinearity,
+            bias=bias,
             batch_first=True,
-            **rnn_params,
+            dropout=dropout,
         )
 
     def forward(self, X):
@@ -56,20 +61,21 @@ class RNN(nn.Module):
 class GRU(nn.Module):
     def __init__(
         self,
-        in_dim,
         out_dim,
+        hidden_size=512,
         num_layers=1,
+        bias=True,
         dropout=0.7,
-        **gru_params,
+        **kwargs,
     ):
         super().__init__()
         self.gru = nn.GRU(
-            input_size=in_dim,
+            input_size=hidden_size,
             hidden_size=out_dim,
             num_layers=num_layers,
-            dropout=dropout,
+            bias=bias,
             batch_first=True,
-            **gru_params,
+            dropout=dropout,
         )
 
     def forward(self, X):
@@ -79,27 +85,29 @@ class GRU(nn.Module):
 class LSTM(nn.Module):
     def __init__(
         self,
-        in_dim,
         out_dim,
-        hidden_size=None,
+        hidden_size=512,
         num_layers=1,
+        bias=True,
+        proj_size=0,
         dropout=0.7,
-        **lstm_params,
+        **kwargs,
     ):
-        if hidden_size is None:
-            hidden_size = out_dim
-            proj_size = 0
-        else:
-            proj_size = out_dim
         super().__init__()
+        input_size = hidden_size
+        if proj_size > 0:
+            assert proj_size < hidden_size
+            assert proj_size == out_dim
+        else:
+            assert hidden_size == out_dim
         self.lstm = nn.LSTM(
-            input_size=in_dim,
-            proj_size=proj_size,
+            input_size=input_size,
             hidden_size=hidden_size,
             num_layers=num_layers,
-            dropout=dropout,
+            bias=bias,
             batch_first=True,
-            **lstm_params,
+            dropout=dropout,
+            proj_size=proj_size,
         )
 
     def forward(self, X):
@@ -109,65 +117,37 @@ class LSTM(nn.Module):
 class BrainDecoder(nn.Module):
     def __init__(
         self,
-        in_dims,
         out_dim,
-        multi_subject_mode="individual",
-        hidden_size_backbone=512,
+        hidden_size=512,
         hidden_size_projector=512,
         dropout=0.7,
         n_res_blocks=2,
         n_proj_blocks=1,
         norm_type="ln",
-        activation_layer_first=False,
     ):
         super().__init__()
 
-        self.multi_subject_mode = multi_subject_mode
         self.n_res_blocks = n_res_blocks
 
         norm_backbone = (
-            partial(nn.BatchNorm1d, num_features=hidden_size_backbone)
+            partial(nn.BatchNorm1d, num_features=hidden_size)
             if norm_type == "bn"
-            else partial(nn.LayerNorm, normalized_shape=hidden_size_backbone)
+            else partial(nn.LayerNorm, normalized_shape=hidden_size)
         )
         activation_backbone = (
             partial(nn.ReLU, inplace=True) if norm_type == "bn" else nn.GELU
         )
         activation_and_norm = (
             (activation_backbone, norm_backbone)
-            if activation_layer_first
+            if self.activation_layer_first
             else (norm_backbone, activation_backbone)
         )
-
-        # First linear
-        if self.multi_subject_mode == "shared":
-            assert (
-                len(set(in_dim for _, in_dim in in_dims.items())) == 1
-            ), f"In multi_subject_mode 'shared', all subjects must have the same input dimension but got {in_dims}"
-            _, in_dim = list(in_dims.items())[0]
-            lin0 = nn.Sequential(
-                nn.Linear(in_dim, hidden_size_backbone),
-                *[item() for item in activation_and_norm],
-                nn.Dropout(dropout),
-            )
-            self.lin0 = nn.ModuleDict({subject: lin0 for subject in in_dims})
-        elif self.multi_subject_mode == "individual":
-            self.lin0 = nn.ModuleDict(
-                {
-                    subject: nn.Sequential(
-                        nn.Linear(in_dim, hidden_size_backbone),
-                        *[item() for item in activation_and_norm],
-                        nn.Dropout(dropout),
-                    )
-                    for subject, in_dim in in_dims.items()
-                }
-            )
 
         # Residual blocks
         self.mlp = nn.ModuleList(
             [
                 nn.Sequential(
-                    nn.Linear(hidden_size_backbone, hidden_size_backbone),
+                    nn.Linear(hidden_size, hidden_size),
                     *[item() for item in activation_and_norm],
                     nn.Dropout(dropout),
                 )
@@ -176,7 +156,7 @@ class BrainDecoder(nn.Module):
         )
 
         # Second linear
-        self.lin1 = nn.Linear(hidden_size_backbone, hidden_size_projector, bias=True)
+        self.lin1 = nn.Linear(hidden_size, hidden_size_projector, bias=True)
 
         # Projector
         assert n_proj_blocks >= 0
@@ -198,9 +178,6 @@ class BrainDecoder(nn.Module):
         )
         self.projector = nn.Sequential(*projector_layers)
 
-    def project_subject(self, x, subject):
-        return self.lin0[subject](x)
-
     def forward(self, x):
         residual = x
         for res_block in range(self.n_res_blocks):
@@ -212,3 +189,63 @@ class BrainDecoder(nn.Module):
         x = self.lin1(x)
 
         return self.projector(x)
+
+
+class DecoderWrapper(nn.Module):
+    def __init__(
+        self,
+        decoder,
+        in_dims,
+        hidden_size=512,
+        dropout=0.7,
+        norm_type="ln",
+        activation_layer_first=False,
+        **kwargs,
+    ):
+        super().__init__()
+        self.decoder = decoder
+        self.norm_type = norm_type
+        self.activation_layer_first = activation_layer_first
+
+        norm_backbone = (
+            partial(nn.BatchNorm1d, num_features=hidden_size)
+            if norm_type == "bn"
+            else partial(nn.LayerNorm, normalized_shape=hidden_size)
+        )
+        activation_backbone = (
+            partial(nn.ReLU, inplace=True) if norm_type == "bn" else nn.GELU
+        )
+        activation_and_norm = (
+            (activation_backbone, norm_backbone)
+            if self.activation_layer_first
+            else (norm_backbone, activation_backbone)
+        )
+
+        if self.multi_subject_mode == "shared":
+            assert (
+                len(set(in_dim for _, in_dim in in_dims.items())) == 1
+            ), f"In multi_subject_mode 'shared', all subjects must have the same input dimension but got {in_dims}"
+            _, in_dim = list(in_dims.items())[0]
+            projector = nn.Sequential(
+                nn.Linear(in_dim, hidden_size),
+                *[item() for item in activation_and_norm],
+                nn.Dropout(dropout),
+            )
+            self.projector = nn.ModuleDict({subject: projector for subject in in_dims})
+        elif self.multi_subject_mode == "individual":
+            self.projector = nn.ModuleDict(
+                {
+                    subject: nn.Sequential(
+                        nn.Linear(in_dim, hidden_size),
+                        *[item() for item in activation_and_norm],
+                        nn.Dropout(dropout),
+                    )
+                    for subject, in_dim in in_dims.items()
+                }
+            )
+
+    def project_subject(self, x, subject):
+        return self.lin0[subject](x)
+
+    def forward(self, X):
+        return self.decoder(X)

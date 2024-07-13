@@ -8,13 +8,13 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import wandb
 from rich.live import Live
 from rich.table import Table
 from torch.nn.utils.rnn import PackedSequence
 from torch.utils.data import DataLoader, TensorDataset
 
-import wandb
-from src.decoders import GRU, LSTM, RNN, BrainDecoder, SimpleMLP
+from src.decoders import GRU, LSTM, RNN, BrainDecoder, DecoderWrapper, SimpleMLP
 from src.losses import (
     compute_mixco_symm_nce_loss,
     compute_mse_loss,
@@ -100,13 +100,25 @@ def train_brain_decoder(
     test_dl = MultiSubjectDataloader(Xs.loc[test_runs], Ys.loc[test_runs], batch_size)
 
     out_dim = Ys.iloc[0].dropna().iloc[0].shape[1]
-    decoder = BrainDecoder(
+    if decoder.lower() == "brain_decoder":
+        decoder = BrainDecoder(out_dim=out_dim, **decoder_params)
+    elif decoder.lower() == "rnn":
+        decoder = RNN(out_dim=out_dim, **decoder_params)
+    elif decoder.lower() == "gru":
+        decoder = GRU(out_dim=out_dim, **decoder_params)
+    elif decoder.lower() == "lstm":
+        decoder = LSTM(out_dim=out_dim, **decoder_params)
+    elif decoder.lower() == "simple_mlp":
+        decoder = SimpleMLP(out_dim=out_dim, **decoder_params)
+    else:
+        raise ValueError(f"Unsupported decoder {decoder}.")
+    decoder = DecoderWrapper(
+        decoder=decoder,
         in_dims={
             subject: Xs[subject].dropna().iloc[0].shape[1] for subject in Xs.columns
         },
-        out_dim=out_dim,
         **decoder_params,
-    ).to(device)
+    )
 
     n_params = sum([p.numel() for p in decoder.parameters()])
     console.log(f"Decoder has {n_params:.3g} parameters.")

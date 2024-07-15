@@ -28,46 +28,36 @@ def evaluate(dl, decoder, negatives, top_k_accuracies, temperature):
     with torch.cuda.amp.autocast():
         with torch.no_grad():
             for subject_id, subject, subject_dl in dl:
-                X = []
-                Y = []
-                for subj_Xs, subj_Ys in subject_dl:
+                for X, Y in subject_dl:
                     if isinstance(decoder, (RNN, GRU, LSTM)):
-                        subj_Xs = pack_sequence(subj_Xs, enforce_sorted=False)
-                        subj_Xs = decoder.project_subject(subj_Xs, subject_id)
-                        subj_Xs = unpack_sequence(subj_Xs)
-                        X.extend(subj_Xs)
+                        X = pack_sequence(X, enforce_sorted=False)
+                        X = decoder.project_subject(X, subject_id)
+                        Y_preds = torch.cat(unpack_sequence(decoder(X)))
                     else:
-                        subj_Xs = torch.cat(subj_Xs).to(device)
-                        subj_Xs = decoder.project_subject(subj_Xs, subject)
-                        X.append(subj_Xs)
-                    subj_Ys = torch.cat(subj_Ys).to(device)
-                    Y.append(subj_Ys)
-                if isinstance(decoder, (RNN, GRU, LSTM)):
-                    X = pack_sequence(X, enforce_sorted=False)
-                else:
-                    X = torch.cat(X).to(device)
-                Y = torch.cat(Y).to(device)
-                Y_preds = decoder(X)
-                # Evaluate retrieval metrics
-                for key, value in retrieval_metrics(
-                    Y,
-                    Y_preds,
-                    negatives,
-                    return_ranks=True,
-                    top_k_accuracies=top_k_accuracies,
-                ).items():
-                    metrics[key].append(value)
-                    metrics[f"{subject}/{key}"].append(value)
-                mse_loss = compute_mse_loss(X, Y, decoder)
-                symm_nce_loss = compute_symm_nce_loss(X, Y, decoder, temperature)
-                mixco_loss = compute_mixco_symm_nce_loss(X, Y, decoder, temperature)
-                for name in ["", f"{subject}/"]:
-                    metrics[name + "mse"].append(mse_loss.item())
-                    metrics[name + "symm_nce"].append(symm_nce_loss.item())
-                    metrics[name + "mixco"].append(mixco_loss.item())
-                    metrics[name + "aug"].append(
-                        mixco_loss.item() - symm_nce_loss.item()
-                    )
+                        X = torch.cat(X).to(device)
+                        X = decoder.project_subject(X, subject)
+                        Y_preds = decoder(X)
+                    # Evaluate retrieval metrics
+                    for key, value in retrieval_metrics(
+                        Y,
+                        Y_preds,
+                        negatives,
+                        return_ranks=True,
+                        top_k_accuracies=top_k_accuracies,
+                    ).items():
+                        metrics[key].append(value)
+                        metrics[f"{subject}/{key}"].append(value)
+                    # Evaluate losses
+                    mse_loss = compute_mse_loss(X, Y, decoder)
+                    symm_nce_loss = compute_symm_nce_loss(X, Y, decoder, temperature)
+                    mixco_loss = compute_mixco_symm_nce_loss(X, Y, decoder, temperature)
+                    for name in ["", f"{subject}/"]:
+                        metrics[name + "mse"].append(mse_loss.item())
+                        metrics[name + "symm_nce"].append(symm_nce_loss.item())
+                        metrics[name + "mixco"].append(mixco_loss.item())
+                        metrics[name + "aug"].append(
+                            mixco_loss.item() - symm_nce_loss.item()
+                        )
     relative_median_ranks = {}
     for key, value in metrics.items():
         if key.endswith("relative_ranks"):

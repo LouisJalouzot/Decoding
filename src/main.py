@@ -7,7 +7,7 @@ from src.train import train
 from src.utils import ignore, memory
 
 
-@memory.cache
+# @memory.cache
 def main(
     datasets: Union[str, List[str]] = "lebel2023/all_subjects",
     decoder: str = "brain_decoder",

@@ -7,6 +7,7 @@ import numpy as np
 import torch
 from rich.live import Live
 from rich.table import Table
+from torch.nn.utils.rnn import pack_sequence, unpack_sequence
 
 import wandb
 from src.decoders import GRU, LSTM, RNN, BrainDecoder, DecoderWrapper, SimpleMLP
@@ -29,12 +30,21 @@ def evaluate(dl, decoder, negatives, top_k_accuracies, temperature):
                 X = []
                 Y = []
                 for subject, subj_Xs, subj_Ys in batchdl:
-                    subj_Xs = torch.cat(subj_Xs).to(device)
-                    subj_Xs = decoder.project_subject(subj_Xs, subject)
+                    if isinstance(decoder, (RNN, GRU, LSTM)):
+                        subj_Xs = pack_sequence(subj_Xs, enforce_sorted=False)
+                        subj_Xs = decoder.project_subject(subj_Xs, subject)
+                        subj_Xs = unpack_sequence(subj_Xs)
+                        X.extend(subj_Xs)
+                    else:
+                        subj_Xs = torch.cat(subj_Xs).to(device)
+                        subj_Xs = decoder.project_subject(subj_Xs, subject)
+                        X.append(subj_Xs)
                     subj_Ys = torch.cat(subj_Ys).to(device)
-                    X.append(subj_Xs)
                     Y.append(subj_Ys)
-                X = torch.cat(X).to(device)
+                if isinstance(decoder, (RNN, GRU, LSTM)):
+                    X = pack_sequence(X, enforce_sorted=False)
+                else:
+                    X = torch.cat(X).to(device)
                 Y = torch.cat(Y).to(device)
                 Y_preds = decoder(X)
                 # Evaluate retrieval metrics
@@ -168,12 +178,20 @@ def train_brain_decoder(
                     X = []
                     Y = []
                     for subject, subj_Xs, subj_Ys in batchdl:
-                        subj_Xs = torch.cat(subj_Xs).to(device)
-                        subj_Xs = decoder.project_subject(subj_Xs, subject)
-                        subj_Ys = torch.cat(subj_Ys).to(device)
-                        X.append(subj_Xs)
-                        Y.append(subj_Ys)
-                    X = torch.cat(X).to(device)
+                        if isinstance(decoder, (RNN, GRU, LSTM)):
+                            subj_Xs = pack_sequence(subj_Xs, enforce_sorted=False)
+                            subj_Xs = decoder.project_subject(subj_Xs, subject)
+                            subj_Xs = unpack_sequence(subj_Xs)
+                            X.extend(subj_Xs)
+                        else:
+                            subj_Xs = torch.cat(subj_Xs).to(device)
+                            subj_Xs = decoder.project_subject(subj_Xs, subject)
+                            X.append(subj_Xs)
+                        Y.append(torch.cat(subj_Ys).to(device))
+                    if isinstance(decoder, (RNN, GRU, LSTM)):
+                        X = pack_sequence(X, enforce_sorted=False)
+                    else:
+                        X = torch.cat(X).to(device)
                     Y = torch.cat(Y).to(device)
 
                     optimizer.zero_grad()
@@ -184,7 +202,7 @@ def train_brain_decoder(
 
                     if loss == "symm_nce":
                         # Evaluate symmetrical NCE loss
-                        train_loss = compute_symm_nce_loss(decoder(X), Y, temperature)
+                        train_loss = compute_symm_nce_loss(X, Y, decoder, temperature)
 
                     if loss == "mixco":
                         # Evaluate mixco loss and back-propagate on it

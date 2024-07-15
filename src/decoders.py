@@ -124,20 +124,29 @@ class BrainDecoder(nn.Module):
         n_res_blocks=2,
         n_proj_blocks=1,
         norm_type="ln",
+        activation_layer_first=False,
+        **kwargs,
     ):
         super().__init__()
 
+        self.out_dim = out_dim
+        self.hidden_size = hidden_size
+        self.hidden_size_projector = hidden_size_projector
+        self.dropout = dropout
         self.n_res_blocks = n_res_blocks
+        self.n_proj_blocks = n_proj_blocks
+        self.norm_type = norm_type
+        self.activation_layer_first = activation_layer_first
 
         norm_backbone = (
-            partial(nn.BatchNorm1d, num_features=hidden_size)
-            if norm_type == "bn"
-            else partial(nn.LayerNorm, normalized_shape=hidden_size)
+            partial(nn.BatchNorm1d, num_features=self.hidden_size)
+            if self.norm_type == "bn"
+            else partial(nn.LayerNorm, normalized_shape=self.hidden_size)
         )
         activation_backbone = (
-            partial(nn.ReLU, inplace=True) if norm_type == "bn" else nn.GELU
+            partial(nn.ReLU, inplace=True) if self.norm_type == "bn" else nn.GELU
         )
-        activation_and_norm = (
+        self.activation_and_norm = (
             (activation_backbone, norm_backbone)
             if self.activation_layer_first
             else (norm_backbone, activation_backbone)
@@ -147,33 +156,33 @@ class BrainDecoder(nn.Module):
         self.mlp = nn.ModuleList(
             [
                 nn.Sequential(
-                    nn.Linear(hidden_size, hidden_size),
-                    *[item() for item in activation_and_norm],
-                    nn.Dropout(dropout),
+                    nn.Linear(self.hidden_size, self.hidden_size),
+                    *[item() for item in self.activation_and_norm],
+                    nn.Dropout(self.dropout),
                 )
-                for _ in range(n_res_blocks)
+                for _ in range(self.n_res_blocks)
             ]
         )
 
         # Second linear
-        self.lin1 = nn.Linear(hidden_size, hidden_size_projector, bias=True)
+        self.lin1 = nn.Linear(self.hidden_size, self.hidden_size_projector, bias=True)
 
         # Projector
-        assert n_proj_blocks >= 0
+        assert self.n_proj_blocks >= 0
         projector_layers = []
-        for _ in range(n_proj_blocks):
+        for _ in range(self.n_proj_blocks):
             projector_layers.extend(
                 [
-                    nn.LayerNorm(hidden_size_projector),
+                    nn.LayerNorm(self.hidden_size_projector),
                     nn.GELU(),
-                    nn.Linear(hidden_size_projector, hidden_size_projector),
+                    nn.Linear(self.hidden_size_projector, self.hidden_size_projector),
                 ]
             )
         projector_layers.extend(
             [
-                nn.LayerNorm(hidden_size_projector),
+                nn.LayerNorm(self.hidden_size_projector),
                 nn.GELU(),
-                nn.Linear(hidden_size_projector, out_dim),
+                nn.Linear(self.hidden_size_projector, self.out_dim),
             ]
         )
         self.projector = nn.Sequential(*projector_layers)

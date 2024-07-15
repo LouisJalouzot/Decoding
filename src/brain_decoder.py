@@ -68,17 +68,19 @@ def evaluate(dl, decoder, negatives, top_k_accuracies, temperature):
                     metrics[name + "aug"].append(
                         mixco_loss.item() - symm_nce_loss.item()
                     )
+    relative_median_ranks = {}
     for key, value in metrics.items():
         if key.endswith("relative_ranks"):
             relative_ranks = torch.cat(value).cpu()
             relative_median_rank = torch.quantile(relative_ranks, q=0.5).item()
             metrics[key] = wandb.Histogram(relative_ranks, num_bins=100)
-            metrics[key.replace("relative_rank", "relative_median_rank")] = (
-                relative_median_rank
-            )
+            relative_median_ranks[
+                key.replace("relative_rank", "relative_median_rank")
+            ] = relative_median_rank
         else:
             metrics[key] = np.mean(value)
     dl.per_subject = False
+    metrics.update(relative_median_ranks)
     return metrics
 
 

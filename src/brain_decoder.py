@@ -37,6 +37,7 @@ def evaluate(dl, decoder, negatives, top_k_accuracies, temperature):
                         X = torch.cat(X).to(device)
                         X = decoder.project_subject(X, subject)
                         Y_preds = decoder(X)
+                    Y = torch.cat(Y).to(device)
                     # Evaluate retrieval metrics
                     for key, value in retrieval_metrics(
                         Y,

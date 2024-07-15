@@ -26,13 +26,13 @@ def evaluate(dl, decoder, negatives, top_k_accuracies, temperature):
     negatives = negatives.to(device)
     with torch.cuda.amp.autocast():
         with torch.no_grad():
-            for batchdl in dl:
+            for subject_id, subject, subject_dl in dl(per_subject=True):
                 X = []
                 Y = []
-                for subject, subj_Xs, subj_Ys in batchdl:
+                for subj_Xs, subj_Ys in subject_dl:
                     if isinstance(decoder, (RNN, GRU, LSTM)):
                         subj_Xs = pack_sequence(subj_Xs, enforce_sorted=False)
-                        subj_Xs = decoder.project_subject(subj_Xs, subject)
+                        subj_Xs = decoder.project_subject(subj_Xs, subject_id)
                         subj_Xs = unpack_sequence(subj_Xs)
                         X.extend(subj_Xs)
                     else:
@@ -56,21 +56,27 @@ def evaluate(dl, decoder, negatives, top_k_accuracies, temperature):
                     top_k_accuracies=top_k_accuracies,
                 ).items():
                     metrics[key].append(value)
+                    metrics[f"{subject}/{key}"].append(value)
                 mse_loss = compute_mse_loss(X, Y, decoder)
                 symm_nce_loss = compute_symm_nce_loss(X, Y, decoder, temperature)
                 mixco_loss = compute_mixco_symm_nce_loss(X, Y, decoder, temperature)
-                metrics["mse"].append(mse_loss.item())
-                metrics["symm_nce"].append(symm_nce_loss.item())
-                metrics["mixco"].append(mixco_loss.item())
-                metrics["aug"].append(mixco_loss.item() - symm_nce_loss.item())
+                for name in ["", f"{subject}/"]:
+                    metrics[name + "mse"].append(mse_loss.item())
+                    metrics[name + "symm_nce"].append(symm_nce_loss.item())
+                    metrics[name + "mixco"].append(mixco_loss.item())
+                    metrics[name + "aug"].append(
+                        mixco_loss.item() - symm_nce_loss.item()
+                    )
     for key, value in metrics.items():
-        if key == "relative_ranks":
+        if key.endswith("relative_ranks"):
             relative_ranks = torch.cat(value).cpu()
             relative_median_rank = torch.quantile(relative_ranks, q=0.5).item()
             metrics[key] = wandb.Histogram(relative_ranks, num_bins=100)
+            metrics[key.replace("relative_rank", "relative_median_rank")] = (
+                relative_median_rank
+            )
         else:
             metrics[key] = np.mean(value)
-    metrics["relative_median_rank"] = relative_median_rank
     return metrics
 
 

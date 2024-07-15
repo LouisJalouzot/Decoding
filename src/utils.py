@@ -93,6 +93,19 @@ class MultiSubjectBatchloader:
             yield subject, tuple(self.X[indices]), tuple(self.Y[indices])
 
 
+class SingleSubjectDataloader:
+    def __init__(self, X: pd.Series, Y: pd.Series, batch_size: int):
+        self.X = X
+        self.Y = Y
+        self.batch_size = batch_size
+
+    def __iter__(self):
+        for i in range(0, len(self.X), self.batch_size):
+            X_batch = tuple(self.X.values[i : i + self.batch_size])
+            Y_batch = tuple(self.Y.values[i : i + self.batch_size])
+            yield X_batch, Y_batch
+
+
 class MultiSubjectDataloader:
     def __init__(
         self, Xs: pd.DataFrame, Ys: pd.DataFrame, batch_size: int, shuffle: bool = False
@@ -109,11 +122,11 @@ class MultiSubjectDataloader:
 
     def __iter__(self, per_subject=False):
         if per_subject:
-            for subject in self.Xs.columns:
+            for subject_id, subject in enumerate(self.Xs.columns):
                 X = self.Xs[subject].dropna()
                 Y = self.Ys[subject].dropna()
-                for i in range(0, len(X), self.batch_size):
-                    yield subject, 
+                subject_dl = SingleSubjectDataloader(X, Y, self.batch_size)
+                yield subject_id, subject, subject_dl
         else:
             if self.shuffle:
                 np.random.shuffle(self.indices)

@@ -1,19 +1,14 @@
 from collections import defaultdict
 from copy import deepcopy
-from functools import partial
 from pathlib import Path
 from time import time
 
 import numpy as np
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import wandb
 from rich.live import Live
 from rich.table import Table
-from torch.nn.utils.rnn import PackedSequence
-from torch.utils.data import DataLoader, TensorDataset
 
+import wandb
 from src.decoders import GRU, LSTM, RNN, BrainDecoder, DecoderWrapper, SimpleMLP
 from src.losses import (
     compute_mixco_symm_nce_loss,
@@ -118,7 +113,7 @@ def train_brain_decoder(
             subject: Xs[subject].dropna().iloc[0].shape[1] for subject in Xs.columns
         },
         **decoder_params,
-    )
+    ).to(device)
 
     n_params = sum([p.numel() for p in decoder.parameters()])
     console.log(f"Decoder has {n_params:.3g} parameters.")

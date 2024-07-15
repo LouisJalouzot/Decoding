@@ -196,6 +196,7 @@ class DecoderWrapper(nn.Module):
         self,
         decoder,
         in_dims,
+        multi_subject_mode="individual",
         hidden_size=512,
         dropout=0.7,
         norm_type="ln",
@@ -204,18 +205,22 @@ class DecoderWrapper(nn.Module):
     ):
         super().__init__()
         self.decoder = decoder
+        self.in_dims = in_dims
+        self.multi_subject_mode = multi_subject_mode
+        self.hidden_size = hidden_size
+        self.dropout = dropout
         self.norm_type = norm_type
         self.activation_layer_first = activation_layer_first
 
         norm_backbone = (
-            partial(nn.BatchNorm1d, num_features=hidden_size)
-            if norm_type == "bn"
-            else partial(nn.LayerNorm, normalized_shape=hidden_size)
+            partial(nn.BatchNorm1d, num_features=self.hidden_size)
+            if self.norm_type == "bn"
+            else partial(nn.LayerNorm, normalized_shape=self.hidden_size)
         )
         activation_backbone = (
-            partial(nn.ReLU, inplace=True) if norm_type == "bn" else nn.GELU
+            partial(nn.ReLU, inplace=True) if self.norm_type == "bn" else nn.GELU
         )
-        activation_and_norm = (
+        self.activation_and_norm = (
             (activation_backbone, norm_backbone)
             if self.activation_layer_first
             else (norm_backbone, activation_backbone)
@@ -223,29 +228,29 @@ class DecoderWrapper(nn.Module):
 
         if self.multi_subject_mode == "shared":
             assert (
-                len(set(in_dim for _, in_dim in in_dims.items())) == 1
-            ), f"In multi_subject_mode 'shared', all subjects must have the same input dimension but got {in_dims}"
-            _, in_dim = list(in_dims.items())[0]
+                len(set(in_dim for _, in_dim in self.in_dims.items())) == 1
+            ), f"In multi_subject_mode 'shared', all subjects must have the same input dimension but got {self.in_dims}"
+            _, in_dim = list(self.in_dims.items())[0]
             projector = nn.Sequential(
-                nn.Linear(in_dim, hidden_size),
-                *[item() for item in activation_and_norm],
-                nn.Dropout(dropout),
+                nn.Linear(in_dim, self.hidden_size),
+                *[item() for item in self.activation_and_norm],
+                nn.Dropout(self.dropout),
             )
-            self.projector = nn.ModuleDict({subject: projector for subject in in_dims})
+            self.projector = nn.ModuleDict({subject: projector for subject in self.in_dims})
         elif self.multi_subject_mode == "individual":
             self.projector = nn.ModuleDict(
                 {
                     subject: nn.Sequential(
-                        nn.Linear(in_dim, hidden_size),
-                        *[item() for item in activation_and_norm],
-                        nn.Dropout(dropout),
+                        nn.Linear(in_dim, self.hidden_size),
+                        *[item() for item in self.activation_and_norm],
+                        nn.Dropout(self.dropout),
                     )
-                    for subject, in_dim in in_dims.items()
+                    for subject, in_dim in self.in_dims.items()
                 }
             )
 
     def project_subject(self, x, subject):
-        return self.lin0[subject](x)
+        return self.projector[subject](x)
 
     def forward(self, X):
         return self.decoder(X)

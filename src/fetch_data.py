@@ -63,7 +63,7 @@ def fetch_data(
             textgrid_path, audio_path, model, tr, context_length, batch_size
         )
         if "lebel2023" in str(subject_path):
-            Y = Y[5:-5]  # trim first and last 10 seconds on Lebel
+            Y = Y[5:-5]  # trim first and subjectlast 10 seconds on Lebel
         if lag > 0:
             X = X[lag:]
             Y = Y[:-lag]
@@ -75,7 +75,7 @@ def fetch_data(
         if Y.shape[0] > X.shape[0]:
             if Y.shape[0] > X.shape[0] + 1:
                 console.log(
-                    f"[red]{Y.shape[0] - X.shape[0]} > 1 latents trimmed for subject {run}"
+                    f"[red]{Y.shape[0] - X.shape[0]} > 1 latents trimmed for run {run}"
                 )
             # More latents than brain scans, drop last seconds of run
             Y = Y[: X.shape[0]]

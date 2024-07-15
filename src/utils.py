@@ -107,14 +107,21 @@ class MultiSubjectDataloader:
         self.n_runs = len(self.runs_indices)
         self.indices = np.arange(self.n_runs)
 
-    def __iter__(self):
-        if self.shuffle:
-            np.random.shuffle(self.indices)
-        for i in range(0, self.n_runs, self.batch_size):
-            batch_indices = self.indices[i : i + self.batch_size]
-            runs_indices = self.runs_indices[batch_indices]
-            subjects_indices = self.subjects_indices[batch_indices]
-            X = self.Xs.values[runs_indices, subjects_indices]
-            Y = self.Ys.values[runs_indices, subjects_indices]
-            subjects = self.Xs.columns.values[subjects_indices]
-            yield MultiSubjectBatchloader(X, Y, subjects)
+    def __iter__(self, per_subject=False):
+        if per_subject:
+            for subject in self.Xs.columns:
+                X = self.Xs[subject].dropna()
+                Y = self.Ys[subject].dropna()
+                for i in range(0, len(X), self.batch_size):
+                    yield subject, 
+        else:
+            if self.shuffle:
+                np.random.shuffle(self.indices)
+            for i in range(0, self.n_runs, self.batch_size):
+                batch_indices = self.indices[i : i + self.batch_size]
+                runs_indices = self.runs_indices[batch_indices]
+                subjects_indices = self.subjects_indices[batch_indices]
+                X = self.Xs.values[runs_indices, subjects_indices]
+                Y = self.Ys.values[runs_indices, subjects_indices]
+                subjects = self.Xs.columns.values[subjects_indices]
+                yield MultiSubjectBatchloader(X, Y, subjects)

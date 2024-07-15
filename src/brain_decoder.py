@@ -22,11 +22,12 @@ from src.utils import MultiSubjectDataloader, console, device
 
 def evaluate(dl, decoder, negatives, top_k_accuracies, temperature):
     decoder.eval()
+    dl.per_subject = True
     metrics = defaultdict(list)
     negatives = negatives.to(device)
     with torch.cuda.amp.autocast():
         with torch.no_grad():
-            for subject_id, subject, subject_dl in dl(per_subject=True):
+            for subject_id, subject, subject_dl in dl:
                 X = []
                 Y = []
                 for subj_Xs, subj_Ys in subject_dl:
@@ -77,6 +78,7 @@ def evaluate(dl, decoder, negatives, top_k_accuracies, temperature):
             )
         else:
             metrics[key] = np.mean(value)
+    dl.per_subject = False
     return metrics
 
 

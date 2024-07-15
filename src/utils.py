@@ -119,9 +119,10 @@ class MultiSubjectDataloader:
         self.subjects_indices = indices[1]
         self.n_runs = len(self.runs_indices)
         self.indices = np.arange(self.n_runs)
+        self.per_subject = False
 
-    def __iter__(self, per_subject=False):
-        if per_subject:
+    def __iter__(self):
+        if self.per_subject:
             for subject_id, subject in enumerate(self.Xs.columns):
                 X = self.Xs[subject].dropna()
                 Y = self.Ys[subject].dropna()

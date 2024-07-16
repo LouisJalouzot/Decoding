@@ -65,10 +65,12 @@ def evaluate(dl, decoder, negatives, top_k_accuracies, temperature):
             relative_ranks = torch.cat(value).cpu()
             relative_median_rank = torch.quantile(relative_ranks, q=0.5).item()
             metrics[key] = wandb.Histogram(relative_ranks, num_bins=100)
-            other_metrics[
-                key.replace("relative_ranks", "relative_median_rank")
-            ] = relative_median_rank
-            other_metrics[key.replace("relative_ranks", "size")] = relative_ranks.shape[0]
+            other_metrics[key.replace("relative_ranks", "relative_median_rank")] = (
+                relative_median_rank
+            )
+            other_metrics[key.replace("relative_ranks", "size")] = relative_ranks.shape[
+                0
+            ]
         else:
             metrics[key] = np.mean(value)
     dl.per_subject = False

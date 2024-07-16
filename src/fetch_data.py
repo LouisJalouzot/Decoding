@@ -48,7 +48,7 @@ def fetch_data(
             for i in range(1, smooth + 1):
                 new_X[i:] += X[:-i]
                 count[i:] += 1
-            X = new_X / count
+            X = (new_X / count).astype(np.float32)
         # Resolve paths for more efficient caching
         # Make paths relative for persistent caching across machines
         textgrid_path = (

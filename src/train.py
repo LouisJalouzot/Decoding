@@ -65,15 +65,15 @@ def train(
         Ys = Ys.loc[runs]
         runs = list(Xs.index)
         if scale_across_runs:
-            task = progress.add_task("Scaling across runs", total=2 * len(subjects))
-            for df in [Xs, Ys]:
-                for subject in subjects:
+            task = progress.add_task("Scaling across runs", total=len(subjects))
+            for subject in subjects:
+                for df in [Xs, Ys]:
                     scale_in_df(df, subject)
                     progress.update(task, advance=1)
         if scale_across_subjects:
-            task = progress.add_task("Scaling across subjects", total=2 * len(runs))
-            for df in [Xs, Ys]:
-                for run in runs:
+            task = progress.add_task("Scaling across subjects", total=len(runs))
+            for run in runs:
+                for df in [Xs, Ys]:
                     scale_in_df(df.T, run)
                     progress.update(task, advance=1)
     n_runs = len(runs)

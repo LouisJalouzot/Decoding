@@ -25,7 +25,7 @@ def evaluate(dl, decoder, negatives, top_k_accuracies, temperature):
     dl.per_subject = True
     metrics = defaultdict(list)
     negatives = negatives.to(device)
-    with torch.cuda.amp.autocast():
+    with torch.autocast(device.type):
         with torch.no_grad():
             for subject, subject_dl in dl:
                 for X, Y in subject_dl:
@@ -178,8 +178,9 @@ def train_brain_decoder(
             t = time()
             decoder.train()
             train_losses = []
-            with torch.cuda.amp.autocast():
-                for batchdl in train_dl:
+            for batchdl in train_dl:
+                optimizer.zero_grad()
+                with torch.autocast(device.type):
                     X = []
                     Y = []
                     for subject, subj_Xs, subj_Ys in batchdl:
@@ -199,8 +200,6 @@ def train_brain_decoder(
                         X = torch.cat(X).to(device)
                     Y = torch.cat(Y).to(device)
 
-                    optimizer.zero_grad()
-
                     if loss == "mse":
                         # Evaluate MSE loss
                         train_loss = compute_mse_loss(X, Y, decoder)
@@ -215,9 +214,9 @@ def train_brain_decoder(
                             X, Y, decoder, temperature
                         )
 
-                    train_loss.backward()
-                    optimizer.step()
-                    train_losses.append(train_loss.item())
+                train_loss.backward()
+                optimizer.step()
+                train_losses.append(train_loss.item())
 
             # Validation step
             val_metrics = evaluate(

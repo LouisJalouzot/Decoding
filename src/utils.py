@@ -123,11 +123,11 @@ class MultiSubjectDataloader:
 
     def __iter__(self):
         if self.per_subject:
-            for subject_id, subject in enumerate(self.Xs.columns):
+            for subject in self.Xs.columns:
                 X = self.Xs[subject].dropna()
                 Y = self.Ys[subject].dropna()
                 subject_dl = SingleSubjectDataloader(X, Y, self.batch_size)
-                yield subject_id, subject, subject_dl
+                yield subject, subject_dl
         else:
             if self.shuffle:
                 np.random.shuffle(self.indices)

@@ -24,7 +24,7 @@ def main(
     elif isinstance(datasets, list):
         subjects = []
         for dataset in datasets:
-            subjects.extend([f"{datasets}/{f}" for f in os.listdir(f"data/{dataset}")])
+            subjects.extend([f"{dataset}/{f}" for f in os.listdir(f"data/{dataset}")])
     config = {
         key: value
         for key, value in locals().items()

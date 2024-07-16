@@ -92,8 +92,6 @@ def train(
         )
         console.log(f"{split} split: {n_runs_split} runs and {n_scans} scans.")
 
-    Xs = Xs.map(lambda x: torch.Tensor(x) if isinstance(x, np.ndarray) else x)
-    Ys = Ys.map(lambda y: torch.Tensor(y) if isinstance(y, np.ndarray) else y)
     output = train_brain_decoder(
         Xs, Ys, train_runs, valid_runs, test_runs, decoder=decoder, **decoder_params
     )

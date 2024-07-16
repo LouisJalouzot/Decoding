@@ -27,11 +27,11 @@ def evaluate(dl, decoder, negatives, top_k_accuracies, temperature):
     negatives = negatives.to(device)
     with torch.cuda.amp.autocast():
         with torch.no_grad():
-            for subject_id, subject, subject_dl in dl:
+            for subject, subject_dl in dl:
                 for X, Y in subject_dl:
                     if isinstance(decoder, (RNN, GRU, LSTM)):
                         X = pack_sequence(X, enforce_sorted=False)
-                        X = decoder.project_subject(X, subject_id)
+                        X = decoder.project_subject(X, subject)
                         Y_preds = torch.cat(unpack_sequence(decoder(X)))
                     else:
                         X = torch.cat(X).to(device)
@@ -66,8 +66,10 @@ def evaluate(dl, decoder, negatives, top_k_accuracies, temperature):
             relative_median_rank = torch.quantile(relative_ranks, q=0.5).item()
             metrics[key] = wandb.Histogram(relative_ranks, num_bins=100)
             relative_median_ranks[
-                key.replace("relative_rank", "relative_median_rank")
+                key.replace("relative_ranks", "relative_median_rank")
             ] = relative_median_rank
+        elif key.endswith("size"):
+            metrics[key] = np.sum(value)
         else:
             metrics[key] = np.mean(value)
     dl.per_subject = False
@@ -93,6 +95,8 @@ def train_brain_decoder(
     checkpoints_path=None,
     **decoder_params,
 ):
+    Xs = Xs.map(torch.from_numpy, na_action="ignore")
+    Ys = Ys.map(torch.from_numpy, na_action="ignore")
     train_dl = MultiSubjectDataloader(
         Xs.loc[train_runs], Ys.loc[train_runs], batch_size, shuffle=True
     )
@@ -227,7 +231,7 @@ def train_brain_decoder(
             }
             if epoch == 1:
                 for key in output:
-                    if not key.endswith("ranks"):
+                    if not key.endswith("ranks") and key.count("/") < 2:
                         table.add_column(key)
                 for col in table.columns:
                     col.overflow = "fold"
@@ -253,7 +257,11 @@ def train_brain_decoder(
                 monitor_metric,
                 str(patience - patience_counter),
                 f"{time() - t:.3g}s",
-                *[f"{v:.3g}" for k, v in output.items() if not k.endswith("ranks")],
+                *[
+                    f"{v:.3g}"
+                    for k, v in output.items()
+                    if not k.endswith("ranks") and k.count("/") < 2
+                ],
             )
 
             if patience_counter >= patience:
@@ -275,8 +283,10 @@ def train_brain_decoder(
             Path(checkpoints_path) / f"checkpoint_{epoch:03d}.pt",
         )
 
+    output = {}
     for split, dl, Y_split in [
         ("train/", train_dl, Ys.loc[train_runs]),
+        ("valid/", valid_dl, Ys.loc[valid_runs]),
         ("test/", test_dl, Ys.loc[test_runs]),
     ]:
         first_notna = Y_split.notna().values.argmax(axis=1)

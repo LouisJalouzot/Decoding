@@ -12,10 +12,13 @@ from src.utils import console, progress
 
 
 def scale_in_df(df, col):
-    scaler = StandardScaler(copy=False)
-    mask = df[col].notna()
-    scaler.fit(np.concatenate(df.loc[mask, col].values))
-    df.loc[mask, col] = df.loc[mask, col].apply(scaler.transform)
+    scaler = StandardScaler()
+    for X in df[col]:
+        if isinstance(X, np.ndarray):
+            scaler.partial_fit(X)
+    for index, row in df.iterrows():
+        if isinstance(row[col], np.ndarray):
+            df.loc[index, col] = scaler.transform(row[col])
 
 
 def train(

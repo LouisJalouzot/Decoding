@@ -283,10 +283,8 @@ def train_brain_decoder(
             Path(checkpoints_path) / f"checkpoint_{epoch:03d}.pt",
         )
 
-    output = {}
     for split, dl, Y_split in [
         ("train/", train_dl, Ys.loc[train_runs]),
-        ("valid/", valid_dl, Ys.loc[valid_runs]),
         ("test/", test_dl, Ys.loc[test_runs]),
     ]:
         first_notna = Y_split.notna().values.argmax(axis=1)

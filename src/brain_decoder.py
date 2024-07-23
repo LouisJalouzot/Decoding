@@ -25,40 +25,39 @@ def evaluate(dl, decoder, negatives, top_k_accuracies, temperature):
     dl.per_subject = True
     metrics = defaultdict(list)
     negatives = negatives.to(device)
-    with torch.autocast(device.type):
-        with torch.no_grad():
-            for subject, subject_dl in dl:
-                for X, Y in subject_dl:
-                    if isinstance(decoder, (RNN, GRU, LSTM)):
-                        X = pack_sequence(X, enforce_sorted=False)
-                        X = decoder.project_subject(X, subject)
-                        Y_preds = torch.cat(unpack_sequence(decoder(X)))
-                    else:
-                        X = torch.cat(X).to(device)
-                        X = decoder.project_subject(X, subject)
-                        Y_preds = decoder(X)
-                    Y = torch.cat(Y).to(device)
-                    # Evaluate retrieval metrics
-                    for key, value in retrieval_metrics(
-                        Y,
-                        Y_preds,
-                        negatives,
-                        return_ranks=True,
-                        top_k_accuracies=top_k_accuracies,
-                    ).items():
-                        metrics[key].append(value)
-                        metrics[f"{subject}/{key}"].append(value)
-                    # Evaluate losses
-                    mse_loss = compute_mse_loss(X, Y, decoder)
-                    symm_nce_loss = compute_symm_nce_loss(X, Y, decoder, temperature)
-                    mixco_loss = compute_mixco_symm_nce_loss(X, Y, decoder, temperature)
-                    for name in ["", f"{subject}/"]:
-                        metrics[name + "mse"].append(mse_loss.item())
-                        metrics[name + "symm_nce"].append(symm_nce_loss.item())
-                        metrics[name + "mixco"].append(mixco_loss.item())
-                        metrics[name + "aug"].append(
-                            mixco_loss.item() - symm_nce_loss.item()
-                        )
+    with torch.no_grad():
+        for subject, subject_dl in dl:
+            for X, Y in subject_dl:
+                if isinstance(decoder, (RNN, GRU, LSTM)):
+                    X = pack_sequence(X, enforce_sorted=False)
+                    X = decoder.project_subject(X, subject)
+                    Y_preds = torch.cat(unpack_sequence(decoder(X)))
+                else:
+                    X = torch.cat(X).to(device)
+                    X = decoder.project_subject(X, subject)
+                    Y_preds = decoder(X)
+                Y = torch.cat(Y).to(device)
+                # Evaluate retrieval metrics
+                for key, value in retrieval_metrics(
+                    Y,
+                    Y_preds,
+                    negatives,
+                    return_ranks=True,
+                    top_k_accuracies=top_k_accuracies,
+                ).items():
+                    metrics[key].append(value)
+                    metrics[f"{subject}/{key}"].append(value)
+                # Evaluate losses
+                mse_loss = compute_mse_loss(X, Y, decoder)
+                symm_nce_loss = compute_symm_nce_loss(X, Y, decoder, temperature)
+                mixco_loss = compute_mixco_symm_nce_loss(X, Y, decoder, temperature)
+                for name in ["", f"{subject}/"]:
+                    metrics[name + "mse"].append(mse_loss.item())
+                    metrics[name + "symm_nce"].append(symm_nce_loss.item())
+                    metrics[name + "mixco"].append(mixco_loss.item())
+                    metrics[name + "aug"].append(
+                        mixco_loss.item() - symm_nce_loss.item()
+                    )
     other_metrics = {}
     for key, value in metrics.items():
         if key.endswith("relative_ranks"):
@@ -162,8 +161,7 @@ def train_brain_decoder(
     if loss not in losses:
         raise ValueError(f"Unsupported loss {loss}. Choose one of {losses}.")
 
-    # top_k_accuracies = [1, 5, 10, int(len(Y_valid) / 10), int(len(Y_valid) / 5)]
-    top_k_accuracies = []
+    top_k_accuracies = [1, 5, 10, int(len(Y_valid) / 10), int(len(Y_valid) / 5)]
     best_monitor_metric, patience_counter = np.inf, 0
     torch.autograd.set_detect_anomaly(True)
 
@@ -181,39 +179,38 @@ def train_brain_decoder(
             train_losses = []
             for batchdl in train_dl:
                 optimizer.zero_grad()
-                with torch.autocast(device.type):
-                    X = []
-                    Y = []
-                    for subject, subj_Xs, subj_Ys in batchdl:
-                        if isinstance(decoder, (RNN, GRU, LSTM)):
-                            subj_Xs = pack_sequence(subj_Xs, enforce_sorted=False)
-                            subj_Xs = decoder.project_subject(subj_Xs, subject)
-                            subj_Xs = unpack_sequence(subj_Xs)
-                            X.extend(subj_Xs)
-                        else:
-                            subj_Xs = torch.cat(subj_Xs).to(device)
-                            subj_Xs = decoder.project_subject(subj_Xs, subject)
-                            X.append(subj_Xs)
-                        Y.append(torch.cat(subj_Ys).to(device))
+                X = []
+                Y = []
+                for subject, subj_Xs, subj_Ys in batchdl:
                     if isinstance(decoder, (RNN, GRU, LSTM)):
-                        X = pack_sequence(X, enforce_sorted=False)
+                        subj_Xs = pack_sequence(subj_Xs, enforce_sorted=False)
+                        subj_Xs = decoder.project_subject(subj_Xs, subject)
+                        subj_Xs = unpack_sequence(subj_Xs)
+                        X.extend(subj_Xs)
                     else:
-                        X = torch.cat(X).to(device)
-                    Y = torch.cat(Y).to(device)
+                        subj_Xs = torch.cat(subj_Xs).to(device)
+                        subj_Xs = decoder.project_subject(subj_Xs, subject)
+                        X.append(subj_Xs)
+                    Y.append(torch.cat(subj_Ys).to(device))
+                if isinstance(decoder, (RNN, GRU, LSTM)):
+                    X = pack_sequence(X, enforce_sorted=False)
+                else:
+                    X = torch.cat(X).to(device)
+                Y = torch.cat(Y).to(device)
 
-                    if loss == "mse":
-                        # Evaluate MSE loss
-                        train_loss = compute_mse_loss(X, Y, decoder)
+                if loss == "mse":
+                    # Evaluate MSE loss
+                    train_loss = compute_mse_loss(X, Y, decoder)
 
-                    if loss == "symm_nce":
-                        # Evaluate symmetrical NCE loss
-                        train_loss = compute_symm_nce_loss(X, Y, decoder, temperature)
+                if loss == "symm_nce":
+                    # Evaluate symmetrical NCE loss
+                    train_loss = compute_symm_nce_loss(X, Y, decoder, temperature)
 
-                    if loss == "mixco":
-                        # Evaluate mixco loss and back-propagate on it
-                        train_loss = compute_mixco_symm_nce_loss(
-                            X, Y, decoder, temperature
-                        )
+                if loss == "mixco":
+                    # Evaluate mixco loss and back-propagate on it
+                    train_loss = compute_mixco_symm_nce_loss(
+                        X, Y, decoder, temperature
+                    )
 
                 train_loss.backward()
                 optimizer.step()

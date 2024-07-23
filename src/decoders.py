@@ -5,22 +5,40 @@ from torch import nn
 
 class SimpleMLP(nn.Module):
     def __init__(
-        self, in_dim, out_dim, hidden_size=512, num_layers=3, dropout=0.7, **kwargs
+        self,
+        out_dim,
+        hidden_size=512,
+        num_layers=3,
+        dropout=0.7,
+        norm_type="ln",
+        activation_layer_first=False,
+        **kwargs,
     ):
         super().__init__()
-        self.fc = [
-            nn.Linear(in_features=in_dim, out_features=hidden_size),
-            nn.LayerNorm(hidden_size),
-            nn.Dropout(p=dropout),
-            nn.ReLU(),
-        ]
-        for _ in range(num_layers - 2):
+        self.out_dim = out_dim
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+        self.dropout = dropout
+        self.norm_type = norm_type
+        self.activation_layer_first = activation_layer_first
+        norm = (
+            partial(nn.BatchNorm1d, num_features=self.hidden_size)
+            if self.norm_type == "bn"
+            else partial(nn.LayerNorm, normalized_shape=self.hidden_size)
+        )
+        activation = (
+            partial(nn.ReLU, inplace=True) if self.norm_type == "bn" else nn.GELU
+        )
+        self.activation_and_norm = (
+            (activation, norm) if self.activation_layer_first else (norm, activation)
+        )
+
+        for _ in range(num_layers - 1):
             self.fc.extend(
                 [
-                    nn.Linear(in_features=hidden_size, out_features=hidden_size),
-                    nn.LayerNorm(hidden_size),
-                    nn.Dropout(p=dropout),
-                    nn.ReLU(),
+                    nn.Linear(self.hidden_size, self.hidden_size),
+                    *[item() for item in self.activation_and_norm],
+                    nn.Dropout(self.dropout),
                 ]
             )
         self.fc.append(nn.Linear(in_features=hidden_size, out_features=out_dim))
@@ -245,7 +263,9 @@ class DecoderWrapper(nn.Module):
                 *[item() for item in self.activation_and_norm],
                 nn.Dropout(self.dropout),
             )
-            self.projector = nn.ModuleDict({subject: projector for subject in self.in_dims})
+            self.projector = nn.ModuleDict(
+                {subject: projector for subject in self.in_dims}
+            )
         elif self.multi_subject_mode == "individual":
             self.projector = nn.ModuleDict(
                 {

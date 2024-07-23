@@ -162,8 +162,7 @@ def train_brain_decoder(
     if loss not in losses:
         raise ValueError(f"Unsupported loss {loss}. Choose one of {losses}.")
 
-    # top_k_accuracies = [1, 5, 10, int(len(Y_valid) / 10), int(len(Y_valid) / 5)]
-    top_k_accuracies = []
+    top_k_accuracies = [1, 5, 10]
     best_monitor_metric, patience_counter = np.inf, 0
     torch.autograd.set_detect_anomaly(True)
 

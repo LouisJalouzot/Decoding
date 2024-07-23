@@ -1,22 +1,17 @@
 import shutil
 from pathlib import Path
 
-import dask.array as da
 import h5py
 import numpy as np
 import xarray as xr
 from dask.diagnostics import ProgressBar
-from dask.distributed import Client
 from joblib import Parallel, delayed
 from joblib_progress import joblib_progress
-
-print(Client())
 
 
 def read(subject, run):
     with h5py.File(run, "r") as f:
-        a = da.from_array(f["data"][...]).astype(np.float32)
-    a = xr.DataArray(a, dims=["trs", "voxels"])
+        a = xr.DataArray(f["data"][...], dims=["trs", "voxels"]).astype(np.float32)
     a = a.assign_coords(
         dataset="lebel2023",
         subject=subject,
@@ -56,9 +51,8 @@ def create_zarr_dataset(subjects=["UTS01", "UTS02", "UTS03"], name="3_subjects")
         )
         ds[i] = a
     with ProgressBar():
-        ds = xr.concat(ds, dim="run_id")
-        ds -= ds.groupby("subject").mean(dim="trs", skipna=True)
+        ds = xr.concat(ds, dim="run_id").chunk("auto")
+        ds_mean = ds.groupby("subject").mean(dim="trs", skipna=True)
         ds_std = ds.groupby("subject").std(dim="trs", skipna=True)
-        ds /= xr.where(ds_std < 1e-6, 1, ds_std)
-        ds = ds.chunk("auto")
-        ds.to_zarr(dataset_path)
+        ds_scaled = (ds - ds_mean) / xr.where(ds_std < 1e-6, 1, ds_std)
+        ds_scaled.chunk("auto").to_dataset(name="data").to_zarr(dataset_path)

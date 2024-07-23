@@ -32,7 +32,7 @@ soundfile = "^0.12.1"
 nibabel = "^5.2.1"
 chardet = "^5.2.0"
 nilearn = "^0.10.4"
-dask = "^2024.7.1"
+dask = {extras = ["distributed"], version = "^2024.7.1"}
 xarray = "^2024.6.0"
 zarr = "^2.18.2"
 

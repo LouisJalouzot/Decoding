@@ -16,10 +16,6 @@ def read(subject, run_name, run, n_trs, n_voxels):
     a_mean = a.mean(dim="trs")
     a_std = a.std(dim="trs")
     a = (a - a_mean) / xr.where(a_std < 1e-6, 1, a_std)
-    a = a.pad(
-        {"voxels": (0, n_voxels - a.voxels.size), "trs": (0, n_trs - a.trs.size)},
-        constant_values=np.nan,
-    )
     a = a.assign_coords(
         dataset="lebel2023",
         subject=subject,
@@ -27,9 +23,20 @@ def read(subject, run_name, run, n_trs, n_voxels):
         n_voxels=a.voxels.size,
         n_trs=a.trs.size,
     )
+    a = a.pad(
+        {"voxels": (0, n_voxels - a.voxels.size), "trs": (0, n_trs - a.trs.size)},
+        constant_values=np.nan,
+    )
     a = a.expand_dims(dim="run_id", axis=0)
     a["run_id"] = [f"lebel2023/{subject}/{run_name}"]
     return a
+
+
+def scale(group):
+    group_mean = group.mean(dim=["run_id", "trs"], skipna=True)
+    group_scale = group.fillna(0).std(dim=["run_id", "trs"], skipna=True)
+    group_scale = xr.where(group_scale < 1e-6, 1, group_scale)
+    return (group - group_mean) / group_scale
 
 
 def create_zarr_dataset(subjects=["UTS01", "UTS02", "UTS03"], name="3_subjects"):
@@ -63,8 +70,5 @@ def create_zarr_dataset(subjects=["UTS01", "UTS02", "UTS03"], name="3_subjects")
         ds = xr.concat(ds, dim="run_id").chunk(
             {"run_id": 1, "voxels": n_voxels, "trs": n_trs}
         )
-        grouped = ds.groupby("subject")
-        ds_mean = grouped.mean(dim=["run_id", "trs"], skipna=True)
-        ds_std = grouped.fillna(0).std(dim=["run_id", "trs"], skipna=True)
-        ds_scaled = (ds - ds_mean) / xr.where(ds_std < 1e-6, 1, ds_std)
+        ds_scaled = ds.groupby("subject").map(scale)
         ds_scaled.to_dataset(name="data").to_zarr(dataset_path)

@@ -11,20 +11,20 @@ from joblib_progress import joblib_progress
 
 def read(subject, run_name, run, n_trs, n_voxels):
     with h5py.File(run, "r") as f:
-        a = xr.DataArray(f["data"][...], dims=["trs", "voxels"]).astype(np.float32)
+        a = xr.DataArray(f["data"][...], dims=["tr", "voxel"]).astype(np.float32)
     a = a.fillna(0)
-    a_mean = a.mean(dim="trs")
-    a_std = a.std(dim="trs")
+    a_mean = a.mean(dim="tr")
+    a_std = a.std(dim="tr")
     a = (a - a_mean) / xr.where(a_std < 1e-6, 1, a_std)
     a = a.assign_coords(
         dataset="lebel2023",
-        subject=subject,
-        run=run_name,
-        n_voxels=a.voxels.size,
-        n_trs=a.trs.size,
+        subject=f"lebel2023/{subject}",
+        run=f"lebel2023/{run_name}",
+        n_voxels=a.voxel.size,
+        n_trs=a.tr.size,
     )
     a = a.pad(
-        {"voxels": (0, n_voxels - a.voxels.size), "trs": (0, n_trs - a.trs.size)},
+        {"voxel": (0, n_voxels - a.voxel.size), "tr": (0, n_trs - a.tr.size)},
         constant_values=np.nan,
     )
     a = a.expand_dims(dim="run_id", axis=0)
@@ -33,8 +33,8 @@ def read(subject, run_name, run, n_trs, n_voxels):
 
 
 def scale(group):
-    group_mean = group.mean(dim=["run_id", "trs"], skipna=True)
-    group_scale = group.fillna(0).std(dim=["run_id", "trs"], skipna=True)
+    group_mean = group.mean(dim=["run_id", "tr"], skipna=True)
+    group_scale = group.fillna(0).std(dim=["run_id", "tr"], skipna=True)
     group_scale = xr.where(group_scale < 1e-6, 1, group_scale)
     return (group - group_mean) / group_scale
 
@@ -54,9 +54,9 @@ def create_zarr_dataset(subjects=["UTS01", "UTS02", "UTS03"], name="3_subjects")
     for subject in subjects:
         for run in runs[subject]:
             with h5py.File(run, "r") as f:
-                trs, voxels = f["data"].shape
-            n_trs = max(n_trs, trs)
-            n_voxels = max(n_voxels, voxels)
+                tr, voxel = f["data"].shape
+            n_trs = max(n_trs, tr)
+            n_voxels = max(n_voxels, voxel)
     with joblib_progress(
         f"Loading data for subjects " + ", ".join(subjects),
         total=sum([len(runs[subject]) for subject in subjects]),
@@ -68,7 +68,7 @@ def create_zarr_dataset(subjects=["UTS01", "UTS02", "UTS03"], name="3_subjects")
         )
     with ProgressBar():
         ds = xr.concat(ds, dim="run_id").chunk(
-            {"run_id": 1, "voxels": n_voxels, "trs": n_trs}
+            {"run_id": 1, "voxel": n_voxels, "tr": n_trs}
         )
         ds_scaled = ds.groupby("subject").map(scale)
         ds_scaled.to_dataset(name="data").to_zarr(dataset_path)

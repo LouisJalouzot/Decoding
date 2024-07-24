@@ -4,21 +4,11 @@ from typing import List, Union
 import numpy as np
 import pandas as pd
 import torch
-from sklearn.preprocessing import StandardScaler
+import xarray as xr
 
 from src.brain_decoder import train_brain_decoder
-from src.fetch_data import fetch_data
+from src.prepare_latents import prepare_latents
 from src.utils import console, progress
-
-
-def scale_in_df(df, col):
-    scaler = StandardScaler()
-    for X in df[col]:
-        if isinstance(X, np.ndarray):
-            scaler.partial_fit(X)
-    for index, row in df.iterrows():
-        if isinstance(row[col], np.ndarray):
-            df.loc[index, col] = scaler.transform(row[col])
 
 
 def train(
@@ -34,71 +24,75 @@ def train(
     test_ratio: float = 0.1,
     seed: int = 0,
     latents_batch_size: int = 64,
-    scale_across_runs: bool = True,
-    scale_across_subjects: bool = False,
     **decoder_params,
 ) -> dict:
+    if isinstance(datasets, str):
+        datasets = [datasets]
+    X_ds = []
+    for dataset in datasets:
+        dataset = Path(f"data/{dataset}").with_suffix(".zarr")
+        X_ds.append(xr.open_zarr(dataset).data)
+    X_ds = xr.concat(X_ds, dim="run_id").squeeze()
+    X_ds = X_ds.set_xindex(coord_names=["subject", "run"])
+    if subjects is not None:
+        ds = ds.sel(run_id=ds.subject.isin(subjects))
+    if smooth > 0:
+        X_ds = X_ds.rolling(tr=smooth, min_periods=1).mean()
+    if lag < 0:
+        X_ds = X_ds.sel(tr=slice(lag, None))
+    X_ds["n_trs"] = X_ds.n_trs - np.abs(lag)
+
     np.random.seed(seed)
     torch.manual_seed(seed)
+
+    runs = np.unique(X_ds.run.values)
+    trs_by_run = X_ds.n_trs.groupby("run").last()
+
+    Y_ds = []
     with progress:
-        Xs, Ys = {}, {}
-        task = progress.add_task("", total=len(subjects))
-        for subject in subjects:
-            progress.update(task, description=f"Fetching data for subject {subject}")
-            subj_Xs, subj_Ys = fetch_data(
-                subject_path=f"data/{subject}",
+        task = progress.add_task("Fetching latents for each run", total=len(runs))
+        for run_array in trs_by_run:
+            run = run_array.run.item()
+            Y_run = prepare_latents(
+                run=run,
                 model=model,
                 tr=tr,
                 context_length=context_length,
-                smooth=smooth,
-                lag=lag,
                 batch_size=latents_batch_size,
             )
-            Xs[subject] = subj_Xs
-            Ys[subject] = subj_Ys
+            n_trs = run_array.n_trs.values.item()
+            assert Y_run.tr.size > n_trs, f"There should not be more latents than brain scans for {run}."
+            if Y_run.tr.size > n_trs + 1:
+                console.log(
+                    f"[red]{Y.shape[0] - X.shape[0]} > 1 latents trimmed for run {run}"
+                )
+            # TODO Continue
+            Y_ds.append(Y_run.sel(tr=slice(0, n_trs)))
             progress.update(task, advance=1)
-        Xs = pd.DataFrame(Xs)
-        Ys = pd.DataFrame(Ys)
-        # runs sorted by decreasing number of subjects
-        runs = Xs.isna().sum(axis=1).sort_values().index
-        Xs = Xs.loc[runs]
-        Ys = Ys.loc[runs]
-        runs = list(Xs.index)
-        if scale_across_runs:
-            task = progress.add_task("Scaling across runs", total=len(subjects))
-            for subject in subjects:
-                for df in [Xs, Ys]:
-                    scale_in_df(df, subject)
-                progress.update(task, advance=1)
-        if scale_across_subjects:
-            task = progress.add_task("Scaling across subjects", total=len(runs))
-            for run in runs:
-                for df in [Xs, Ys]:
-                    scale_in_df(df.T, run)
-                progress.update(task, advance=1)
-    n_runs = len(runs)
-    n_valid = max(1, int(valid_ratio * n_runs))
-    n_test = max(1, int(test_ratio * n_runs))
-    test_runs = runs[:n_test]
-    valid_runs = runs[n_test : n_test + n_valid]
-    train_runs = runs[n_test + n_valid :]
-    for split, selected_runs in [
-        ("Train", train_runs),
-        ("Valid", valid_runs),
-        ("Test", test_runs),
-    ]:
-        n_runs_split = Xs.loc[selected_runs].notna().values.sum()
-        n_scans = (
-            Xs.loc[selected_runs]
-            .map(lambda x: x.shape[0] if isinstance(x, np.ndarray) else 0)
-            .values.sum()
-        )
-        console.log(f"{split} split: {n_runs_split} runs and {n_scans} scans.")
+        Y_ds = xr.concat(Y_ds, dim="run")
+    # n_runs = len(runs)
+    # n_valid = max(1, int(valid_ratio * n_runs))
+    # n_test = max(1, int(test_ratio * n_runs))
+    # test_runs = runs[:n_test]
+    # valid_runs = runs[n_test : n_test + n_valid]
+    # train_runs = runs[n_test + n_valid :]
+    # for split, selected_runs in [
+    #     ("Train", train_runs),
+    #     ("Valid", valid_runs),
+    #     ("Test", test_runs),
+    # ]:
+    #     n_runs_split = Xs.loc[selected_runs].notna().values.sum()
+    #     n_scans = (
+    #         Xs.loc[selected_runs]
+    #         .map(lambda x: x.shape[0] if isinstance(x, np.ndarray) else 0)
+    #         .values.sum()
+    #     )
+    #     console.log(f"{split} split: {n_runs_split} runs and {n_scans} scans.")
 
-    output = train_brain_decoder(
-        Xs, Ys, train_runs, valid_runs, test_runs, decoder=decoder, **decoder_params
-    )
+    # output = train_brain_decoder(
+    #     Xs, Ys, train_runs, valid_runs, test_runs, decoder=decoder, **decoder_params
+    # )
 
-    torch.cuda.empty_cache()
+    # torch.cuda.empty_cache()
 
-    return output
+    return X_ds

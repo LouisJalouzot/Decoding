@@ -20,16 +20,6 @@ def main(
     multi_subject_mode: str = "individual",
     **kwargs,
 ):
-    if subjects is None:
-        if isinstance(datasets, str):
-            subjects = [f"{datasets}/{f}" for f in os.listdir(f"data/{datasets}")]
-        elif isinstance(datasets, list):
-            subjects = []
-            for dataset in datasets:
-                subjects.extend(
-                    [f"{dataset}/{f}" for f in os.listdir(f"data/{dataset}")]
-                )
-
     config = {
         key: value
         for key, value in locals().items()

@@ -4,6 +4,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import torch
+import xarray as xr
 from joblib import memory
 from rich.console import Console
 from rich.progress import (
@@ -80,62 +81,37 @@ def ewma(data, halflife):
     return out
 
 
-class MultiSubjectBatchloader:
-    def __init__(self, X: np.ndarray, Y: np.ndarray, subjects: np.ndarray):
-        self.X = X
-        self.Y = Y
-        self.subjects = subjects
-        self.unique_subjects = np.unique(subjects)
-
-    def __iter__(self):
-        for subject in self.unique_subjects:
-            indices = self.subjects == subject
-            yield subject, tuple(self.X[indices]), tuple(self.Y[indices])
-
-
-class SingleSubjectDataloader:
-    def __init__(self, X: pd.Series, Y: pd.Series, batch_size: int):
-        self.X = X
-        self.Y = Y
-        self.batch_size = batch_size
-
-    def __iter__(self):
-        for i in range(0, len(self.X), self.batch_size):
-            X_batch = tuple(self.X.values[i : i + self.batch_size])
-            Y_batch = tuple(self.Y.values[i : i + self.batch_size])
-            yield X_batch, Y_batch
-
-
-class MultiSubjectDataloader:
+class CustomDataloader:
     def __init__(
-        self, Xs: pd.DataFrame, Ys: pd.DataFrame, batch_size: int, shuffle: bool = False
+        self,
+        X_ds: xr.DataArray,
+        Y_ds: xr.DataArray,
+        batch_size: int,
+        shuffle: bool = False,
+        per_subject: bool = False,
     ):
-        self.Xs = Xs
-        self.Ys = Ys
+        self.X_ds = X_ds
+        self.Y_ds = Y_ds
         self.batch_size = batch_size
         self.shuffle = shuffle
-        indices = np.where(Xs.notna().values)
-        self.runs_indices = indices[0]
-        self.subjects_indices = indices[1]
-        self.n_runs = len(self.runs_indices)
-        self.indices = np.arange(self.n_runs)
-        self.per_subject = False
+        self.per_subject = per_subject
+        self.run_ids = X_ds.run_id.values
+        self.n_run_ids = len(self.run_ids)
 
     def __iter__(self):
         if self.per_subject:
-            for subject in self.Xs.columns:
-                X = self.Xs[subject].dropna()
-                Y = self.Ys[subject].dropna()
-                subject_dl = SingleSubjectDataloader(X, Y, self.batch_size)
-                yield subject, subject_dl
+            for subject, X_ds_subject in self.X_ds.groupby("subject"):
+                run_ids = X_ds_subject.run_id.values
+                for i in range(0, len(run_ids), self.batch_size):
+                    batch_run_ids = run_ids[i : i + self.batch_size]
+                    X_ds_batch = X_ds_subject.sel(run_id=batch_run_ids)
+                    Y_ds_batch = self.Y_ds.sel(run=X_ds_batch.run)
+                    yield subject, X_ds_batch, Y_ds_batch
         else:
             if self.shuffle:
-                np.random.shuffle(self.indices)
-            for i in range(0, self.n_runs, self.batch_size):
-                batch_indices = self.indices[i : i + self.batch_size]
-                runs_indices = self.runs_indices[batch_indices]
-                subjects_indices = self.subjects_indices[batch_indices]
-                X = self.Xs.values[runs_indices, subjects_indices]
-                Y = self.Ys.values[runs_indices, subjects_indices]
-                subjects = self.Xs.columns.values[subjects_indices]
-                yield MultiSubjectBatchloader(X, Y, subjects)
+                np.random.shuffle(self.run_ids)
+            for i in range(0, self.n_run_ids, self.batch_size):
+                batch_run_ids = self.run_ids[i : i + self.batch_size]
+                X_ds_batch = self.X_ds.sel(run_id=batch_run_ids)
+                Y_ds_batch = self.Y_ds.sel(run=X_ds_batch.run)
+                yield X_ds_batch, Y_ds_batch

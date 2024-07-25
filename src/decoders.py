@@ -1,6 +1,10 @@
 from functools import partial
 
+import torch
 from torch import nn
+from torch.nn.utils.rnn import pack_sequence
+
+from src.utils import device
 
 
 class SimpleMLP(nn.Module):
@@ -26,10 +30,11 @@ class SimpleMLP(nn.Module):
         self.fc.append(nn.Linear(in_features=hidden_size, out_features=out_dim))
         self.fc = nn.ModuleList(self.fc)
 
-    def forward(self, X):
+    def forward(self, x):
+        x = x.data
         for layer in self.fc:
-            X = layer(X)
-        return X
+            x = layer(x)
+        return x
 
 
 class RNN(nn.Module):
@@ -54,8 +59,8 @@ class RNN(nn.Module):
             dropout=dropout,
         )
 
-    def forward(self, X):
-        return self.rnn(X)[0].data
+    def forward(self, x):
+        return self.rnn(x)[0].data
 
 
 class GRU(nn.Module):
@@ -78,8 +83,8 @@ class GRU(nn.Module):
             dropout=dropout,
         )
 
-    def forward(self, X):
-        return self.gru(X)[0].data
+    def forward(self, x):
+        return self.gru(x)[0].data
 
 
 class LSTM(nn.Module):
@@ -110,8 +115,8 @@ class LSTM(nn.Module):
             proj_size=proj_size,
         )
 
-    def forward(self, X):
-        return self.lstm(X)[0].data
+    def forward(self, x):
+        return self.lstm(x)[0].data
 
 
 class BrainDecoder(nn.Module):
@@ -188,6 +193,7 @@ class BrainDecoder(nn.Module):
         self.projector = nn.Sequential(*projector_layers)
 
     def forward(self, x):
+        x = x.data
         residual = x
         for res_block in range(self.n_res_blocks):
             x = self.mlp[res_block](x)
@@ -245,7 +251,9 @@ class DecoderWrapper(nn.Module):
                 *[item() for item in self.activation_and_norm],
                 nn.Dropout(self.dropout),
             )
-            self.projector = nn.ModuleDict({subject: projector for subject in self.in_dims})
+            self.projector = nn.ModuleDict(
+                {subject: projector for subject in self.in_dims}
+            )
         elif self.multi_subject_mode == "individual":
             self.projector = nn.ModuleDict(
                 {
@@ -258,8 +266,17 @@ class DecoderWrapper(nn.Module):
                 }
             )
 
-    def project_subject(self, x, subject):
-        return self.projector[subject](x)
+    def project_subject(self, x):
+        out = []
+        for run in x:
+            data = run.sel(
+                tr=slice(run.n_trs.values.item()),
+                voxel=slice(run.n_voxels.values.item()),
+            ).transpose("tr", "voxel")
+            data = torch.from_numpy(data.values).to(device)
+            data = self.projector[run.subject.item()](data)
+            out.append(data)
+        return pack_sequence(out, enforce_sorted=False)
 
-    def forward(self, X):
-        return self.decoder(X)
+    def forward(self, x):
+        return self.decoder(x)

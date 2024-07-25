@@ -2,6 +2,8 @@ import torch
 import torch.nn.functional as F
 from torch.nn.utils.rnn import PackedSequence
 
+from src.utils import console
+
 
 def compute_mse_loss(X, Y, decoder):
     Y_preds = decoder(X)
@@ -47,6 +49,7 @@ def mixco_sample_augmentation(X, beta=0.15, s_thresh=0.5):
         samples = X.data
     else:
         samples = X
+
     select = (torch.rand(samples.shape[0]) <= s_thresh).to(samples.device)
 
     # Randomly select samples used for augmentation

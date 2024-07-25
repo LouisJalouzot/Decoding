@@ -70,5 +70,8 @@ def create_zarr_dataset(subjects=["UTS01", "UTS02", "UTS03"], name="3_subjects")
         ds = xr.concat(ds, dim="run_id").chunk(
             {"run_id": 1, "voxel": n_voxels, "tr": n_trs}
         )
-        ds_scaled = ds.groupby("subject").map(scale)
+        if len(subjects) > 1:
+            ds_scaled = ds.groupby("subject").map(scale)
+        else:
+            ds_scaled = scale(ds_scaled)
         ds_scaled.to_dataset(name="data").to_zarr(dataset_path)

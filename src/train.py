@@ -92,7 +92,7 @@ def train(
         ("Valid", valid_runs),
         ("Test", test_runs),
     ]:
-        X_ds_sel = X_ds[X_ds.run.isin(selected_runs)]
+        X_ds_sel = X_ds.sel(run=selected_runs)
         occurrences = X_ds_sel.subject.count().item()
         n_scans = X_ds_sel.n_trs.sum().values.item()
         console.log(

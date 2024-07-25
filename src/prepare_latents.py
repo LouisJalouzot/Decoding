@@ -164,8 +164,7 @@ def prepare_clap(textgrid_path, audio_path, tr, context_length, batch_size, verb
 
 @memory.cache(ignore=["batch_size", "verbose"])
 def prepare_latents(
-    textgrid_path: Path,
-    audio_path: Path,
+    run: str,
     model: str,
     tr: int,
     context_length: int,
@@ -186,6 +185,19 @@ def prepare_latents(
         np.ndarray: Latents.
     """
     import torch
+
+    dataset, run = run.split("/")
+    if dataset == "lebel2023":
+        textgrid_path = Path(f"data/lebel2023/derivative/TextGrids/{run}.TextGrid")
+        audio_path = Path(f"data/lebel2023/stimuli/{run}.wav")
+    elif dataset == "li2022":
+        lang, run = run.split("_")
+        textgrid_path = Path(
+            f"data/li2022/annotation/{lang}/lpp{lang}_section{run}.TextGrid"
+        )
+        audio_path = Path(f"data/li2022/stimuli/task-lpp{lang}_section_{run}.wav")
+    else:
+        raise ValueError(f"Unsupported dataset {dataset}")
 
     if model.lower() == "mel":
         latents = prepare_mel(audio_path, tr, context_length)
@@ -211,4 +223,7 @@ def prepare_latents(
         latents = model.encode(chunks)
     latents /= np.linalg.norm(latents, ord=2, axis=1, keepdims=True)
     torch.cuda.empty_cache()
+
+    if dataset == "lebel2023":
+        latents = latents[5:-5]  # Drop first and last 10s for lebel2023
     return latents.astype(np.float32)

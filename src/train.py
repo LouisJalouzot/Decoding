@@ -2,9 +2,9 @@ from pathlib import Path
 from typing import List, Union
 
 import numpy as np
-import pandas as pd
 import torch
 import xarray as xr
+from dask.diagnostics import ProgressBar
 
 from src.brain_decoder import train_brain_decoder
 from src.prepare_latents import prepare_latents
@@ -41,6 +41,8 @@ def train(
     if lag > 0:
         X_ds = X_ds.sel(tr=slice(lag, None))
     X_ds["n_trs"] = X_ds.n_trs - np.abs(lag)
+    with ProgressBar():
+        X_ds = X_ds.compute()
 
     np.random.seed(seed)
     torch.manual_seed(seed)

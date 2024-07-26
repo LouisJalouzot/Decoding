@@ -16,19 +16,19 @@ def read(subject, run_name, run, n_trs, n_voxels):
     a_mean = a.mean(dim="tr")
     a_std = a.std(dim="tr")
     a = (a - a_mean) / xr.where(a_std < 1e-6, 1, a_std)
+    a = a.expand_dims(dim="run_id", axis=0)
+    a["run_id"] = [f"lebel2023/{subject}/{run_name}"]
     a = a.assign_coords(
-        dataset="lebel2023",
-        subject=f"lebel2023/{subject}",
-        run=f"lebel2023/{run_name}",
-        n_voxels=a.voxel.size,
-        n_trs=a.tr.size,
+        dataset=("run_id", ["lebel2023"]),
+        subject=("run_id", [f"lebel2023/{subject}"]),
+        run=("run_id", [f"lebel2023/{run_name}"]),
+        n_voxels=("run_id", [a.voxel.size]),
+        n_trs=("run_id", [a.tr.size]),
     )
     a = a.pad(
         {"voxel": (0, n_voxels - a.voxel.size), "tr": (0, n_trs - a.tr.size)},
         constant_values=np.nan,
     )
-    a = a.expand_dims(dim="run_id", axis=0)
-    a["run_id"] = [f"lebel2023/{subject}/{run_name}"]
     return a
 
 
@@ -70,8 +70,5 @@ def create_zarr_dataset(subjects=["UTS01", "UTS02", "UTS03"], name="3_subjects")
         ds = xr.concat(ds, dim="run_id").chunk(
             {"run_id": 1, "voxel": n_voxels, "tr": n_trs}
         )
-        if len(subjects) > 1:
-            ds_scaled = ds.groupby("subject").map(scale)
-        else:
-            ds_scaled = scale(ds_scaled)
+        ds_scaled = ds.groupby("subject").map(scale)
         ds_scaled.to_dataset(name="data").to_zarr(dataset_path)

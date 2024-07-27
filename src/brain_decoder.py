@@ -7,7 +7,6 @@ import numpy as np
 import torch
 from rich.live import Live
 from rich.table import Table
-from torch.nn.utils.rnn import pack_sequence, unpack_sequence
 
 import wandb
 from src.decoders import GRU, LSTM, RNN, BrainDecoder, DecoderWrapper, SimpleMLP
@@ -17,16 +16,20 @@ from src.losses import (
     compute_symm_nce_loss,
 )
 from src.metrics import retrieval_metrics
-from src.utils import CustomDataloader, console, device
+from src.utils import console, device
 
 
 def combine_xarray_to_torch(Y):
     out = []
     for run in Y:
-        data = run.sel(
-            tr=slice(run.n_trs.values.item()),
-        ).transpose("tr", "hidden_dim")
-        out.append(torch.from_numpy(data.values))
+        data = (
+            run.sel(
+                tr=slice(run.n_trs.item()),
+            )
+            .transpose("tr", "hidden_dim")
+            .data
+        )
+        out.append(torch.from_numpy(data))
     return torch.concat(out).to(device)
 
 
@@ -134,8 +137,7 @@ def train_brain_decoder(
     decoder = DecoderWrapper(
         decoder=decoder,
         in_dims={
-            e.subject.item(): e.values.item()
-            for e in X_ds.n_voxels.groupby("subject").last()
+            e.subject.item(): e.item() for e in X_ds.n_voxels.groupby("subject").last()
         },
         **decoder_params,
     ).to(device)
@@ -280,9 +282,9 @@ def train_brain_decoder(
         Y_split_tensor = []
         for run in Y_split:
             data = run.sel(
-                tr=slice(run.n_trs.values.item()),
+                tr=slice(run.n_trs.item()),
             ).transpose("tr", "hidden_dim")
-            Y_split_tensor.append(torch.from_numpy(data.values))
+            Y_split_tensor.append(torch.from_numpy(data))
         Y_split = torch.concat(Y_split_tensor)
         metrics = evaluate(
             dl,

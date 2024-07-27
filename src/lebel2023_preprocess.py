@@ -8,8 +8,10 @@ from dask.diagnostics import ProgressBar
 from joblib import Parallel, delayed
 from joblib_progress import joblib_progress
 
+from src.utils import standard_scale
 
-def read(subject, run_name, run, n_trs, n_voxels):
+
+def read(subject, run_name, run):
     with h5py.File(run, "r") as f:
         a = xr.DataArray(f["data"][...], dims=["tr", "voxel"]).astype(np.float32)
     a = a.fillna(0)
@@ -24,19 +26,10 @@ def read(subject, run_name, run, n_trs, n_voxels):
         run=("run_id", [f"lebel2023/{run_name}"]),
         n_voxels=("run_id", [a.voxel.size]),
         n_trs=("run_id", [a.tr.size]),
+        tr=np.arange(a.tr.size),
+        voxel=np.arange(a.voxel.size),
     )
-    a = a.pad(
-        {"voxel": (0, n_voxels - a.voxel.size), "tr": (0, n_trs - a.tr.size)},
-        constant_values=np.nan,
-    )
-    return a
-
-
-def scale(group):
-    group_mean = group.mean(dim=["run_id", "tr"], skipna=True)
-    group_scale = group.fillna(0).std(dim=["run_id", "tr"], skipna=True)
-    group_scale = xr.where(group_scale < 1e-6, 1, group_scale)
-    return (group - group_mean) / group_scale
+    return standard_scale(a, along="tr")
 
 
 def create_zarr_dataset(subjects=["UTS01", "UTS02", "UTS03"], name="3_subjects"):
@@ -50,25 +43,17 @@ def create_zarr_dataset(subjects=["UTS01", "UTS02", "UTS03"], name="3_subjects")
             shutil.rmtree(dataset_path)
     path = Path("data/lebel2023/derivative/preprocessed_data")
     runs = {subject: list((path / subject).iterdir()) for subject in subjects}
-    n_voxels, n_trs = 0, 0
-    for subject in subjects:
-        for run in runs[subject]:
-            with h5py.File(run, "r") as f:
-                tr, voxel = f["data"].shape
-            n_trs = max(n_trs, tr)
-            n_voxels = max(n_voxels, voxel)
     with joblib_progress(
         f"Loading data for subjects " + ", ".join(subjects),
         total=sum([len(runs[subject]) for subject in subjects]),
     ):
         ds = Parallel(n_jobs=-1)(
-            delayed(read)(subject, run.stem, run, n_trs, n_voxels)
+            delayed(read)(subject, run.stem, run)
             for subject in subjects
             for run in runs[subject]
         )
     with ProgressBar():
-        ds = xr.concat(ds, dim="run_id").chunk(
-            {"run_id": 1, "voxel": n_voxels, "tr": n_trs}
-        )
-        ds_scaled = ds.groupby("subject").map(scale)
-        ds_scaled.to_dataset(name="data").to_zarr(dataset_path)
+        ds = xr.concat(ds, dim="run_id")
+        ds = ds.chunk({"run_id": 1, "voxel": ds.voxel.size, "tr": ds.tr.size})
+        ds_scaled = ds.groupby("subject").map(standard_scale)
+        ds_scaled.to_dataset(name="X").to_zarr(dataset_path)

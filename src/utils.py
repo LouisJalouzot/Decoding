@@ -2,9 +2,9 @@ import subprocess
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
 import torch
 import xarray as xr
+import xbatcher
 from joblib import memory
 from rich.console import Console
 from rich.progress import (
@@ -81,37 +81,8 @@ def ewma(data, halflife):
     return out
 
 
-class CustomDataloader:
-    def __init__(
-        self,
-        X_ds: xr.DataArray,
-        Y_ds: xr.DataArray,
-        batch_size: int,
-        shuffle: bool = False,
-        per_subject: bool = False,
-    ):
-        self.X_ds = X_ds
-        self.Y_ds = Y_ds
-        self.batch_size = batch_size
-        self.shuffle = shuffle
-        self.per_subject = per_subject
-        self.run_ids = X_ds.run_id.values
-        self.n_run_ids = len(self.run_ids)
-
-    def __iter__(self):
-        if self.per_subject:
-            for subject, X_ds_subject in self.X_ds.groupby("subject"):
-                run_ids = X_ds_subject.run_id.values
-                for i in range(0, len(run_ids), self.batch_size):
-                    batch_run_ids = run_ids[i : i + self.batch_size]
-                    X_ds_batch = X_ds_subject.sel(run_id=batch_run_ids)
-                    Y_ds_batch = self.Y_ds.sel(run=X_ds_batch.run)
-                    yield subject, X_ds_batch, Y_ds_batch
-        else:
-            if self.shuffle:
-                np.random.shuffle(self.run_ids)
-            for i in range(0, self.n_run_ids, self.batch_size):
-                batch_run_ids = self.run_ids[i : i + self.batch_size]
-                X_ds_batch = self.X_ds.sel(run_id=batch_run_ids)
-                Y_ds_batch = self.Y_ds.sel(run=X_ds_batch.run)
-                yield X_ds_batch, Y_ds_batch
+def standard_scale(ds: xr.DataArray, along=["run_id", "tr"]):
+    ds_mean = ds.mean(dim=along, skipna=True)
+    ds_scale = ds.fillna(0).std(dim=along, skipna=True)
+    ds_scale = xr.where(ds_scale < 1e-6, 1, ds_scale)
+    return (ds - ds_mean) / ds_scale

@@ -36,6 +36,7 @@ dask = {extras = ["distributed"], version = "^2024.7.1"}
 xarray = "^2024.6.0"
 zarr = "^2.18.2"
 joblib-progress = "^1.0.5"
+xbatcher = "^0.3.0"
 
 
 [tool.poetry.group.dev.dependencies]

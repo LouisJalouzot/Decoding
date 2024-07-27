@@ -8,7 +8,7 @@ from dask.diagnostics import ProgressBar
 
 from src.brain_decoder import train_brain_decoder
 from src.prepare_latents import prepare_latents
-from src.utils import console, progress
+from src.utils import console, progress, standard_scale
 
 
 def train(
@@ -35,12 +35,14 @@ def train(
     X_ds = xr.concat(X_ds, dim="run_id").squeeze()
     X_ds = X_ds.set_xindex(coord_names=["subject", "run"])
     if subjects is not None:
-        ds = ds.sel(run_id=ds.subject.isin(subjects))
+        X_ds = X_ds[X_ds.subject.isin(subjects)]
     if smooth > 0:
         X_ds = X_ds.rolling(tr=smooth, min_periods=1).mean()
     if lag > 0:
         X_ds = X_ds.sel(tr=slice(lag, None))
+        X_ds = X_ds.assign_coords(tr=np.arange(X_ds.tr.size))
     X_ds["n_trs"] = X_ds.n_trs - np.abs(lag)
+    console.log("Loading brain scans")
     with ProgressBar():
         X_ds = X_ds.compute()
 
@@ -48,10 +50,10 @@ def train(
     torch.manual_seed(seed)
 
     # Unique runs sorted by decreasing number occurrences to select the ones with more data for valid and test
-    runs = X_ds.subject.groupby("run").count().sortby("run").run.values
-    n_runs = len(runs)
+    runs = X_ds.subject.groupby("run").count().sortby("run").run
+    n_runs = runs.size
     trs_by_run = X_ds.n_trs.groupby("run").last()
-    max_n_trs = trs_by_run.max().values.item()
+    max_n_trs = trs_by_run.max().item()
 
     Y_ds = []
     with progress:
@@ -66,7 +68,8 @@ def train(
                 batch_size=latents_batch_size,
             )
             Y_run = xr.DataArray(Y_run, dims=["tr", "hidden_dim"], coords={"run": run})
-            n_trs = run_array.values.item()
+            Y_run = standard_scale(Y_run, along="tr")
+            n_trs = run_array.item()
             if lag < 0:
                 Y_run = Y_run.sel(tr=slice(lag, None))
             elif lag > 0:
@@ -83,7 +86,9 @@ def train(
             Y_run = Y_run.pad({"tr": (0, max_n_trs - n_trs)}, constant_values=np.nan)
             Y_ds.append(Y_run)
             progress.update(task, advance=1)
-    Y_ds = xr.concat(Y_ds, dim="run")
+    Y_ds = standard_scale(xr.concat(Y_ds, dim="run"), along=["run", "tr"])
+    Y_ds = Y_ds.assign_coords(tr=np.arange(Y_ds.tr.size))
+    return X_ds, Y_ds
     n_valid = max(1, int(valid_ratio * n_runs))
     n_test = max(1, int(test_ratio * n_runs))
     test_runs = runs[:n_test]
@@ -94,9 +99,9 @@ def train(
         ("Valid", valid_runs),
         ("Test", test_runs),
     ]:
-        X_ds_sel = X_ds.sel(run=selected_runs)
+        X_ds_sel = X_ds[X_ds.run.isin(selected_runs)]
         occurrences = X_ds_sel.subject.count().item()
-        n_scans = X_ds_sel.n_trs.sum().values.item()
+        n_scans = X_ds_sel.n_trs.sum().item()
         console.log(
             f"{split} split: {len(selected_runs)} runs, {occurrences} occurrences and {n_scans} scans."
         )

@@ -1,4 +1,5 @@
 import shutil
+from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
@@ -29,7 +30,7 @@ def read(subject, run_name, run):
         tr=np.arange(a.tr.size),
         voxel=np.arange(a.voxel.size),
     )
-    return standard_scale(a.fillna(0), along="tr")
+    return subject, standard_scale(a.fillna(0), along="tr")
 
 
 def create_zarr_dataset(
@@ -52,16 +53,23 @@ def create_zarr_dataset(
         f"Loading data for subjects " + ", ".join(subjects),
         total=sum([len(runs[subject]) for subject in subjects]),
     ):
-        ds = Parallel(n_jobs=-1)(
+        res = Parallel(n_jobs=-1)(
             delayed(read)(subject, run.stem, run)
             for subject in subjects
             for run in runs[subject]
         )
+    ds = defaultdict(list)
+    for subject, data in res:
+        ds[subject].append(data)
+    for subject in ds:
+        print("Scaling", subject)
+        ds[subject] = standard_scale(
+            xr.concat(ds[subject], dim="run_id"), along=["run_id", "tr"]
+        )
     with ProgressBar():
-        ds = xr.concat(ds, dim="run_id")
-        ds = ds.chunk({"run_id": 1, "voxel": ds.voxel.size, "tr": ds.tr.size})
-        ds_scaled = ds.groupby("subject").map(standard_scale)
+        ds = xr.concat(list(ds.values()), dim="run_id")
         if format == "zarr":
-            ds_scaled.to_dataset(name="data").to_zarr(dataset_path)
+            ds = ds.chunk({"run_id": 1})
+            ds.to_dataset(name="data").to_zarr(dataset_path)
         else:
-            ds_scaled.to_netcdf(dataset_path, engine="netcdf4")
+            ds.to_netcdf(dataset_path, engine="netcdf4")

@@ -17,7 +17,7 @@ def standard_scale(ds: xr.DataArray, along=["run_id", "tr"]):
 
 
 def read(subject, run_name, run):
-    a = xr.open_dataarray(run).astype(np.float32)
+    a = xr.open_dataset(run).data.astype(np.float32)
     a = a.rename({"phony_dim_0": "tr", "phony_dim_1": "voxel"})
     a = a.expand_dims(dim="run_id", axis=0)
     a["run_id"] = [f"lebel2023/{subject}/{run_name}"]

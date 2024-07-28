@@ -37,6 +37,7 @@ xarray = "^2024.6.0"
 zarr = "^2.18.2"
 joblib-progress = "^1.0.5"
 xbatcher = "^0.3.0"
+netcdf4 = "^1.7.1.post1"
 
 
 [tool.poetry.group.dev.dependencies]

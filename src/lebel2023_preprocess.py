@@ -30,7 +30,7 @@ def read(subject, run_name, run):
         tr=np.arange(a.tr.size),
         voxel=np.arange(a.voxel.size),
     )
-    return subject, standard_scale(a.fillna(0), along="tr")
+    return subject, standard_scale(a.fillna(0), along="tr").chunk({"run_id": 1})
 
 
 def create_zarr_dataset(
@@ -40,13 +40,13 @@ def create_zarr_dataset(
     if dataset_path.exists():
         if input(
             f"{dataset_path} already exists, do you want to overwrite it? (Y/n)"
-        ) not in ["y", ""]:
+        ) not in ["y", "Y", ""]:
             return
         else:
             if dataset_path.is_file():
                 dataset_path.unlink()
             else:
-                shutil.rmdir(dataset_path)
+                shutil.rmtree(dataset_path)
     path = Path("data/lebel2023/derivative/preprocessed_data")
     runs = {subject: list((path / subject).iterdir()) for subject in subjects}
     with joblib_progress(
@@ -61,15 +61,15 @@ def create_zarr_dataset(
     ds = defaultdict(list)
     for subject, data in res:
         ds[subject].append(data)
-    for subject in ds:
-        print("Scaling", subject)
-        ds[subject] = standard_scale(
-            xr.concat(ds[subject], dim="run_id"), along=["run_id", "tr"]
-        )
     with ProgressBar():
+        for subject in ds:
+            print("Scaling", subject)
+            ds[subject] = standard_scale(
+                xr.concat(ds[subject], dim="run_id"),
+                along=["run_id", "tr"],
+            )
         ds = xr.concat(list(ds.values()), dim="run_id")
         if format == "zarr":
-            ds = ds.chunk({"run_id": 1})
             ds.to_dataset(name="data").to_zarr(dataset_path)
         else:
             ds.to_netcdf(dataset_path, engine="netcdf4")

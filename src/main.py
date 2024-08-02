@@ -6,6 +6,8 @@ import wandb
 from src.train import train
 from src.utils import ignore, memory
 
+wandb.require("core")
+
 
 @memory.cache
 def main(

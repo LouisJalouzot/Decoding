@@ -86,3 +86,15 @@ def standard_scale(ds: xr.DataArray, along=["run_id", "tr"]):
     ds_scale = ds.fillna(0).std(dim=along, skipna=True)
     ds_scale = xr.where(ds_scale < 1e-6, 1, ds_scale)
     return (ds - ds_mean) / ds_scale
+
+
+def xarray_to_torch(x: xr.DataArray) -> torch.Tensor:
+    # Gets rid of padding for a single run and transforms to torch tensor
+    if "tr" in x.coords:
+        x = x.sel(tr=slice(x.n_trs.item() - 1))
+    if "voxel" in x.coords:
+        x = x.sel(voxel=slice(x.n_voxels.item() - 1))
+        x = x.transpose("tr", "voxel")
+    else:
+        x = x.transpose("tr", "hidden_dim")
+    return torch.from_numpy(x.data).to(device)

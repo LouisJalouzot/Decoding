@@ -16,37 +16,33 @@ from src.losses import (
     compute_symm_nce_loss,
 )
 from src.metrics import retrieval_metrics
-from src.utils import console, device
+from src.utils import console, device, xarray_to_torch
 
 
-def combine_xarray_to_torch(Y):
-    out = []
-    for run in Y:
-        data = (
-            run.sel(
-                tr=slice(run.n_trs.item()),
-            )
-            .transpose("tr", "hidden_dim")
-            .data
-        )
-        out.append(torch.from_numpy(data))
-    return torch.concat(out).to(device)
+def combine_Y_xarrays_to_torch(Y):
+    out = (
+        Y.stack(run_tr=("run", "tr"))
+        .sel(run_tr=(Y.tr < Y.n_trs).stack(run_tr=("run", "tr")))
+        .transpose("run_tr", "hidden_dim")
+    )
+    return torch.from_numpy(out.data).to(device)
 
 
-def evaluate(dl, decoder, negatives, top_k_accuracies, temperature):
+def evaluate(X, Y, decoder, negatives, top_k_accuracies, temperature):
     decoder.eval()
-    dl.per_subject = True
     metrics = defaultdict(list)
     negatives = negatives.to(device)
     with torch.no_grad():
-        for subject, X, Y in dl:
-            X = decoder.project_subject(X)
-            Y_preds = decoder(X)
-            Y = combine_xarray_to_torch(Y)
+        for x in X:
+            subject, run = x.subject.item(), x.run.item()
+            x = xarray_to_torch(x)
+            x = decoder.projector[subject](x)
+            y_preds = decoder(x)
+            y = xarray_to_torch(Y.sel(run=run))
             # Evaluate retrieval metrics
             for key, value in retrieval_metrics(
-                Y,
-                Y_preds,
+                y,
+                y_preds,
                 negatives,
                 return_ranks=True,
                 top_k_accuracies=top_k_accuracies,
@@ -54,9 +50,9 @@ def evaluate(dl, decoder, negatives, top_k_accuracies, temperature):
                 metrics[key].append(value)
                 metrics[f"{subject}/{key}"].append(value)
             # Evaluate losses
-            mse_loss = compute_mse_loss(X, Y, decoder)
-            symm_nce_loss = compute_symm_nce_loss(X, Y, decoder, temperature)
-            mixco_loss = compute_mixco_symm_nce_loss(X, Y, decoder, temperature)
+            mse_loss = compute_mse_loss(x, y, decoder)
+            symm_nce_loss = compute_symm_nce_loss(x, y, decoder, temperature)
+            mixco_loss = compute_mixco_symm_nce_loss(x, y, decoder, temperature)
             for name in ["", f"{subject}/"]:
                 metrics[name + "mse"].append(mse_loss.item())
                 metrics[name + "symm_nce"].append(symm_nce_loss.item())
@@ -76,7 +72,6 @@ def evaluate(dl, decoder, negatives, top_k_accuracies, temperature):
             ]
         else:
             metrics[key] = np.mean(value)
-    dl.per_subject = False
     metrics.update(other_metrics)
     return metrics
 
@@ -101,25 +96,11 @@ def train_brain_decoder(
 ):
     if decoder.lower() in ["rnn", "gru", "lstm"] and loss == "mixco":
         console.log("[red]MixCo augmentation should not be used with time series.")
-    train_dl = CustomDataloader(
-        X_ds[X_ds.run.isin(train_runs)],
-        Y_ds.sel(run=train_runs),
-        batch_size,
-        shuffle=True,
-    )
-    Y_valid = combine_xarray_to_torch(Y_ds.sel(run=valid_runs))
-    valid_dl = CustomDataloader(
-        X_ds[X_ds.run.isin(valid_runs)],
-        Y_ds.sel(run=valid_runs),
-        batch_size,
-        per_subject=True,
-    )
-    test_dl = CustomDataloader(
-        X_ds[X_ds.run.isin(test_runs)],
-        Y_ds.sel(run=test_runs),
-        batch_size,
-        per_subject=True,
-    )
+    X_train = X_ds[X_ds.run.isin(train_runs)]
+    train_run_ids = X_train.run_id.values
+    Y_valid = combine_Y_xarrays_to_torch(Y_ds.sel(run=valid_runs))
+    X_valid = X_ds[X_ds.run.isin(valid_runs)]
+    X_test = X_ds[X_ds.run.isin(test_runs)]
 
     out_dim = Y_ds.hidden_dim.size
     if decoder.lower() == "brain_decoder":
@@ -189,10 +170,21 @@ def train_brain_decoder(
             t = time()
             decoder.train()
             train_losses = []
-            for X, Y in train_dl:
+            np.random.shuffle(train_run_ids)
+            X_train = X_train.sel(run_id=train_run_ids)
+            batch_x, batch_runs = [], []
+            for i, x in enumerate(X_train):
+                subject, run = x.subject.item(), x.run.item()
+                x = xarray_to_torch(x)
+                x = decoder.projector[subject](x)
+                batch_x.append(x)
+                batch_runs.append(run)
+                if i < len(train_run_ids) - 1 and len(batch_x) < batch_size:
+                    continue
+
+                X = torch.concat(batch_x)
+                Y = combine_Y_xarrays_to_torch(Y_ds.sel(run=batch_runs))
                 optimizer.zero_grad()
-                X = decoder.project_subject(X)
-                Y = combine_xarray_to_torch(Y)
 
                 if loss == "mse":
                     # Evaluate MSE loss
@@ -212,7 +204,7 @@ def train_brain_decoder(
 
             # Validation step
             val_metrics = evaluate(
-                valid_dl, decoder, Y_valid, top_k_accuracies, temperature
+                X_valid, Y_ds, decoder, Y_valid, top_k_accuracies, temperature
             )
 
             # Log metrics
@@ -274,20 +266,14 @@ def train_brain_decoder(
             Path(checkpoints_path) / f"checkpoint_{epoch:03d}.pt",
         )
 
-    train_dl.per_subject = True
-    for split, dl, Y_split in [
-        ("train/", train_dl, Y_ds.sel(run=train_runs)),
-        ("test/", test_dl, Y_ds.sel(run=test_runs)),
+    for split, X_split, Y_split in [
+        ("train/", X_train, Y_ds.sel(run=train_runs)),
+        ("test/", X_test, Y_ds.sel(run=test_runs)),
     ]:
-        Y_split_tensor = []
-        for run in Y_split:
-            data = run.sel(
-                tr=slice(run.n_trs.item()),
-            ).transpose("tr", "hidden_dim")
-            Y_split_tensor.append(torch.from_numpy(data))
-        Y_split = torch.concat(Y_split_tensor)
+        Y_split = combine_Y_xarrays_to_torch(Y_split)
         metrics = evaluate(
-            dl,
+            X_split,
+            Y_ds,
             decoder,
             Y_split,
             top_k_accuracies,

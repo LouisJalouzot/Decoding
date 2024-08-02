@@ -30,8 +30,13 @@ def train(
         datasets = [datasets]
     X_ds = []
     for dataset in datasets:
-        dataset = Path(f"data/{dataset}").with_suffix(".zarr")
-        X_ds.append(xr.open_zarr(dataset).data)
+        dataset = Path(f"data/{dataset}")
+        if dataset.with_suffix(".nc").exists():
+            X_ds.append(xr.open_dataarray(dataset.with_suffix(".nc")))
+        elif dataset.with_suffix(".zarr").exists():
+            X_ds.append(xr.open_zarr(dataset.with_suffix(".zarr")).data)
+        else:
+            raise FileNotFoundError(f"Dataset {dataset} not found")
     X_ds = xr.concat(X_ds, dim="run_id").squeeze()
     X_ds = X_ds.set_xindex(coord_names=["subject", "run"])
     if subjects is not None:
@@ -88,7 +93,6 @@ def train(
             progress.update(task, advance=1)
     Y_ds = standard_scale(xr.concat(Y_ds, dim="run"), along=["run", "tr"])
     Y_ds = Y_ds.assign_coords(tr=np.arange(Y_ds.tr.size))
-    return X_ds, Y_ds
     n_valid = max(1, int(valid_ratio * n_runs))
     n_test = max(1, int(test_ratio * n_runs))
     test_runs = runs[:n_test]

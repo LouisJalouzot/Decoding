@@ -266,17 +266,5 @@ class DecoderWrapper(nn.Module):
                 }
             )
 
-    def project_subject(self, x):
-        out = []
-        for run in x:
-            data = run.sel(
-                tr=slice(run.n_trs.item()),
-                voxel=slice(run.n_voxels.item()),
-            ).transpose("tr", "voxel")
-            data = torch.from_numpy(data).to(device)
-            data = self.projector[run.subject.item()](data)
-            out.append(data)
-        return pack_sequence(out, enforce_sorted=False)
-
     def forward(self, x):
         return self.decoder(x)

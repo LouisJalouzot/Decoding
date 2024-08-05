@@ -72,6 +72,7 @@ def train(
     df = pd.DataFrame(
         sorted(df), columns=["dataset", "subject", "run", "n_trs", "n_voxels", "X"]
     )
+    df["subject_id"] = df.apply(lambda x: x.dataset + "/" + x.subject, axis=1)
     assert (
         df.groupby(["dataset", "run"]).n_trs.nunique().eq(1).all()
     ), "Runs should have the same number of TRs for all subjects"
@@ -128,6 +129,9 @@ def train(
         f"Valid split: {n_valid} runs with {len(df_valid)} occurrences and {df_valid.n_trs.sum()} scans.\n"
         f"Test split: {n_test} runs with {len(df_test)} occurrences and {df_test.n_trs.sum()} scans."
     )
+    assert np.isin(
+        df.subject_id.unique(), df_train.subject_id.unique()
+    ).all(), "All subjects should have at least one run in the train split"
 
     output = train_brain_decoder(
         df_train, df_valid, df_test, decoder=decoder, **decoder_params

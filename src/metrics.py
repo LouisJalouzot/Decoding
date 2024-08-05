@@ -92,7 +92,7 @@ def retrieval_metrics(
         output["relative_median_rank"] = (np.median(ranks) - 1) / (size - 1)
         for top_percent in top_percent_accuracies:
             accuracy = (ranks < (top_percent * size / 100)).mean()
-            output[f"top_{top_percent}_accuracy"] = accuracy
+            output[f"top_{top_percent}%_accuracy"] = accuracy
     elif (
         isinstance(Y_true, torch.Tensor)
         and isinstance(Y_pred, torch.Tensor)
@@ -123,7 +123,7 @@ def retrieval_metrics(
         for top_percent in top_percent_accuracies:
             accuracy = ranks < (top_percent * size / 100)
             accuracy = accuracy.cpu().numpy().mean()
-            output[f"top_{top_percent}_accuracy"] = accuracy
+            output[f"top_{top_percent}%_accuracy"] = accuracy
         ranks = ranks.cpu()
     else:
         raise ValueError(

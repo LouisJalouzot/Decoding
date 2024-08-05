@@ -27,7 +27,7 @@ def evaluate(df, decoder, negatives, top_percent_accuracies, temperature):
     negatives = negatives.to(device)
     with torch.no_grad():
         for _, row in df.iterrows():
-            subject = row.subject
+            subject = row.subject_id
             X = decoder.projector[subject](row.X.to(device))
             X = pack_sequence([X], enforce_sorted=False)
             Y_preds = decoder(X)
@@ -107,7 +107,7 @@ def train_brain_decoder(
         raise ValueError(f"Unsupported decoder {decoder}.")
     decoder = DecoderWrapper(
         decoder=decoder,
-        in_dims=df_train[["subject", "n_voxels"]].drop_duplicates(),
+        in_dims=df_train[["subject_id", "n_voxels"]].drop_duplicates(),
         **decoder_params,
     ).to(device)
 
@@ -164,7 +164,7 @@ def train_brain_decoder(
                 X = []
                 Y = []
                 for _, row in df_train.iloc[i : i + batch_size].iterrows():
-                    X.append(decoder.projector[row.subject](row.X.to(device)))
+                    X.append(decoder.projector[row.subject_id](row.X.to(device)))
                     Y.append(row.Y)
                 X = pack_sequence(X, enforce_sorted=False)
                 Y = torch.cat(Y).to(device)

@@ -25,14 +25,16 @@ def main(
 ):
     if subjects is None:
         if isinstance(datasets, str):
-            subjects = {datasets: os.listdir(f"datasets/{datasets}")}
+            subjects = {datasets: sorted(os.listdir(f"datasets/{datasets}"))}
         elif isinstance(datasets, list):
             subjects = {}
             for dataset in datasets:
-                subjects[dataset] = os.listdir(f"datasets/{dataset}")
+                subjects[dataset] = sorted(os.listdir(f"datasets/{dataset}"))
     runs = {
         dataset: {
-            subject: [Path(f).stem for f in os.listdir(f"datasets/{dataset}/{subject}")]
+            subject: sorted(
+                [Path(f).stem for f in os.listdir(f"datasets/{dataset}/{subject}")]
+            )
             for subject in subjects[dataset]
         }
         for dataset in subjects

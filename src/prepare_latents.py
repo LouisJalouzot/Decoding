@@ -178,7 +178,7 @@ def prepare_latents(
     if dataset == "lebel2023":
         textgrid_path = f"data/lebel2023/derivative/TextGrids/{run}.TextGrid"
         audio_path = f"data/lebel2023/stimuli/{run}.wav"
-    elif dataset == "li2022":
+    elif "li2022" in dataset:
         audio_path = f"data/li2022/stimuli/task-lppEN_section_{run}.wav"
         textgrid_path = f"data/li2022/annotation/EN/lppEN_section{run}.TextGrid"
     else:

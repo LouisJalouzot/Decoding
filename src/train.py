@@ -80,10 +80,11 @@ def train(
     # runs sorted by decreasing number of occurrences
     runs = (
         df.groupby(["dataset", "run"])
-        .X.count()
+        .subject.count()
         .sort_values(ascending=False)
         .reset_index()[["dataset", "run"]]
     )
+    n_runs = len(runs)
     scaler = StandardScaler()
     with progress:
         task = progress.add_task("", total=n_runs)

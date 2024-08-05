@@ -5,7 +5,7 @@ from typing import Dict, List, Union
 import numpy as np
 import pandas as pd
 import torch
-from joblib import Parallel, delayed
+from joblib import Parallel, cpu_count, delayed
 from joblib_progress import joblib_progress
 from sklearn.preprocessing import StandardScaler
 
@@ -63,7 +63,7 @@ def train(
             f"No runs found in datasets {datasets}, have you run preprocess.py?"
         )
     with joblib_progress(f"Loading brain scans for datasets {datasets}", total=n_runs):
-        df = Parallel(n_jobs=-1, prefer="threads")(
+        df = Parallel(n_jobs=cpu_count()//2, prefer="threads")(
             delayed(read)(dataset, subject, run, lag, smooth, stack)
             for dataset in runs
             for subject in runs[dataset]

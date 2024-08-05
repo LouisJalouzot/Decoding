@@ -49,7 +49,7 @@ def main(
     wandb.init(
         config=config,
         id=sha1(repr(sorted(config.items())).encode()).hexdigest(),
-        project="fMRI-Decoding-v3",
+        project="fMRI-Decoding-v4",
         save_code=True,
     )
     output = train(**config)

@@ -2,8 +2,8 @@ import os
 import shutil
 from pathlib import Path
 
+import h5py
 import numpy as np
-import xarray as xr
 from joblib import Parallel, delayed
 from joblib_progress import joblib_progress
 from sklearn.preprocessing import StandardScaler
@@ -13,7 +13,8 @@ from src.utils import console, create_symlink, progress
 
 def read(f):
     scaler = StandardScaler()
-    X = xr.open_dataset(f, phony_dims="access").data.data
+    with h5py.File(f, "r") as hf5:
+        X = hf5["data"][...]
     X = np.nan_to_num(X, nan=0)
     X = scaler.fit_transform(X)
     return f.stem, X

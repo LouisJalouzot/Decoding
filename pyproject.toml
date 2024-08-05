@@ -32,7 +32,7 @@ nibabel = "^5.2.1"
 chardet = "^5.2.0"
 nilearn = "^0.10.4"
 joblib-progress = "^1.0.5"
-xarray = "^2024.7.0"
+h5py = "^3.11.0"
 
 
 [tool.poetry.group.dev.dependencies]

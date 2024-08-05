@@ -5,7 +5,7 @@ from pathlib import Path
 import h5py
 import nibabel as nib
 import numpy as np
-from joblib import Parallel, cpu_count, delayed
+from joblib import Parallel, delayed
 from joblib_progress import joblib_progress
 from nilearn import image
 from sklearn.preprocessing import StandardScaler
@@ -22,7 +22,7 @@ assert (
 def slice_subject(input_path, target_path, mask):
     runs = []
     scaler = StandardScaler()
-    for path in sorted(input_path.iterdir()):
+    for path in sorted(input_path.glob("*.nii.gz")):
         img = nib.load(path).get_fdata()[mask].T
         img = np.nan_to_num(img, nan=0)
         img = StandardScaler().fit_transform(img)
@@ -62,7 +62,7 @@ def create_li2022_dataset(lang="EN"):
         f"Reading and slicing brain scans for {len(subjects)} subjects",
         total=len(subjects),
     ):
-        Parallel(n_jobs=cpu_count() // 2, prefer="processes")(
+        Parallel(n_jobs=-1, backend="multiprocessing")(
             delayed(slice_subject)(
                 input_path / subject / "func",
                 target_path / subject.replace("sub-", ""),

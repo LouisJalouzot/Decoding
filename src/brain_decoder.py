@@ -83,6 +83,7 @@ def train_brain_decoder(
     batch_size=4,
     temperature=0.01,
     checkpoints_path=None,
+    plot_gradient=False,
     **decoder_params,
 ):
     if decoder.lower() in ["rnn", "gru", "lstm"] and loss == "mixco":
@@ -179,6 +180,15 @@ def train_brain_decoder(
                 if loss == "mixco":
                     # Evaluate mixco loss and back-propagate on it
                     train_loss = compute_mixco_symm_nce_loss(X, Y, decoder, temperature)
+
+                if plot_gradient:
+                    from torchviz import make_dot
+
+                    graph = make_dot(
+                        train_loss,
+                        params=dict(decoder.named_parameters()),
+                    )
+                    graph.render(filename="gradient_graph", format="png")
 
                 train_loss.backward()
                 optimizer.step()

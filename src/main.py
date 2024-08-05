@@ -25,7 +25,7 @@ def main(
 ):
     if subjects is None:
         if isinstance(datasets, str):
-            subjects = {datasets: f for f in os.listdir(f"datasets/{datasets}")}
+            subjects = {datasets: os.listdir(f"datasets/{datasets}")}
         elif isinstance(datasets, list):
             subjects = {}
             for dataset in datasets:

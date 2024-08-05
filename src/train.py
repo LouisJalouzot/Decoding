@@ -70,7 +70,7 @@ def train(
             for run in runs[dataset][subject]
         )
     df = pd.DataFrame(
-        df, columns=["dataset", "subject", "run", "n_trs", "n_voxels", "X"]
+        sorted(df), columns=["dataset", "subject", "run", "n_trs", "n_voxels", "X"]
     )
     assert (
         df.groupby(["dataset", "run"]).n_trs.nunique().eq(1).all()

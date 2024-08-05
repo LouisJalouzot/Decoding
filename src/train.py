@@ -58,6 +58,10 @@ def train(
     np.random.seed(seed)
     torch.manual_seed(seed)
     n_runs = sum([len(r) for s in runs.values() for r in s.values()])
+    if n_runs == 0:
+        raise ValueError(
+            f"No runs found in datasets {datasets}, have you run preprocess.py?"
+        )
     with joblib_progress(f"Loading brain scans for datasets {datasets}", total=n_runs):
         df = Parallel(n_jobs=-1, backend="threading")(
             delayed(read)(dataset, subject, run, lag, smooth, stack)
@@ -79,7 +83,6 @@ def train(
         .sort_values(ascending=False)
         .reset_index()[["dataset", "run"]]
     )
-    n_runs = len(runs)
     scaler = StandardScaler()
     with progress:
         task = progress.add_task("", total=n_runs)

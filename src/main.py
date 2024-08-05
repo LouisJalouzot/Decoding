@@ -1,15 +1,18 @@
 import os
 from hashlib import sha1
+from pathlib import Path
 from typing import List, Union
 
 import wandb
 from src.train import train
 from src.utils import ignore, memory
 
+wandb.require("core")
+
 
 @memory.cache
 def main(
-    datasets: Union[str, List[str]] = "lebel2023/all_subjects",
+    datasets: Union[str, List[str]] = "lebel2023",
     subjects: List[str] = None,
     decoder: str = "brain_decoder",
     model: str = "bert-base-uncased",
@@ -22,13 +25,18 @@ def main(
 ):
     if subjects is None:
         if isinstance(datasets, str):
-            subjects = [f"{datasets}/{f}" for f in os.listdir(f"data/{datasets}")]
+            subjects = {datasets: f for f in os.listdir(f"datasets/{datasets}")}
         elif isinstance(datasets, list):
-            subjects = []
+            subjects = {}
             for dataset in datasets:
-                subjects.extend(
-                    [f"{dataset}/{f}" for f in os.listdir(f"data/{dataset}")]
-                )
+                subjects[dataset] = os.listdir(f"datasets/{dataset}")
+    runs = {
+        dataset: {
+            subject: [Path(f).stem for f in os.listdir(f"datasets/{dataset}/{subject}")]
+            for subject in subjects[dataset]
+        }
+        for dataset in subjects
+    }
 
     config = {
         key: value

@@ -43,10 +43,7 @@ def mixco_sample_augmentation(X, beta=0.15, s_thresh=0.5):
         Samples affected by MixCo augmentation
     """
     # Randomly select samples to augment
-    if isinstance(X, PackedSequence):
-        samples = X.data
-    else:
-        samples = X
+    samples = X.data
     select = (torch.rand(samples.shape[0]) <= s_thresh).to(samples.device)
 
     # Randomly select samples used for augmentation
@@ -67,10 +64,7 @@ def mixco_sample_augmentation(X, beta=0.15, s_thresh=0.5):
         *betas_shape
     ) + samples_shuffle[select] * (1 - betas[select]).reshape(*betas_shape)
 
-    if isinstance(X, PackedSequence):
-        X = PackedSequence(samples, X.batch_sizes, X.sorted_indices, X.unsorted_indices)
-    else:
-        X = samples
+    X = PackedSequence(samples, X.batch_sizes, X.sorted_indices, X.unsorted_indices)
 
     return X, perm, betas
 

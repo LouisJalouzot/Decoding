@@ -2,36 +2,65 @@ import os
 import shutil
 from pathlib import Path
 
-from src.utils import create_symlink
+import numpy as np
+import xarray as xr
+from joblib import Parallel, delayed
+from joblib_progress import joblib_progress
+from sklearn.preprocessing import StandardScaler
+
+from src.utils import console, create_symlink, progress
 
 
-def create_symlinks_lebel2023():
-    path = Path("data/lebel2023")
+def read(f):
+    scaler = StandardScaler()
+    X = xr.open_dataset(f, phony_dims="access").data.data
+    X = np.nan_to_num(X, nan=0)
+    X = scaler.fit_transform(X)
+    return f.stem, X
+
+
+def create_symlinks(source_path, target_path):
+    target_path.mkdir(parents=True, exist_ok=True)
+    for f in source_path.iterdir():
+        create_symlink(target_path / f.name, f)
+
+
+def create_lebel2023_dataset():
+    source_path = Path("data/lebel2023")
+    target_path = Path("datasets/lebel2023")
     assert (
-        path.exists()
-    ), f"{path} does not exist, either the working directory {os.getcwd()} is not the root of the repo or the data has not been downloaded."
-    data_dir = path / "derivative" / "preprocessed_data"
-    subjects = sorted(os.listdir(data_dir))
-    ### Building "all_subjects" directory
-    target_dir = path / "all_subjects"
-    if target_dir.exists():
-        shutil.rmtree(target_dir)
+        source_path.exists()
+    ), f"{source_path} does not exist, either the working directory {os.getcwd()} is not the root of the repo or the data has not been downloaded."
+    source_path_subjects = source_path / "derivative" / "preprocessed_data"
+    subjects = sorted(os.listdir(source_path_subjects))
+    console.log(f"Found {len(subjects)} subjects.")
     for subject in subjects:
-        (target_dir / subject).mkdir(parents=True, exist_ok=True)
-        for run in os.listdir(data_dir / subject):
-            create_symlink(target_dir / subject / run, data_dir / subject / run)
-            run = run.replace(".hf5", ".TextGrid")
-            create_symlink(
-                target_dir / subject / run, data_dir.parent / "TextGrids" / run
+        target_path_subject = target_path / subject
+        if target_path_subject.exists():
+            if input(
+                f"{target_path_subject} already exists. Do you want to recreate it (Y/n)? "
+            ) not in ["", "y", "Y"]:
+                continue
+            else:
+                shutil.rmtree(target_path_subject)
+        run_files = list((source_path_subjects / subject).iterdir())
+        with joblib_progress(
+            f"Reading brain scans for subject {subject}", total=len(run_files)
+        ):
+            runs = Parallel(n_jobs=-1, backend="threading")(
+                delayed(read)(f) for f in run_files
             )
-            run = run.replace(".TextGrid", ".wav")
-            create_symlink(
-                target_dir / subject / run, data_dir.parent.parent / "stimuli" / run
+        scaler = StandardScaler()
+        with progress:
+            task = progress.add_task(
+                f"Scaling and saving brain scans for subject {subject}",
+                total=2 * len(runs),
             )
-    ### Building "3_subjects" directory
-    target_dir_3 = path / "3_subjects"
-    if target_dir_3.exists():
-        shutil.rmtree(target_dir_3)
-    target_dir_3.mkdir(parents=True, exist_ok=True)
-    for subject in subjects[:3]:
-        create_symlink(target_dir_3 / subject, target_dir / subject)
+            for _, X in runs:
+                scaler.partial_fit(X)
+                progress.update(task, advance=1)
+            target_path_subject.mkdir(parents=True, exist_ok=True)
+            for run, X in runs:
+                X = scaler.transform(X)
+                np.save(target_path_subject / f"{run}.npy", X.astype(np.float32))
+                progress.update(task, advance=1)

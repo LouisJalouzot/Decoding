@@ -2,15 +2,16 @@ import os
 import shutil
 from pathlib import Path
 
-import h5py
 import nibabel as nib
 import numpy as np
+import xarray
 from joblib import Parallel, delayed
 from nilearn import image
 from tqdm.auto import tqdm
 
 from src.utils import console, create_symlink
 
+# TODO remove first and last 10s of each run
 n_runs = 9
 path = Path("data/li2022")
 assert (

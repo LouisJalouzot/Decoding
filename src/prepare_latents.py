@@ -1,8 +1,9 @@
 from pathlib import Path
-from typing import List, Tuple, Union
+from typing import List, Tuple
 
 import numpy as np
 import pandas as pd
+from sklearn.preprocessing import StandardScaler
 
 from src.textgrids import TextGrid
 from src.utils import device, memory, progress
@@ -164,28 +165,24 @@ def prepare_clap(textgrid_path, audio_path, tr, context_length, batch_size, verb
 
 @memory.cache(ignore=["batch_size", "verbose"])
 def prepare_latents(
-    textgrid_path: Path,
-    audio_path: Path,
+    dataset: str,
+    run: str,
     model: str,
     tr: int,
     context_length: int,
     batch_size: int = 64,
     verbose: bool = True,
 ) -> Tuple[np.ndarray, List[str]]:
-    """
-    Prepare the latents for the given run.
-
-    Args:
-        run (str): Run name.
-        model_class (str, optional): The class of the model. Defaults to "clip".
-        tr (int, optional): The time resolution. Defaults to 2.
-        context_length (int, optional): The number of previous chunks to include for context. Defaults to 0.
-        verbose (bool, optional): Whether to display progress. Defaults to False.
-
-    Returns:
-        np.ndarray: Latents.
-    """
     import torch
+
+    if dataset == "lebel2023":
+        textgrid_path = f"data/lebel2023/derivative/TextGrids/{run}.TextGrid"
+        audio_path = f"data/lebel2023/stimuli/{run}.wav"
+    elif dataset == "li2022":
+        audio_path = f"data/li2022/stimuli/task-lppEN_section_{run}.wav"
+        textgrid_path = f"data/li2022/annotation/EN/lppEN_section{run}.TextGrid"
+    else:
+        raise ValueError(f"Unsupported dataset {dataset}")
 
     if model.lower() == "mel":
         latents = prepare_mel(audio_path, tr, context_length)
@@ -210,5 +207,8 @@ def prepare_latents(
         )
         latents = model.encode(chunks)
     latents /= np.linalg.norm(latents, ord=2, axis=1, keepdims=True)
+    latents = StandardScaler().fit_transform(latents)
+    if dataset in ["lebel2023", "li2022"]:
+        latents = latents[5:-5, :]
     torch.cuda.empty_cache()
     return latents.astype(np.float32)

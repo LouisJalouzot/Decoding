@@ -1,5 +1,6 @@
 from functools import partial
 
+import pandas as pd
 from torch import nn
 
 
@@ -44,10 +45,11 @@ class SimpleMLP(nn.Module):
         self.fc.append(nn.Linear(in_features=hidden_size, out_features=out_dim))
         self.fc = nn.ModuleList(self.fc)
 
-    def forward(self, X):
+    def forward(self, x):
+        x = x.data
         for layer in self.fc:
-            X = layer(X)
-        return X
+            x = layer(x)
+        return x
 
 
 class RNN(nn.Module):
@@ -206,6 +208,7 @@ class BrainDecoder(nn.Module):
         self.projector = nn.Sequential(*projector_layers)
 
     def forward(self, x):
+        x = x.data
         residual = x
         for res_block in range(self.n_res_blocks):
             x = self.mlp[res_block](x)
@@ -222,7 +225,7 @@ class DecoderWrapper(nn.Module):
     def __init__(
         self,
         decoder,
-        in_dims,
+        in_dims: pd.DataFrame,
         multi_subject_mode="individual",
         hidden_size=512,
         dropout=0.7,
@@ -255,9 +258,9 @@ class DecoderWrapper(nn.Module):
 
         if self.multi_subject_mode == "shared":
             assert (
-                len(set(in_dim for _, in_dim in self.in_dims.items())) == 1
+                self.in_dims.n_voxels.nunique() == 1
             ), f"In multi_subject_mode 'shared', all subjects must have the same input dimension but got {self.in_dims}"
-            _, in_dim = list(self.in_dims.items())[0]
+            in_dim = self.in_dims.n_voxels.iloc[0]
             projector = nn.Sequential(
                 nn.Linear(in_dim, self.hidden_size),
                 *[item() for item in self.activation_and_norm],
@@ -274,12 +277,9 @@ class DecoderWrapper(nn.Module):
                         *[item() for item in self.activation_and_norm],
                         nn.Dropout(self.dropout),
                     )
-                    for subject, in_dim in self.in_dims.items()
+                    for _, (subject, in_dim) in self.in_dims.iterrows()
                 }
             )
-
-    def project_subject(self, x, subject):
-        return self.projector[subject](x)
 
     def forward(self, X):
         return self.decoder(X)

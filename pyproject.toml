@@ -17,7 +17,6 @@ regex = "^2024.4.28"
 setuptools = "^69.5.1"
 scikit-learn = "^1.4.2"
 wandb = "^0.17.0"
-h5py = "^3.11.0"
 torchmetrics = "^1.4.0.post0"
 torchaudio = "^2.3.0"
 termcolor = "^2.4.0"
@@ -32,6 +31,8 @@ soundfile = "^0.12.1"
 nibabel = "^5.2.1"
 chardet = "^5.2.0"
 nilearn = "^0.10.4"
+joblib-progress = "^1.0.5"
+xarray = "^2024.7.0"
 
 
 [tool.poetry.group.dev.dependencies]

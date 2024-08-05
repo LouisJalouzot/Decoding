@@ -7,7 +7,8 @@ import numpy as np
 import torch
 from rich.live import Live
 from rich.table import Table
-from torch.nn.utils.rnn import pack_sequence, unpack_sequence
+from sklearn.utils import shuffle
+from torch.nn.utils.rnn import pack_sequence
 
 import wandb
 from src.decoders import GRU, LSTM, RNN, BrainDecoder, DecoderWrapper, SimpleMLP
@@ -17,48 +18,39 @@ from src.losses import (
     compute_symm_nce_loss,
 )
 from src.metrics import retrieval_metrics
-from src.utils import MultiSubjectDataloader, console, device
+from src.utils import console, device
 
 
-def evaluate(dl, decoder, negatives, top_k_accuracies, temperature):
+def evaluate(df, decoder, negatives, top_percent_accuracies, temperature):
     decoder.eval()
-    dl.per_subject = True
     metrics = defaultdict(list)
     negatives = negatives.to(device)
-    with torch.autocast(device.type):
-        with torch.no_grad():
-            for subject, subject_dl in dl:
-                for X, Y in subject_dl:
-                    if isinstance(decoder, (RNN, GRU, LSTM)):
-                        X = pack_sequence(X, enforce_sorted=False)
-                        X = decoder.project_subject(X, subject)
-                        Y_preds = torch.cat(unpack_sequence(decoder(X)))
-                    else:
-                        X = torch.cat(X).to(device)
-                        X = decoder.project_subject(X, subject)
-                        Y_preds = decoder(X)
-                    Y = torch.cat(Y).to(device)
-                    # Evaluate retrieval metrics
-                    for key, value in retrieval_metrics(
-                        Y,
-                        Y_preds,
-                        negatives,
-                        return_ranks=True,
-                        top_k_accuracies=top_k_accuracies,
-                    ).items():
-                        metrics[key].append(value)
-                        metrics[f"{subject}/{key}"].append(value)
-                    # Evaluate losses
-                    mse_loss = compute_mse_loss(X, Y, decoder)
-                    symm_nce_loss = compute_symm_nce_loss(X, Y, decoder, temperature)
-                    mixco_loss = compute_mixco_symm_nce_loss(X, Y, decoder, temperature)
-                    for name in ["", f"{subject}/"]:
-                        metrics[name + "mse"].append(mse_loss.item())
-                        metrics[name + "symm_nce"].append(symm_nce_loss.item())
-                        metrics[name + "mixco"].append(mixco_loss.item())
-                        metrics[name + "aug"].append(
-                            mixco_loss.item() - symm_nce_loss.item()
-                        )
+    with torch.no_grad():
+        for _, row in df.iterrows():
+            subject = row.subject
+            X = decoder.projector[subject](row.X.to(device))
+            X = pack_sequence([X], enforce_sorted=False)
+            Y_preds = decoder(X)
+            Y = row.Y.to(device)
+            # Evaluate retrieval metrics
+            for key, value in retrieval_metrics(
+                Y,
+                Y_preds,
+                negatives,
+                return_ranks=True,
+                top_percent_accuracies=top_percent_accuracies,
+            ).items():
+                metrics[key].append(value)
+                metrics[f"{subject}/{key}"].append(value)
+            # Evaluate losses
+            mse_loss = compute_mse_loss(X, Y, decoder)
+            symm_nce_loss = compute_symm_nce_loss(X, Y, decoder, temperature)
+            mixco_loss = compute_mixco_symm_nce_loss(X, Y, decoder, temperature)
+            for name in ["", f"{subject}/"]:
+                metrics[name + "mse"].append(mse_loss.item())
+                metrics[name + "symm_nce"].append(symm_nce_loss.item())
+                metrics[name + "mixco"].append(mixco_loss.item())
+                metrics[name + "aug"].append(mixco_loss.item() - symm_nce_loss.item())
     other_metrics = {}
     for key, value in metrics.items():
         if key.endswith("relative_ranks"):
@@ -73,17 +65,14 @@ def evaluate(dl, decoder, negatives, top_k_accuracies, temperature):
             ]
         else:
             metrics[key] = np.mean(value)
-    dl.per_subject = False
     metrics.update(other_metrics)
     return metrics
 
 
 def train_brain_decoder(
-    Xs,
-    Ys,
-    train_runs,
-    valid_runs,
-    test_runs,
+    df_train,
+    df_valid,
+    df_test,
     decoder="brain_decoder",
     patience=5,
     monitor="valid/relative_median_rank",
@@ -96,21 +85,13 @@ def train_brain_decoder(
     checkpoints_path=None,
     **decoder_params,
 ):
-    Xs = Xs.map(torch.from_numpy, na_action="ignore")
-    Ys = Ys.map(torch.from_numpy, na_action="ignore")
-    train_dl = MultiSubjectDataloader(
-        Xs.loc[train_runs], Ys.loc[train_runs], batch_size, shuffle=True
-    )
-    valid_dl = MultiSubjectDataloader(
-        Xs.loc[valid_runs], Ys.loc[valid_runs], batch_size
-    )
-    Y_valid = Ys.loc[valid_runs]
-    first_notna = Y_valid.notna().values.argmax(axis=1)
-    Y_valid = Y_valid.values[np.arange(len(Y_valid)), first_notna]
-    Y_valid = torch.cat(tuple(Y_valid)).to(device)
-    test_dl = MultiSubjectDataloader(Xs.loc[test_runs], Ys.loc[test_runs], batch_size)
+    if decoder.lower() in ["rnn", "gru", "lstm"] and loss == "mixco":
+        console.log("[red]MixCo augmentation should not be used with time series.")
 
-    out_dim = Ys.iloc[0].dropna().iloc[0].shape[1]
+    Y_valid = df_valid.drop_duplicates(["dataset", "run"]).Y
+    Y_valid = torch.cat(tuple(Y_valid)).to(device)
+
+    out_dim = df_train.hidden_dim.iloc[0]
     if decoder.lower() == "brain_decoder":
         decoder = BrainDecoder(out_dim=out_dim, **decoder_params)
     elif decoder.lower() == "rnn":
@@ -125,9 +106,7 @@ def train_brain_decoder(
         raise ValueError(f"Unsupported decoder {decoder}.")
     decoder = DecoderWrapper(
         decoder=decoder,
-        in_dims={
-            subject: Xs[subject].dropna().iloc[0].shape[1] for subject in Xs.columns
-        },
+        in_dims=df_train[["subject", "n_voxels"]].drop_duplicates(),
         **decoder_params,
     ).to(device)
 
@@ -162,7 +141,7 @@ def train_brain_decoder(
     if loss not in losses:
         raise ValueError(f"Unsupported loss {loss}. Choose one of {losses}.")
 
-    top_k_accuracies = [1, 5, 10]
+    top_percent_accuracies = [1, 5, 10]
     best_monitor_metric, patience_counter = np.inf, 0
     torch.autograd.set_detect_anomaly(True)
 
@@ -175,44 +154,31 @@ def train_brain_decoder(
     )
     with Live(table, console=console):
         for epoch in range(1, max_epochs + 1):
+            df_train = shuffle(df_train)
             t = time()
             decoder.train()
             train_losses = []
-            for batchdl in train_dl:
+            for i in range(0, len(df_train), batch_size):
                 optimizer.zero_grad()
-                with torch.autocast(device.type):
-                    X = []
-                    Y = []
-                    for subject, subj_Xs, subj_Ys in batchdl:
-                        if isinstance(decoder, (RNN, GRU, LSTM)):
-                            subj_Xs = pack_sequence(subj_Xs, enforce_sorted=False)
-                            subj_Xs = decoder.project_subject(subj_Xs, subject)
-                            subj_Xs = unpack_sequence(subj_Xs)
-                            X.extend(subj_Xs)
-                        else:
-                            subj_Xs = torch.cat(subj_Xs).to(device)
-                            subj_Xs = decoder.project_subject(subj_Xs, subject)
-                            X.append(subj_Xs)
-                        Y.append(torch.cat(subj_Ys).to(device))
-                    if isinstance(decoder, (RNN, GRU, LSTM)):
-                        X = pack_sequence(X, enforce_sorted=False)
-                    else:
-                        X = torch.cat(X).to(device)
-                    Y = torch.cat(Y).to(device)
+                X = []
+                Y = []
+                for _, row in df_train.iloc[i : i + batch_size].iterrows():
+                    X.append(decoder.projector[row.subject](row.X.to(device)))
+                    Y.append(row.Y)
+                X = pack_sequence(X, enforce_sorted=False)
+                Y = torch.cat(Y).to(device)
 
-                    if loss == "mse":
-                        # Evaluate MSE loss
-                        train_loss = compute_mse_loss(X, Y, decoder)
+                if loss == "mse":
+                    # Evaluate MSE loss
+                    train_loss = compute_mse_loss(X, Y, decoder)
 
-                    if loss == "symm_nce":
-                        # Evaluate symmetrical NCE loss
-                        train_loss = compute_symm_nce_loss(X, Y, decoder, temperature)
+                if loss == "symm_nce":
+                    # Evaluate symmetrical NCE loss
+                    train_loss = compute_symm_nce_loss(X, Y, decoder, temperature)
 
-                    if loss == "mixco":
-                        # Evaluate mixco loss and back-propagate on it
-                        train_loss = compute_mixco_symm_nce_loss(
-                            X, Y, decoder, temperature
-                        )
+                if loss == "mixco":
+                    # Evaluate mixco loss and back-propagate on it
+                    train_loss = compute_mixco_symm_nce_loss(X, Y, decoder, temperature)
 
                 train_loss.backward()
                 optimizer.step()
@@ -220,7 +186,7 @@ def train_brain_decoder(
 
             # Validation step
             val_metrics = evaluate(
-                valid_dl, decoder, Y_valid, top_k_accuracies, temperature
+                df_valid, decoder, Y_valid, top_percent_accuracies, temperature
             )
 
             # Log metrics
@@ -282,18 +248,17 @@ def train_brain_decoder(
             Path(checkpoints_path) / f"checkpoint_{epoch:03d}.pt",
         )
 
-    for split, dl, Y_split in [
-        ("train/", train_dl, Ys.loc[train_runs]),
-        ("test/", test_dl, Ys.loc[test_runs]),
+    for split, df_split in [
+        ("train/", df_train),
+        ("test/", df_test),
     ]:
-        first_notna = Y_split.notna().values.argmax(axis=1)
-        Y_split = Y_split.values[np.arange(len(Y_split)), first_notna]
+        Y_split = df_split.drop_duplicates(["dataset", "run"]).Y
         Y_split = torch.cat(tuple(Y_split))
         metrics = evaluate(
-            dl,
+            df_split,
             decoder,
             Y_split,
-            top_k_accuracies,
+            top_percent_accuracies,
             temperature,
         )
         for key, value in metrics.items():

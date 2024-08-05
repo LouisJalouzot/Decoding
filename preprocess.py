@@ -1,3 +1,5 @@
 from src.lebel2023_preprocess import create_lebel2023_dataset
+from src.li2022_preprocess import create_li2022_dataset
 
 create_lebel2023_dataset()
+create_li2022_dataset()

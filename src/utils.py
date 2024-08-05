@@ -36,10 +36,6 @@ progress = Progress(
 ignore = ["verbose", "n_jobs", "latents_batch_size"]
 
 
-def create_symlink(input: Path, target: Path):
-    input.symlink_to(target.relative_to(input.parent, walk_up=True))
-
-
 def _get_free_gpu():
     rows = (
         subprocess.check_output(

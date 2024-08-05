@@ -2,68 +2,53 @@ import os
 import shutil
 from pathlib import Path
 
+import h5py
 import nibabel as nib
 import numpy as np
-import xarray
-from joblib import Parallel, delayed
+from joblib import Parallel, cpu_count, delayed
+from joblib_progress import joblib_progress
 from nilearn import image
+from sklearn.preprocessing import StandardScaler
 from tqdm.auto import tqdm
 
-from src.utils import console, create_symlink
+from src.utils import console
 
-# TODO remove first and last 10s of each run
-n_runs = 9
 path = Path("data/li2022")
 assert (
     path.exists()
 ), f"{path} does not exist, either the working directory {Path(os.getcwd())} is not the root of the repo or the data has not been downloaded."
 
 
-def text_file(lang, run):
-    return path / "annotation" / lang / f"lpp{lang}_section{run+1}.TextGrid"
+def slice_subject(input_path, target_path, mask):
+    runs = []
+    scaler = StandardScaler()
+    for path in sorted(input_path.iterdir()):
+        img = nib.load(path).get_fdata()[mask].T
+        img = np.nan_to_num(img, nan=0)
+        img = StandardScaler().fit_transform(img)
+        scaler.partial_fit(img)
+        runs.append(img)
+    assert len(runs) == 9, f"Expected 9 runs at {target_path}, got {len(runs)}."
+    target_path.mkdir(parents=True, exist_ok=True)
+    for i, run in enumerate(runs):
+        np.save(target_path / f"{i+1}.npy", scaler.transform(run)[5:-5])
 
 
-def audio_file(lang, run):
-    return path / "stimuli" / f"task-lpp{lang}_section-{run+1}.wav"
-
-
-def create_symlinks_li2022(lang="EN"):
-    data_dir = path / "derivatives"
-    subjects = [f for f in sorted(os.listdir(data_dir)) if lang in f]
-    ### Building "all_lang" directory
-    target_dir = path / f"all_{lang}_raw"
-    if target_dir.exists():
-        shutil.rmtree(target_dir)
-    for subject in subjects:
-        sub_target_dir = target_dir / subject.replace("sub-", "")
-        sub_target_dir.mkdir(parents=True, exist_ok=True)
-        files = sorted(os.listdir(data_dir / subject / "func"))
-        for run, file in enumerate(files):
-            run_file = f"{run}.nii.gz"
-            create_symlink(
-                sub_target_dir / run_file, data_dir / subject / "func" / file
-            )
-            run_file = run_file.replace(".nii.gz", ".TextGrid")
-            create_symlink(sub_target_dir / run_file, text_file(lang, run))
-            run_file = run_file.replace(".TextGrid", ".wav")
-            create_symlink(sub_target_dir / run_file, audio_file(lang, run))
-
-
-def resample_and_slice_brain(lang="EN", n_jobs=-1):
+def create_li2022_dataset(lang="EN"):
     mask_path = path / "colin27_t1_tal_lin_mask.nii"
-    assert mask_path.exists(), "Need to download the mask first."
-    input_path = path / f"all_{lang}_raw"
-    target_path = path / f"all_{lang}"
-    subjects = sorted(os.listdir(input_path))
-    n_subjects = len(subjects)
-    console.log(f"Resampling and slicing {n_subjects} subjects for {lang}.")
-    input("Subjects found are: " + ", ".join(subjects) + ". Continue?")
-
-    example_lpp_img = nib.load(input_path / subjects[0] / "0.nii.gz")
-    acquisition_affine = example_lpp_img.affine.copy()
-    acquisition_affine[np.arange(3), np.arange(3)] = 3.75
-    example_lpp_img = image.resample_img(
-        example_lpp_img, target_affine=acquisition_affine
+    assert mask_path.exists(), "You need to download the mask first (c.f. README.md)"
+    input_path = path / "derivatives"
+    target_path = Path("datasets") / f"li2022_{lang}"
+    if target_path.exists():
+        if input(
+            f"{target_path} already exists. Do you want to recreate it (Y/n)? "
+        ) not in ["", "y", "Y"]:
+            return
+        else:
+            shutil.rmtree(target_path)
+    subjects = sorted([f.stem for f in input_path.glob(f"sub-{lang}*")])
+    example_lpp_img = nib.load(
+        next(iter((input_path / subjects[0] / "func").iterdir()))
     )
     mask = nib.load(mask_path)
     mask = image.resample_to_img(
@@ -73,28 +58,18 @@ def resample_and_slice_brain(lang="EN", n_jobs=-1):
     )
     mask = np.where(mask.get_fdata().astype(bool))
 
-    def aux(subject, run):
-        target_file = target_path / subject / f"{run}.npy"
-        target_file.parent.mkdir(parents=True, exist_ok=True)
-        target_text = target_path / subject / f"{run}.TextGrid"
-        if not target_text.exists():
-            create_symlink(target_text, text_file(lang, run))
-        target_audio = target_path / subject / f"{run}.wav"
-        if not target_audio.exists():
-            create_symlink(target_audio, audio_file(lang, run))
-        input_file = input_path / subject / f"{run}.nii.gz"
-        if not input_file.exists():
-            raise FileNotFoundError(
-                f"File {input_file} does not exist for subject {subject} and run {run}."
+    with joblib_progress(
+        f"Reading and slicing brain scans for {len(subjects)} subjects",
+        total=len(subjects),
+    ):
+        Parallel(n_jobs=cpu_count() // 2, prefer="processes")(
+            delayed(slice_subject)(
+                input_path / subject / "func",
+                target_path / subject.replace("sub-", ""),
+                mask,
             )
-        if target_file.exists():
-            return
-        img = image.resample_img(nib.load(input_file), target_affine=acquisition_affine)
-        np.save(target_file, img.get_fdata()[mask].T)
-
-    Parallel(n_jobs=n_jobs, verbose=10)(
-        delayed(aux)(subject, run) for subject in subjects for run in range(n_runs)
-    )
+            for subject in subjects
+        )
 
 
 def build_mean_subject(lang="EN", input_path=None, target_path=None, n_jobs=-1):

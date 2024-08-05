@@ -8,7 +8,7 @@ from joblib import Parallel, delayed
 from joblib_progress import joblib_progress
 from sklearn.preprocessing import StandardScaler
 
-from src.utils import console, create_symlink, progress
+from src.utils import console, progress
 
 
 def read(f):
@@ -18,12 +18,6 @@ def read(f):
     X = np.nan_to_num(X, nan=0)
     X = scaler.fit_transform(X)
     return f.stem, X
-
-
-def create_symlinks(source_path, target_path):
-    target_path.mkdir(parents=True, exist_ok=True)
-    for f in source_path.iterdir():
-        create_symlink(target_path / f.name, f)
 
 
 def create_lebel2023_dataset():
@@ -48,7 +42,7 @@ def create_lebel2023_dataset():
         with joblib_progress(
             f"Reading brain scans for subject {subject}", total=len(run_files)
         ):
-            runs = Parallel(n_jobs=-1, backend="threading")(
+            runs = Parallel(n_jobs=-1, prefer="threads")(
                 delayed(read)(f) for f in run_files
             )
         scaler = StandardScaler()

@@ -1,7 +1,8 @@
+import json
 import os
 from hashlib import sha1
 from pathlib import Path
-from typing import List, Union
+from typing import Dict, List, Union
 
 import wandb
 from src.train import train
@@ -13,7 +14,7 @@ wandb.require("core")
 @memory.cache
 def main(
     datasets: Union[str, List[str]] = ["lebel2023"],
-    subjects: List[str] = None,
+    subjects: Dict[str, List[str]] = None,
     decoder: str = "brain_decoder",
     model: str = "bert-base-uncased",
     context_length: int = 6,
@@ -44,8 +45,12 @@ def main(
         if key not in ignore and key != "kwargs"
     }
     config.update(kwargs)
+    config_wandb = config.copy()
+    for key, value in config.items():
+        if isinstance(value, dict):
+            config_wandb[key + "_id"] = json.dumps(value, sort_keys=True)
     wandb.init(
-        config=config,
+        config=config_wandb,
         id=sha1(repr(sorted(config.items())).encode()).hexdigest(),
         project="fMRI-Decoding-v4",
         save_code=True,

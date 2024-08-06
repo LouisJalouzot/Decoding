@@ -1,17 +1,16 @@
 logs
 data
 datasets
-tang-2023-reproduction/
-AudioCLIP/
-brainmagick/
-scripts/
-figs/
+models
+AudioCLIP
+scripts
+figs
 poetry.lock
 *.ipynb
 *.sh
 
 # Byte-compiled / optimized / DLL files
-__pycache__/
+__pycache__
 *.py[cod]
 *$py.class
 

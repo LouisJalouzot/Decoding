@@ -173,7 +173,6 @@ def prepare_latents(
     batch_size: int = 64,
     verbose: bool = True,
 ) -> Tuple[np.ndarray, List[str]]:
-    import torch
 
     if "lebel2023" in dataset:
         textgrid_path = f"data/lebel2023/derivative/TextGrids/{run}.TextGrid"
@@ -195,8 +194,9 @@ def prepare_latents(
             textgrid_path, audio_path, tr, context_length, batch_size, verbose
         )
     else:
-        chunks = compute_chunks(textgrid_path, tr, context_length)
         from sentence_transformers import SentenceTransformer
+
+        chunks = compute_chunks(textgrid_path, tr, context_length)
 
         # If model is not a sentence transformer, mean pooling will be applied
         model = SentenceTransformer(
@@ -210,5 +210,4 @@ def prepare_latents(
     latents = StandardScaler().fit_transform(latents)
     if "lebel2023" in dataset or "li2022" in dataset:
         latents = latents[5:-5]
-    torch.cuda.empty_cache()
     return latents.astype(np.float32)

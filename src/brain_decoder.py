@@ -82,7 +82,6 @@ def train_brain_decoder(
     max_epochs=200,
     batch_size=4,
     temperature=0.01,
-    checkpoints_path=None,
     plot_gradient=False,
     **decoder_params,
 ):
@@ -218,14 +217,12 @@ def train_brain_decoder(
             # Early stopping
             monitor_metric = np.mean(output[monitor])
             if monitor_metric < best_monitor_metric:
+                best_epoch = epoch
                 best_monitor_metric = monitor_metric
                 patience_counter = 0
                 monitor_metric = f"[green]{monitor_metric:.5g}"
                 best_decoder_state_dict = deepcopy(decoder.state_dict())
-                # For saving
-                if checkpoints_path is not None:
-                    best_epoch = epoch
-                    best_optimizer_state_dict = optimizer.state_dict().copy()
+                best_optimizer_state_dict = deepcopy(optimizer.state_dict())
             else:
                 patience_counter += 1
                 monitor_metric = f"[red]{monitor_metric:.5g}"
@@ -248,18 +245,10 @@ def train_brain_decoder(
                 )
                 break
 
-    # Restore best model
+    # Restore best model and optimizer
+    output["best_epoch"] = best_epoch
     decoder.load_state_dict(best_decoder_state_dict)
-    # Saving best model
-    if checkpoints_path is not None:
-        torch.save(
-            {
-                "epoch": best_epoch,
-                "model_state_dict": best_decoder_state_dict,
-                "optimizer_state_dict": best_optimizer_state_dict,
-            },
-            Path(checkpoints_path) / f"checkpoint_{epoch:03d}.pt",
-        )
+    optimizer.load_state_dict(best_optimizer_state_dict)
 
     for split, df_split in [
         ("train/", df_train),
@@ -287,4 +276,4 @@ def train_brain_decoder(
             f"{split} relative median rank {output[f'{split.lower()}/relative_median_rank']:.3g} (size {output[f'{split.lower()}/size']})"
         )
 
-    return output
+    return output, decoder, optimizer

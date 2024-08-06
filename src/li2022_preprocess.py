@@ -12,6 +12,27 @@ from sklearn.preprocessing import StandardScaler
 from src.utils import progress
 
 
+def slice_subject(input_path, target_path, mask, acquisition_affine=None):
+    if target_path.exists() and len(os.listdir(target_path)) == 9:
+        return
+    runs = []
+    scaler = StandardScaler()
+    paths = sorted(input_path.glob("*.nii.gz"))
+    assert len(paths) == 9, f"Expected 9 runs at {input_path}, got {len(path)}."
+    for path in paths:
+        img = nib.load(path)
+        if acquisition_affine is not None:
+            img = image.resample_img(img, target_affine=acquisition_affine)
+        img = img.get_fdata()[mask].T
+        img = np.nan_to_num(img.astype(np.float32), nan=0)
+        img = StandardScaler().fit_transform(img)
+        scaler.partial_fit(img)
+        runs.append(img)
+    target_path.mkdir(parents=True, exist_ok=True)
+    for i, run in enumerate(runs):
+        np.save(target_path / f"{i+1}.npy", scaler.transform(run)[5:-5])
+
+
 def create_li2022_datasets(lang="EN"):
     path = Path("data/li2022")
     assert (
@@ -50,51 +71,23 @@ def create_li2022_datasets(lang="EN"):
     )
     mask = np.where(mask.get_fdata().astype(bool))
 
-    with progress:
-        task = progress.add_task(
-            f"Loading and slicing brain scans for {len(subjects)} subjects",
-            total=len(subjects),
+    with joblib_progress(
+        f"Loading and slicing brain scans for {len(subjects)} subjects",
+        total=2 * len(subjects),
+    ):
+        Parallel(n_jobs=-1)(
+            delayed(slice_subject)(
+                input_path / subject / "func",
+                t_path / subject.replace("sub-", ""),
+                m,
+                affine,
+            )
+            for subject in subjects
+            for t_path, m, affine in [
+                (target_path, mask, None),
+                (target_path_SS, mask_SS, acquisition_affine),
+            ]
         )
-        for subject in subjects:
-            input_subject_path = input_path / subject / "func"
-            target_subject_path = target_path / subject.replace("sub-", "")
-            target_subject_path_SS = target_path_SS / subject.replace("sub-", "")
-            runs = []
-            runs_SS = []
-            scaler = StandardScaler()
-            scaler_SS = StandardScaler()
-            paths = sorted(input_subject_path.glob("*.nii.gz"))
-            assert (
-                len(paths) == 9
-            ), f"Expected 9 runs at {input_subject_path}, got {len(path)}."
-            subject_task = progress.add_task(f"Loading {subject}", total=len(paths))
-            for path in paths:
-                img = nib.load(path)
-                img_SS = image.resample_img(img, target_affine=acquisition_affine)
-                img = img.get_fdata()[mask].T
-                img_SS = img_SS.get_fdata()[mask_SS].T
-                img = np.nan_to_num(img.astype(np.float32), nan=0)
-                img_SS = np.nan_to_num(img_SS.astype(np.float32), nan=0)
-                img = StandardScaler().fit_transform(img)
-                img_SS = StandardScaler().fit_transform(img_SS)
-                scaler.partial_fit(img)
-                scaler_SS.partial_fit(img_SS)
-                runs.append(img)
-                runs_SS.append(img_SS)
-                progress.update(subject_task, advance=1)
-            progress.remove_task(subject_task)
-            subject_task = progress.add_task(f"Saving {subject}", total=len(paths))
-            target_subject_path.mkdir(parents=True, exist_ok=True)
-            target_subject_path_SS.mkdir(parents=True, exist_ok=True)
-            for i, (run, run_SS) in enumerate(zip(runs, runs_SS)):
-                np.save(target_subject_path / f"{i+1}.npy", scaler.transform(run)[5:-5])
-                np.save(
-                    target_subject_path_SS / f"{i+1}.npy",
-                    scaler_SS.transform(run_SS)[5:-5],
-                )
-                progress.update(subject_task, advance=1)
-            progress.remove_task(subject_task)
-            progress.update(task, advance=1)
 
 
 def build_mean_subject(lang="EN", SS=True):

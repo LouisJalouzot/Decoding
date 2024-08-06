@@ -125,4 +125,5 @@ def build_mean_subject(lang="EN", SS=True):
                     for subject in subjects
                 )
             ) / len(subjects)
+        mean = StandardScaler().fit_transform(mean)
         np.save(target_path / f"{run}.npy", mean)

@@ -19,7 +19,7 @@ def read(dataset, subject, run, lag, smooth, stack):
     path = path.with_suffix(".npy")
     X = torch.from_numpy(np.load(path))
     if smooth > 0:
-        new_X = X.copy()
+        new_X = X.clone()
         count = np.ones((X.shape[0], 1))
         for i in range(1, smooth + 1):
             new_X[i:] += X[:-i]

@@ -24,7 +24,7 @@ def read(dataset, subject, run, lag, smooth, stack):
         for i in range(1, smooth + 1):
             new_X[i:] += X[:-i]
             count[i:] += 1
-        X = (new_X / count).astype(np.float32)
+        X = (new_X / count).to(torch.float32)
     if stack > 0:
         X = X.unfold(0, stack + 1, 1).flatten(-2)
     lag -= stack

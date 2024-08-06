@@ -105,9 +105,12 @@ def train_brain_decoder(
         decoder = SimpleMLP(out_dim=out_dim, **decoder_params)
     else:
         raise ValueError(f"Unsupported decoder {decoder}.")
+    in_dims = df_train[["subject_id", "n_voxels"]].drop_duplicates()
+    in_dims = in_dims.set_index("subject_id").n_voxels.to_dict()
+    wandb.config["in_dims"] = in_dims
     decoder = DecoderWrapper(
         decoder=decoder,
-        in_dims=df_train[["subject_id", "n_voxels"]].drop_duplicates(),
+        in_dims=in_dims,
         **decoder_params,
     ).to(device)
 

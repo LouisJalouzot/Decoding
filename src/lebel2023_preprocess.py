@@ -42,9 +42,7 @@ def create_lebel2023_dataset():
         with joblib_progress(
             f"Reading brain scans for subject {subject}", total=len(run_files)
         ):
-            runs = Parallel(n_jobs=-1, prefer="threads")(
-                delayed(read)(f) for f in run_files
-            )
+            runs = Parallel(n_jobs=-1)(delayed(read)(f) for f in run_files)
         scaler = StandardScaler()
         with progress:
             task = progress.add_task(

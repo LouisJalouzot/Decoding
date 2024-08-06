@@ -63,7 +63,7 @@ def train(
             f"No runs found in datasets {datasets}, have you run preprocess.py?"
         )
     with joblib_progress(f"Loading brain scans for datasets {datasets}", total=n_runs):
-        df = Parallel(n_jobs=cpu_count()//2, prefer="threads")(
+        df = Parallel(n_jobs=-1)(
             delayed(read)(dataset, subject, run, lag, smooth, stack)
             for dataset in runs
             for subject in runs[dataset]

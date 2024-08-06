@@ -1,6 +1,6 @@
 from functools import partial
 
-import pandas as pd
+import numpy as np
 from torch import nn
 
 
@@ -225,7 +225,7 @@ class DecoderWrapper(nn.Module):
     def __init__(
         self,
         decoder,
-        in_dims: pd.DataFrame,
+        in_dims,
         multi_subject_mode="individual",
         hidden_size=512,
         dropout=0.7,
@@ -257,10 +257,10 @@ class DecoderWrapper(nn.Module):
         )
 
         if self.multi_subject_mode == "shared":
-            assert (
-                self.in_dims.n_voxels.nunique() == 1
+            assert len(
+                np.unique(list(self.in_dims.values())) == 1
             ), f"In multi_subject_mode 'shared', all subjects must have the same input dimension but got {self.in_dims}"
-            in_dim = self.in_dims.n_voxels.iloc[0]
+            in_dim = next(iter(self.in_dims.values()))
             projector = nn.Sequential(
                 nn.Linear(in_dim, self.hidden_size),
                 *[item() for item in self.activation_and_norm],
@@ -277,7 +277,7 @@ class DecoderWrapper(nn.Module):
                         *[item() for item in self.activation_and_norm],
                         nn.Dropout(self.dropout),
                     )
-                    for _, (subject, in_dim) in self.in_dims.iterrows()
+                    for subject, in_dim in self.in_dims.items()
                 }
             )
 

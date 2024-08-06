@@ -57,8 +57,6 @@ if torch.cuda.is_available():
 else:
     device = torch.device("cpu")
 
-console.log("Running on device", device)
-
 
 def ewma(data, halflife):
     # TODO make it robust to division by 0

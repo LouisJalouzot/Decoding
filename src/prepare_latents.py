@@ -175,7 +175,7 @@ def prepare_latents(
 ) -> Tuple[np.ndarray, List[str]]:
     import torch
 
-    if dataset == "lebel2023":
+    if "lebel2023" in dataset:
         textgrid_path = f"data/lebel2023/derivative/TextGrids/{run}.TextGrid"
         audio_path = f"data/lebel2023/stimuli/{run}.wav"
     elif "li2022" in dataset:
@@ -208,7 +208,7 @@ def prepare_latents(
         latents = model.encode(chunks)
     latents /= np.linalg.norm(latents, ord=2, axis=1, keepdims=True)
     latents = StandardScaler().fit_transform(latents)
-    if dataset in ["lebel2023", "li2022"]:
-        latents = latents[5:-5, :]
+    if "lebel2023" in dataset or "li2022" in dataset:
+        latents = latents[5:-5]
     torch.cuda.empty_cache()
     return latents.astype(np.float32)

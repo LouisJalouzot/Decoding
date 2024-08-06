@@ -5,7 +5,7 @@ import json
 from src.main import main
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--datasets", nargs="*", default="lebel2023")
+parser.add_argument("--datasets", nargs="*", default=["lebel2023"])
 parser.add_argument("--subjects", type=json.loads)
 parser.add_argument("--multi_subject_mode", type=str, choices=["individual", "shared"])
 parser.add_argument("--model", type=str, default="bert-base-uncased")

@@ -5,14 +5,14 @@ from typing import List, Union
 
 import wandb
 from src.train import train
-from src.utils import ignore, memory
+from src.utils import console, device, ignore, memory
 
 wandb.require("core")
 
 
 @memory.cache
 def main(
-    datasets: Union[str, List[str]] = "lebel2023",
+    datasets: Union[str, List[str]] = ["lebel2023"],
     subjects: List[str] = None,
     decoder: str = "brain_decoder",
     model: str = "bert-base-uncased",
@@ -23,13 +23,10 @@ def main(
     multi_subject_mode: str = "individual",
     **kwargs,
 ):
-    if subjects is None:
-        if isinstance(datasets, str):
-            subjects = {datasets: sorted(os.listdir(f"datasets/{datasets}"))}
-        elif isinstance(datasets, list):
-            subjects = {}
-            for dataset in datasets:
-                subjects[dataset] = sorted(os.listdir(f"datasets/{dataset}"))
+    console.log("Running on device", device)
+    subjects = {}
+    for dataset in datasets:
+        subjects[dataset] = sorted(os.listdir(f"datasets/{dataset}"))
     runs = {
         dataset: {
             subject: sorted(

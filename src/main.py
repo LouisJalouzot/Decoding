@@ -24,9 +24,10 @@ def main(
     **kwargs,
 ):
     console.log("Running on device", device)
-    subjects = {}
-    for dataset in datasets:
-        subjects[dataset] = sorted(os.listdir(f"datasets/{dataset}"))
+    if subjects is None:
+        subjects = {
+            dataset: sorted(os.listdir(f"datasets/{dataset}")) for dataset in datasets
+        }
     runs = {
         dataset: {
             subject: sorted(

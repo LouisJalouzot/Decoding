@@ -9,8 +9,6 @@ from joblib_progress import joblib_progress
 from nilearn import image
 from sklearn.preprocessing import StandardScaler
 
-from src.utils import progress
-
 
 def slice_subject(input_path, target_path, mask, acquisition_affine=None):
     if target_path.exists() and len(os.listdir(target_path)) == 9:
@@ -120,3 +118,79 @@ def build_mean_subject(lang="EN", SS=True):
             ) / len(subjects)
         mean = StandardScaler().fit_transform(mean)
         np.save(target_path / f"{run}.npy", mean)
+
+
+def build_SRM_dataset(
+    input_path="datasets/li2022_EN_SS",
+    n_components=10000,
+    valid_ratio=0.1,
+    test_ratio=0.1,
+):
+    from fastsrm.identifiable_srm import IdentifiableFastSRM
+
+    input_path = Path("datasets/li2022_EN_SS")
+    if n_components >= 1000:
+        ext = f"_SRM_{n_components//1000}k_valid_{valid_ratio}_test_{test_ratio}"
+    else:
+        ext = f"_SRM_{n_components}_valid_{valid_ratio}_test_{test_ratio}"
+    target_path = input_path.with_name(input_path.name + ext)
+    if target_path.exists():
+        if input(
+            f"{target_path} already exists. Do you want to recreate it (Y/n)? "
+        ) not in ["", "y", "Y"]:
+            return
+        else:
+            shutil.rmtree(target_path)
+    subjects = sorted(os.listdir(input_path))
+    n_subjects = len(subjects)
+    runs = sorted([p.stem for p in (input_path / subjects[0]).iterdir()])
+    n_runs = len(runs)
+    X = np.full((n_subjects, n_runs), np.nan, dtype=object)
+
+    def read(i, j, input_path):
+        return i, j, np.load(input_path / subjects[i] / f"{runs[j]}.npy").T
+
+    with joblib_progress(
+        f"Loading brain scans for {n_subjects} subjects with {n_runs} runs each",
+        total=n_subjects * n_runs,
+    ):
+        out = Parallel(n_jobs=-1)(
+            delayed(read)(i, j, input_path)
+            for i in range(n_subjects)
+            for j in range(n_runs)
+        )
+
+    for i, j, x in out:
+        X[i, j] = x
+
+    n_valid = max(1, int(valid_ratio * n_runs))
+    n_test = max(1, int(test_ratio * n_runs))
+
+    srm = IdentifiableFastSRM(
+        n_iter=10, n_components=n_components, n_jobs=-1, verbose=True
+    )
+    srm.fit(X[:, n_test + n_valid :])
+
+    def write(target_path, subject, run, X, W):
+        (target_path / subject).mkdir(parents=True, exist_ok=True)
+        np.save(target_path / subject / f"{run}.npy", X.T @ W)
+
+    with joblib_progress(
+        "Projecting and saving brain scans", total=n_subjects * n_runs
+    ):
+        Parallel(n_jobs=-1)(
+            delayed(write)(
+                target_path
+                / (
+                    "test"
+                    if j < n_test
+                    else ("valid" if j < n_test + n_valid else "train")
+                ),
+                subjects[i],
+                runs[j],
+                X[i, j],
+                srm.basis_list[i],
+            )
+            for i in range(n_subjects)
+            for j in range(n_runs)
+        )

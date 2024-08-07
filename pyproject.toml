@@ -1,3 +1,7 @@
+[tool.pyright]
+include = ["src"]
+exclude = [".cache", ".env", "data", "datasets"]
+
 [tool.poetry]
 name = "decoding"
 version = "0.1.0"

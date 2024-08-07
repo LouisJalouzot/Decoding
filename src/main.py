@@ -11,7 +11,7 @@ from src.utils import console, device, ignore, memory
 wandb.require("core")
 
 
-@memory.cache
+# @memory.cache
 def main(
     datasets: Union[str, List[str]] = ["lebel2023"],
     subjects: Dict[str, List[str]] = None,

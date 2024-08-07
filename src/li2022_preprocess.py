@@ -122,7 +122,7 @@ def build_mean_subject(lang="EN", SS=True):
 
 def build_SRM_dataset(
     input_path="datasets/li2022_EN_SS",
-    n_components=10000,
+    n_components=2000,
     valid_ratio=0.1,
     test_ratio=0.1,
 ):
@@ -167,7 +167,7 @@ def build_SRM_dataset(
     n_test = max(1, int(test_ratio * n_runs))
 
     srm = IdentifiableFastSRM(
-        n_iter=10, n_components=n_components, n_jobs=-1, verbose=True
+        n_components=n_components, n_jobs=-1, verbose=True
     )
     srm.fit(X[:, n_test + n_valid :])
 

@@ -11,7 +11,6 @@ from src.utils import console, device, ignore, memory
 wandb.require("core")
 
 
-# @memory.cache
 def main(
     datasets: Union[str, List[str]] = ["lebel2023"],
     subjects: Dict[str, List[str]] = None,
@@ -22,6 +21,7 @@ def main(
     lag: int = 0,
     smooth: int = 0,
     multi_subject_mode: str = "individual",
+    caching: bool = True,
     **kwargs,
 ):
     console.log("Running on device", device)
@@ -55,6 +55,9 @@ def main(
         project="fMRI-Decoding-v4",
         save_code=True,
     )
-    output = train(**config)
+    if caching:
+        output = memory.cache(train)(**config)
+    else:
+        output = train(**config)
     wandb.finish()
     return output

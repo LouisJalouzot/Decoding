@@ -1,11 +1,10 @@
-import os
 from pathlib import Path
 from typing import Dict, List, Union
 
 import numpy as np
 import pandas as pd
 import torch
-from joblib import Parallel, cpu_count, delayed
+from joblib import Parallel, delayed
 from joblib_progress import joblib_progress
 from sklearn.preprocessing import StandardScaler
 
@@ -50,6 +49,7 @@ def train(
     test_ratio: float = 0.1,
     seed: int = 0,
     latents_batch_size: int = 64,
+    return_data: bool = False,
     **decoder_params,
 ) -> dict:
     assert (
@@ -91,7 +91,7 @@ def train(
         progress.update(task, description=f"Fetching latents for {n_runs} runs")
         latents = []
         for _, (dataset, run, n_trs) in n_trs_by_run.iterrows():
-            Y = prepare_latents(
+            Y, chunks = prepare_latents(
                 dataset=dataset,
                 run=run,
                 model=model,
@@ -110,9 +110,11 @@ def train(
                 )
             # If more latents than brain scans, drop last seconds of run
             Y = Y[:n_trs]
-            latents.append([dataset, run, Y.shape[1], Y])
+            latents.append([dataset, run, Y.shape[1], Y, chunks])
             progress.update(task, advance=1)
-    latents = pd.DataFrame(latents, columns=["dataset", "run", "hidden_dim", "Y"])
+    latents = pd.DataFrame(
+        latents, columns=["dataset", "run", "hidden_dim", "Y", "text"]
+    )
     latents["Y"] = latents.Y.apply(
         lambda x: torch.from_numpy(scaler.transform(x).astype(np.float32))
     )
@@ -125,6 +127,8 @@ def train(
     df_valid = df.merge(valid_runs)
     train_runs = runs.iloc[n_test + n_valid :]
     df_train = df.merge(train_runs)
+    if return_data:
+        return df_train, df_valid, df_test
     console.log(
         f"Train split: {n_runs - n_valid - n_test} runs with {len(df_train)} occurrences and {df_train.n_trs.sum()} scans.\n"
         f"Valid split: {n_valid} runs with {len(df_valid)} occurrences and {df_valid.n_trs.sum()} scans.\n"

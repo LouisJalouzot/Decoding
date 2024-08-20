@@ -276,4 +276,4 @@ def train_brain_decoder(
             f"{split} relative median rank {output[f'{split.lower()}/relative_median_rank']:.3g} (size {output[f'{split.lower()}/size']})"
         )
 
-    return output, decoder, optimizer
+    return output, decoder.cpu()

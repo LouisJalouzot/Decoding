@@ -9,6 +9,31 @@ from joblib_progress import joblib_progress
 from nilearn import image
 from sklearn.preprocessing import StandardScaler
 
+SUBJECTS_TO_TRIM = [
+    "EN061",
+    "EN064",
+    "EN065",
+    "EN068",
+    "EN070",
+    "EN074",
+    "EN075",
+    "EN078",
+    "EN083",
+    "EN089",
+    "EN091",
+    "EN092",
+    "EN094",
+    "EN095",
+    "EN096",
+    "EN097",
+    "EN099",
+    "EN103",
+    "EN104",
+    "EN105",
+    "EN108",
+    "EN115",
+]
+
 
 def slice_subject(input_path, target_path, mask, acquisition_affine=None):
     if target_path.exists() and len(os.listdir(target_path)) == 9:
@@ -88,13 +113,15 @@ def create_li2022_datasets(lang="EN"):
         )
 
 
-def build_mean_subject(lang="EN", SS=True):
+def build_mean_subject(lang="EN", SS=True, trimmed=False):
+    input_path = f"datasets/li2022_{lang}"
     if SS:
-        input_path = Path(f"datasets/li2022_{lang}_SS")
-        target_path = Path(f"datasets/li2022_{lang}_SS_mean")
-    else:
-        input_path = Path(f"datasets/li2022_{lang}")
-        target_path = Path(f"datasets/li2022_{lang}_mean")
+        input_path += "_SS"
+    target_path = input_path
+    if trimmed:
+        target_path += "_trimmed"
+    input_path = Path(input_path)
+    target_path = Path(target_path + "_mean")
 
     if target_path.exists():
         if input(
@@ -106,6 +133,8 @@ def build_mean_subject(lang="EN", SS=True):
     target_path = target_path / f"mean_{lang}"
     target_path.mkdir(parents=True, exist_ok=True)
     subjects = os.listdir(input_path)
+    if trimmed:
+        subjects = [s for s in subjects if s not in SUBJECTS_TO_TRIM]
     for run in range(1, 10):
         with joblib_progress(
             f"Building mean subject for run {run}/9", total=len(subjects)
@@ -166,9 +195,7 @@ def build_SRM_dataset(
     n_valid = max(1, int(valid_ratio * n_runs))
     n_test = max(1, int(test_ratio * n_runs))
 
-    srm = IdentifiableFastSRM(
-        n_components=n_components, n_jobs=-1, verbose=True
-    )
+    srm = IdentifiableFastSRM(n_components=n_components, n_jobs=-1, verbose=True)
     srm.fit(X[:, n_test + n_valid :])
 
     def write(target_path, subject, run, X, W):

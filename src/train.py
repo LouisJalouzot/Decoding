@@ -102,8 +102,10 @@ def train(
             scaler.partial_fit(Y)
             if lag > 0:
                 Y = Y[:-lag]
+                chunks = chunks[:-lag]
             elif lag < 0:
                 Y = Y[-lag:]
+                chunks = chunks[-lag:]
             if Y.shape[0] > n_trs + 1:
                 console.log(
                     f"[red]{Y.shape[0] - n_trs} > 1 latents trimmed for run {run} in dataset {dataset}"
@@ -127,16 +129,19 @@ def train(
     df_valid = df.merge(valid_runs)
     train_runs = runs.iloc[n_test + n_valid :]
     df_train = df.merge(train_runs)
-    if return_data:
-        return df_train, df_valid, df_test
+    
     console.log(
         f"Train split: {n_runs - n_valid - n_test} runs with {len(df_train)} occurrences and {df_train.n_trs.sum()} scans.\n"
         f"Valid split: {n_valid} runs with {len(df_valid)} occurrences and {df_valid.n_trs.sum()} scans.\n"
         f"Test split: {n_test} runs with {len(df_test)} occurrences and {df_test.n_trs.sum()} scans."
     )
+    
     assert np.isin(
         df.subject_id.unique(), df_train.subject_id.unique()
     ).all(), "All subjects should have at least one run in the train split"
+    
+    if return_data:
+        return df_train, df_valid, df_test
 
     output = train_brain_decoder(
         df_train, df_valid, df_test, decoder=decoder, **decoder_params

@@ -21,6 +21,7 @@ def main(
     lag: int = 0,
     smooth: int = 0,
     multi_subject_mode: str = "individual",
+    return_data: bool = False,
     caching: bool = True,
     **kwargs,
 ):
@@ -39,13 +40,9 @@ def main(
         for dataset in subjects
     }
 
-    config = {
-        key: value
-        for key, value in locals().items()
-        if key not in ignore and key != "kwargs"
-    }
+    config = {key: value for key, value in locals().items() if key != "kwargs"}
     config.update(kwargs)
-    config_wandb = config.copy()
+    config_wandb = {key: value for key, value in config.items() if key not in ignore}
     for key, value in config.items():
         if isinstance(value, dict):
             config_wandb[key + "_id"] = json.dumps(value, sort_keys=True)
@@ -54,6 +51,7 @@ def main(
         id=sha1(repr(sorted(config.items())).encode()).hexdigest(),
         project="fMRI-Decoding-v4",
         save_code=True,
+        mode=("disabled" if return_data else "online"),
     )
     if caching:
         output = memory.cache(train)(**config)

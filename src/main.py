@@ -23,6 +23,7 @@ def main(
     multi_subject_mode: str = "individual",
     return_data: bool = False,
     caching: bool = True,
+    wandb_mode: str = "online",
     **kwargs,
 ):
     console.log("Running on device", device)
@@ -40,7 +41,11 @@ def main(
         for dataset in subjects
     }
 
-    config = {key: value for key, value in locals().items() if key != "kwargs"}
+    config = {
+        key: value
+        for key, value in locals().items()
+        if key not in ["caching", "wandb_mode", "kwargs"]
+    }
     config.update(kwargs)
     config_wandb = {key: value for key, value in config.items() if key not in ignore}
     for key, value in config.items():
@@ -51,7 +56,7 @@ def main(
         id=sha1(repr(sorted(config.items())).encode()).hexdigest(),
         project="fMRI-Decoding-v4",
         save_code=True,
-        mode=("disabled" if return_data else "online"),
+        mode=wandb_mode,
     )
     if caching:
         output = memory.cache(train)(**config)

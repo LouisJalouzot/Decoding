@@ -80,7 +80,7 @@ def train_brain_decoder(
     weight_decay=1e-6,
     lr=1e-4,
     max_epochs=200,
-    batch_size=4,
+    batch_size=1,
     temperature=0.01,
     plot_gradient=False,
     **decoder_params,

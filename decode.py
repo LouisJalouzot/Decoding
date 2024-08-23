@@ -52,8 +52,10 @@ gpt2 = pipeline("text-generation", model="gpt2", device=device)
 # # Fetch data and decoder
 
 # %%
-df_train, df_valid, df_test = main(return_data=True, caching=False, **config)
-_, decoder = main(**config)
+df_train, df_valid, df_test = main(
+    return_data=True, caching=False, wandb_mode="disabled", **config
+)
+_, decoder = main(wandb_mode="disabled", **config)
 decoder = decoder.to(device)
 clear_output()
 
@@ -69,6 +71,8 @@ df = pd.concat(
 for _, row in tqdm(df.iterrows(), total=len(df)):
     if row.dataset == "lebel2023":
         textgrid_path = f"data/lebel2023/derivative/TextGrids/{row.run}.TextGrid"
+    else:
+        textgrid_path = f"data/li2022/annotation/EN/lppEN_section{row.run}.TextGrid"
     chunks = compute_chunks(textgrid_path, 2, 0)
     num_words = [len(chunk.split(" ")) for chunk in chunks]
     df_chunks.append([row.dataset, row.run, chunks, num_words])
@@ -80,7 +84,10 @@ df_valid = df_valid.drop(columns=["text"]).merge(df_chunks)
 df_test = df_test.drop(columns=["text"]).merge(df_chunks)
 
 # %%
-row = df_train[df_train.run == "wheretheressmoke"].iloc[0]
+if "wheretheressmoke" in df_train.run.values:
+    row = df_train[df_train.run == "wheretheressmoke"].iloc[0]
+else:
+    _, row = next(iter(df_train.iterrows()))
 with torch.no_grad():
     predicted_latents = decoder(
         decoder.projector[row.dataset + "/" + row.subject](row.X.to(device))
@@ -104,7 +111,7 @@ gpt = GPT(path=data_lm / "perceived" / "model", vocab=gpt_vocab, device=device)
 lm = LanguageModel(gpt, decoder_vocab, nuc_mass=0.9, nuc_ratio=0.1)
 
 # %%
-gpt_decoder = Decoder(word_times=range(sum(row.num_tokens)), beam_width=50)
+gpt_decoder = Decoder(word_times=range(sum(row.num_words)), beam_width=50)
 
 # %%
 model = SentenceTransformer(config["model"], device=device)
@@ -113,10 +120,10 @@ clear_output()
 # %%
 with tqdm(total=sum(row.num_words)) as pbar:
     for i, num_words in enumerate(row.num_words):
-        if i > 0:
-            print("\033[F\033[F", end="")
+        # if i > 0:
+        #     print("\033[F\033[K\033[F\033[K", end="")
         pbar.set_description(f"Chunk {i+1} / {len(row.num_words)}")
-        context_window = sum(row.num_words[i - config["context_length"] : i])
+        context_window = sum(row.num_words[max(0, i - config["context_length"]) : i])
         for _ in range(num_words):
             beam_nucs = lm.beam_propose(gpt_decoder.beam, context_window)
             for c, (hyp, nextensions) in enumerate(gpt_decoder.get_hypotheses()):
@@ -141,7 +148,21 @@ with tqdm(total=sum(row.num_words)) as pbar:
             context_window += 1
             pbar.update(1)
         best_hyp = np.argmax([sum(hyp.logprobs) for hyp in gpt_decoder.beam])
-        print("Correct chunk:", row.text[i])
+        best_hyp = gpt_decoder.beam[best_hyp].words
+        predicted_chunks = []
+        current_index = len(best_hyp)
+        for num_words in row.num_words[
+            max(0, i + 1 - config["context_length"]) : i + 1
+        ]:
+            if current_index - num_words < 0:
+                break
+            predicted_chunks.append(
+                " ".join(best_hyp[current_index - num_words : current_index])
+            )
+            current_index -= num_words
         print(
-            "Best hypothesis:", " ".join(gpt_decoder.beam[best_hyp].words[-num_words:])
+            "Correct:        ",
+            " | ".join(row.text[max(0, i + 1 - config["context_length"]) : i + 1]),
         )
+        print("Best hypothesis:", " | ".join(predicted_chunks[::-1]))
+        print()

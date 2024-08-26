@@ -30,6 +30,8 @@ parser.add_argument("--hidden_size", type=int)
 parser.add_argument("--hidden_size_projector", type=int)
 parser.add_argument("--n_res_blocks", type=int)
 parser.add_argument("--n_proj_blocks", type=int)
+parser.add_argument("--wandb_mode", type=str)
+parser.add_argument("--no-cache", dest="cache", action="store_false")
 
 args = parser.parse_args()
 args = {key: value for key, value in vars(args).items() if value is not None}

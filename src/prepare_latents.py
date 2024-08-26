@@ -65,7 +65,7 @@ def prepare_mel(audio_path: Path, tr: int, context_length: int):
         n_mels=768 // n_channels,
         normalized=True,
     ).to(device)
-    return mel(wav.to(device)).reshape(768, -1).T.cpu().numpy(), None
+    return mel(wav.to(device)).reshape(768, -1).T.cpu().numpy()
 
 
 def prepare_audioclip(textgrid_path, audio_path, tr, context_length, model, verbose):
@@ -115,7 +115,7 @@ def prepare_audioclip(textgrid_path, audio_path, tr, context_length, model, verb
             if verbose:
                 progress.update(task, advance=1)
         progress.update(task, visible=False)
-    return np.vstack(latents), text_chunks
+    return np.vstack(latents)
 
 
 def prepare_clap(textgrid_path, audio_path, tr, context_length, batch_size, verbose):
@@ -160,7 +160,7 @@ def prepare_clap(textgrid_path, audio_path, tr, context_length, batch_size, verb
             latents.append(batch_latents.cpu())
             progress.update(task, advance=1)
         progress.update(task, visible=False)
-    return np.vstack(latents), text_chunks
+    return np.vstack(latents)
 
 
 @memory.cache(ignore=["batch_size", "verbose"])
@@ -184,13 +184,13 @@ def prepare_latents(
         raise ValueError(f"Unsupported dataset {dataset}")
 
     if model.lower() == "mel":
-        latents, chunks = prepare_mel(audio_path, tr, context_length)
+        latents = prepare_mel(audio_path, tr, context_length)
     elif model.lower() == "audioclip":
-        latents, chunks = prepare_audioclip(
+        latents = prepare_audioclip(
             textgrid_path, audio_path, tr, context_length, model, verbose
         )
     elif model.lower() == "clap":
-        latents, chunks = prepare_clap(
+        latents = prepare_clap(
             textgrid_path, audio_path, tr, context_length, batch_size, verbose
         )
     else:
@@ -208,7 +208,8 @@ def prepare_latents(
         latents = model.encode(chunks)
     latents /= np.linalg.norm(latents, ord=2, axis=1, keepdims=True)
     latents = StandardScaler().fit_transform(latents)
+    chunks_without_context = compute_chunks(textgrid_path, tr, 0)
     if "lebel2023" in dataset or "li2022" in dataset:
         latents = latents[5:-5]
-        chunks = chunks[5:-5]
-    return latents.astype(np.float32), chunks
+        chunks_without_context = chunks_without_context[5:-5]
+    return latents.astype(np.float32), chunks_without_context

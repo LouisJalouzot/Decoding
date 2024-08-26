@@ -21,8 +21,8 @@ datasets = ["li2022_EN_SS_trimmed_mean"]
 subjects = None
 
 # %%
-datasets = ["lebel2023"]
-subjects = {"lebel2023": ["UTS03"]}
+# datasets = ["lebel2023"]
+# subjects = {"lebel2023": ["UTS03"]}
 
 # %%
 config = {

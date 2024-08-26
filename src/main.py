@@ -22,7 +22,7 @@ def main(
     smooth: int = 0,
     multi_subject_mode: str = "individual",
     return_data: bool = False,
-    caching: bool = True,
+    cache: bool = True,
     wandb_mode: str = "online",
     **kwargs,
 ):
@@ -44,7 +44,7 @@ def main(
     config = {
         key: value
         for key, value in locals().items()
-        if key not in ["caching", "wandb_mode", "kwargs"]
+        if key not in ["cache", "wandb_mode", "kwargs"]
     }
     config.update(kwargs)
     config_wandb = {key: value for key, value in config.items() if key not in ignore}
@@ -58,7 +58,7 @@ def main(
         save_code=True,
         mode=wandb_mode,
     )
-    if caching:
+    if cache:
         output = memory.cache(train)(**config)
     else:
         output = train(**config)

@@ -121,25 +121,53 @@ def train(
         lambda x: torch.from_numpy(scaler.transform(x).astype(np.float32))
     )
     df = df.merge(latents, on=["dataset", "run"])
-    n_valid = max(1, int(valid_ratio * n_runs))
-    n_test = max(1, int(test_ratio * n_runs))
-    test_runs = runs.iloc[:n_test]
-    df_test = df.merge(test_runs)
-    valid_runs = runs.iloc[n_test : n_test + n_valid]
-    df_valid = df.merge(valid_runs)
-    train_runs = runs.iloc[n_test + n_valid :]
-    df_train = df.merge(train_runs)
-    
-    console.log(
-        f"Train split: {n_runs - n_valid - n_test} runs with {len(df_train)} occurrences and {df_train.n_trs.sum()} scans.\n"
-        f"Valid split: {n_valid} runs with {len(df_valid)} occurrences and {df_valid.n_trs.sum()} scans.\n"
-        f"Test split: {n_test} runs with {len(df_test)} occurrences and {df_test.n_trs.sum()} scans."
+
+    run_counts = (
+        df.groupby(["dataset", "run"])
+        .subject.count()
+        .to_frame(name="occurrences")
+        .reset_index()
     )
-    
+    n_subjects = (
+        df.groupby("dataset")
+        .subject.nunique()
+        .to_frame(name="n_subjects")
+        .reset_index()
+    )
+    run_counts = run_counts.merge(n_subjects)
+    # By default put all runs in the train split
+    run_counts["split"] = "train"
+
+    # Main runs are runs that have all subjects
+    main_runs = run_counts.occurrences == run_counts.n_subjects
+
+    # Distribute those runs in train, valid and test splits
+    def return_split_sizes(x):
+        n_runs = len(x)
+        n_valid = max(1, int(valid_ratio * n_runs))
+        n_test = max(1, int(test_ratio * n_runs))
+        n_train = n_runs - n_valid - n_test
+        return ["train"] * n_train + ["valid"] * n_valid + ["test"] * n_test
+
+    run_counts.loc[main_runs, "split"] = (
+        run_counts[main_runs].groupby("dataset").split.transform(return_split_sizes)
+    )
+    df = df.merge(run_counts[["dataset", "run", "split"]])
+    df_train = df[df.split == "train"]
+    df_valid = df[df.split == "valid"]
+    df_test = df[df.split == "test"]
+
+    run_counts = run_counts.split.value_counts()
+    console.log(
+        f"Train split: {run_counts.train} runs with {len(df_train)} occurrences and {df_train.n_trs.sum()} scans.\n"
+        f"Valid split: {run_counts.valid} runs with {len(df_valid)} occurrences and {df_valid.n_trs.sum()} scans.\n"
+        f"Test split: {run_counts.test} runs with {len(df_test)} occurrences and {df_test.n_trs.sum()} scans."
+    )
+
     assert np.isin(
         df.subject_id.unique(), df_train.subject_id.unique()
     ).all(), "All subjects should have at least one run in the train split"
-    
+
     if return_data:
         return df_train, df_valid, df_test
 

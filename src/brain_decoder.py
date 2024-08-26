@@ -155,7 +155,7 @@ def train_brain_decoder(
         "Duration",
         title="Training loop",
     )
-    with Live(table, console=console):
+    with Live(table, console=console, vertical_overflow="visible"):
         for epoch in range(1, max_epochs + 1):
             df_train = shuffle(df_train)
             t = time()

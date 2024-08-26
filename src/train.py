@@ -112,8 +112,10 @@ def train(
                 )
             # If more latents than brain scans, drop last seconds of run
             Y = Y[:n_trs]
+            chunks = chunks[:n_trs]
             latents.append([dataset, run, Y.shape[1], Y, chunks])
             progress.update(task, advance=1)
+        progress.update(task, completed=True)
     latents = pd.DataFrame(
         latents, columns=["dataset", "run", "hidden_dim", "Y", "text"]
     )

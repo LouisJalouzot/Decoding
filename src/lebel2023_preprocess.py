@@ -57,3 +57,4 @@ def create_lebel2023_dataset():
                 X = scaler.transform(X)
                 np.save(target_path_subject / f"{run}.npy", X.astype(np.float32))
                 progress.update(task, advance=1)
+            progress.update(task, completed=True)

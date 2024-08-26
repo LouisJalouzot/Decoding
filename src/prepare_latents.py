@@ -114,7 +114,7 @@ def prepare_audioclip(textgrid_path, audio_path, tr, context_length, model, verb
             latents.append(latent.cpu().numpy())
             if verbose:
                 progress.update(task, advance=1)
-        progress.update(task, visible=False)
+        progress.update(task, completed=True, visible=False)
     return np.vstack(latents)
 
 
@@ -159,7 +159,7 @@ def prepare_clap(textgrid_path, audio_path, tr, context_length, batch_size, verb
             )
             latents.append(batch_latents.cpu())
             progress.update(task, advance=1)
-        progress.update(task, visible=False)
+        progress.update(task, completed=True, visible=False)
     return np.vstack(latents)
 
 

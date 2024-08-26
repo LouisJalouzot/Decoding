@@ -212,4 +212,4 @@ def prepare_latents(
     if "lebel2023" in dataset or "li2022" in dataset:
         latents = latents[5:-5]
         chunks_without_context = chunks_without_context[5:-5]
-    return latents.astype(np.float32), chunks_without_context
+    return latents.astype(np.float32), chunks_without_context[: latents.shape[0]]

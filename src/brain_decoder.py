@@ -92,6 +92,7 @@ def train_brain_decoder(
     Y_valid = torch.cat(tuple(Y_valid)).to(device)
 
     out_dim = df_train.hidden_dim.iloc[0]
+    wandb.config["out_dim"] = out_dim
     if decoder.lower() == "brain_decoder":
         decoder = BrainDecoder(out_dim=out_dim, **decoder_params)
     elif decoder.lower() == "rnn":

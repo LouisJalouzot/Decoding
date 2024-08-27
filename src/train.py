@@ -50,6 +50,7 @@ def train(
     seed: int = 0,
     latents_batch_size: int = 64,
     return_data: bool = False,
+    top_encoding_voxels: int = None,
     **decoder_params,
 ) -> dict:
     assert (
@@ -155,6 +156,37 @@ def train(
         run_counts[main_runs].groupby("dataset").split.transform(return_split_sizes)
     )
     df = df.merge(run_counts[["dataset", "run", "split"]])
+    assert np.isin(
+        df.subject_id.unique(), df[df.split == "train"].subject_id.unique()
+    ).all(), "All subjects should have at least one run in the train split"
+
+    if top_encoding_voxels is not None:
+        from sklearn.linear_model import Ridge
+        from sklearn.metrics import r2_score
+
+        with progress:
+            task = progress.add_task(
+                f"Fitting a Ridge encoder for each subject and keeping the {top_encoding_voxels} best voxels.",
+                total=df.subject_id.nunique(),
+            )
+            for subject_id in df.subject_id.unique():
+                subject_sel = df.subject_id == subject_id
+                df_train_sel = df[subject_sel & (df.split == "train")]
+                X = np.concatenate(tuple(df_train_sel.X))
+                Y = np.concatenate(tuple(df_train_sel.Y))
+                model = Ridge().fit(Y, X)
+                df_valid_sel = df[subject_sel & (df.split == "valid")]
+                X = np.concatenate(tuple(df_valid_sel.X))
+                Y = np.concatenate(tuple(df_valid_sel.Y))
+                X_preds = model.predict(Y)
+                r2 = r2_score(X, X_preds, multioutput="raw_values")
+                voxels_to_keep = r2.argsort()[-top_encoding_voxels:]
+                df.loc[subject_sel, "X"] = df[subject_sel].X.apply(
+                    lambda X: X[:, voxels_to_keep]
+                )
+                progress.update(task, advance=1)
+            df["n_voxels"] = top_encoding_voxels
+
     df_train = df[df.split == "train"]
     df_valid = df[df.split == "valid"]
     df_test = df[df.split == "test"]
@@ -165,10 +197,6 @@ def train(
         f"Valid split: {run_counts.valid} runs with {len(df_valid)} occurrences and {df_valid.n_trs.sum()} scans.\n"
         f"Test split: {run_counts.test} runs with {len(df_test)} occurrences and {df_test.n_trs.sum()} scans."
     )
-
-    assert np.isin(
-        df.subject_id.unique(), df_train.subject_id.unique()
-    ).all(), "All subjects should have at least one run in the train split"
 
     if return_data:
         return df_train, df_valid, df_test

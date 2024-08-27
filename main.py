@@ -31,6 +31,18 @@ parser.add_argument("--hidden_size_projector", type=int)
 parser.add_argument("--n_res_blocks", type=int)
 parser.add_argument("--n_proj_blocks", type=int)
 parser.add_argument("--top_encoding_voxels", type=int)
+parser.add_argument(
+    "--pooling_mode",
+    type=str,
+    choices=[
+        "cls_token",
+        "mean_tokens",
+        "max_tokens",
+        "mean_sqrt_len_tokens",
+        "weightedmean_tokens",
+        "lasttoken",
+    ],
+)
 parser.add_argument("--wandb_mode", type=str)
 parser.add_argument("--no-cache", dest="cache", action="store_false")
 

@@ -170,6 +170,7 @@ def prepare_latents(
     model: str,
     tr: int,
     context_length: int,
+    pooling_mode: str = "mean_tokens",
     batch_size: int = 64,
     verbose: bool = True,
 ) -> Tuple[np.ndarray, List[str]]:
@@ -205,6 +206,11 @@ def prepare_latents(
             truncate_dim=None,
             trust_remote_code=True,
         )
+        model[1].pooling_mode_mean_tokens = False
+        setattr(model[1], "pooling_mode_" + pooling_mode, True)
+        if model[0].tokenizer.pad_token is None:
+            model[0].tokenizer.pad_token = model[0].tokenizer.eos_token
+
         latents = model.encode(chunks)
     latents /= np.linalg.norm(latents, ord=2, axis=1, keepdims=True)
     latents = StandardScaler().fit_transform(latents)

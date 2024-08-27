@@ -51,6 +51,7 @@ def train(
     latents_batch_size: int = 64,
     return_data: bool = False,
     top_encoding_voxels: int = None,
+    pooling_mode: str = "mean_tokens",  # Choose from ["cls_token", "mean_tokens", "max_tokens", "mean_sqrt_len_tokens", "weightedmean_tokens", "lasttoken"]
     **decoder_params,
 ) -> dict:
     assert (
@@ -98,6 +99,7 @@ def train(
                 model=model,
                 tr=tr,
                 context_length=context_length,
+                pooling_mode=pooling_mode,
                 batch_size=latents_batch_size,
             )
             scaler.partial_fit(Y)

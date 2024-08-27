@@ -40,6 +40,7 @@ config = {
     "weight_decay": 1e-6,
     "batch_size": 1,
     "temperature": 0.05,
+    "top_encoding_voxels": 5000,
 }
 
 # gpt2 = pipeline("text-generation", model="gpt2", device=device)
@@ -59,6 +60,7 @@ model = SentenceTransformer(config["model"], device=device)
 chunks = set(df_train.drop_duplicates(["dataset", "run"]).text.sum())
 chunks |= set(df_valid.drop_duplicates(["dataset", "run"]).text.sum())
 chunks = pd.Series(list(chunks))
+n_possible_chunks = len(chunks)
 
 row = df_train.sample(1).iloc[0]
 with torch.no_grad():
@@ -72,6 +74,7 @@ table = Table(
     "Duration",
     "Correct",
     "Predicted",
+    "Rank",
     title=f"Decoding {row.run}",
 )
 n_chunks = row.X.shape[0]
@@ -86,10 +89,16 @@ with Live(table, console=console, vertical_overflow="visible"):
             convert_to_numpy=False,
             convert_to_tensor=True,
         )
-        scores = tmf.pairwise_cosine_similarity(
-            predicted_latents[[i]], continuations_latents
-        )[0].cpu()
-        best_continuation = chunks[scores.argmax().item()]
+        scores = (
+            tmf.pairwise_cosine_similarity(
+                predicted_latents[[i]], continuations_latents
+            )[0]
+            .cpu()
+            .numpy()
+        )
+        ranks = scores.argsort()[::-1].argsort()
+        rank = ranks[chunks == row.text[i]].item()
+        best_continuation = chunks[scores.argmax()]
         decoded_chunks.append(best_continuation)
 
         color = "[green]" if best_continuation == row.text[i] else ""
@@ -98,6 +107,7 @@ with Live(table, console=console, vertical_overflow="visible"):
             f"{time() - start:.3g}s",
             color + row.text[i],
             color + best_continuation,
+            f"{rank} / {n_possible_chunks}",
         )
 
 # # Decode Tang

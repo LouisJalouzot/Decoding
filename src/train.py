@@ -172,6 +172,9 @@ def train(
             for subject_id in df.subject_id.unique():
                 subject_sel = df.subject_id == subject_id
                 df_train_sel = df[subject_sel & (df.split == "train")]
+                if df_train_sel.n_voxels.iloc[0] <= top_encoding_voxels:
+                    progress.update(task, advance=1)
+                    continue
                 X = np.concatenate(tuple(df_train_sel.X))
                 Y = np.concatenate(tuple(df_train_sel.Y))
                 model = Ridge().fit(Y, X)
@@ -184,8 +187,8 @@ def train(
                 df.loc[subject_sel, "X"] = df[subject_sel].X.apply(
                     lambda X: X[:, voxels_to_keep]
                 )
+                df.loc[subject_sel, "n_voxels"] = top_encoding_voxels
                 progress.update(task, advance=1)
-            df["n_voxels"] = top_encoding_voxels
 
     df_train = df[df.split == "train"]
     df_valid = df[df.split == "valid"]

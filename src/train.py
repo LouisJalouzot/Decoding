@@ -1,3 +1,4 @@
+from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Union
 
@@ -168,13 +169,19 @@ def train(
 
         with progress:
             task = progress.add_task(
-                f"Fitting a Ridge encoder for each subject and keeping the {top_encoding_voxels} best voxels.",
+                f"Fitting a Ridge encoder for each subject and keeping the best {top_encoding_voxels} voxels.",
                 total=df.subject_id.nunique(),
             )
-            for subject_id in df.subject_id.unique():
+            for _, (dataset, subject_id) in (
+                df[["dataset", "subject_id"]].drop_duplicates().iterrows()
+            ):
                 subject_sel = df.subject_id == subject_id
                 df_train_sel = df[subject_sel & (df.split == "train")]
-                if df_train_sel.n_voxels.iloc[0] <= top_encoding_voxels:
+                if isinstance(top_encoding_voxels, dict):
+                    n_voxels = top_encoding_voxels[dataset]
+                else:
+                    n_voxels = top_encoding_voxels
+                if df_train_sel.n_voxels.iloc[0] <= n_voxels:
                     progress.update(task, advance=1)
                     continue
                 X = np.concatenate(tuple(df_train_sel.X))
@@ -189,7 +196,7 @@ def train(
                 df.loc[subject_sel, "X"] = df[subject_sel].X.apply(
                     lambda X: X[:, voxels_to_keep]
                 )
-                df.loc[subject_sel, "n_voxels"] = top_encoding_voxels
+                df.loc[subject_sel, "n_voxels"] = n_voxels
                 progress.update(task, advance=1)
 
     df_train = df[df.split == "train"]

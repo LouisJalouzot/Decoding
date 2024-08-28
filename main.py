@@ -30,7 +30,7 @@ parser.add_argument("--hidden_size", type=int)
 parser.add_argument("--hidden_size_projector", type=int)
 parser.add_argument("--n_res_blocks", type=int)
 parser.add_argument("--n_proj_blocks", type=int)
-parser.add_argument("--top_encoding_voxels", type=int)
+parser.add_argument("--top_encoding_voxels", type=lambda x: int(x) if x.isdigit() else json.loads(x))
 parser.add_argument(
     "--pooling_mode",
     type=str,

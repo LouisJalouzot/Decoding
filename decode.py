@@ -1,3 +1,5 @@
+#!.env/bin/python
+
 import json
 import re
 from pathlib import Path
@@ -68,46 +70,76 @@ with torch.no_grad():
         decoder.projector[row.dataset + "/" + row.subject](row.X.to(device))
     )
 
+# decoded_chunks = []
+# table = Table(
+#     "Chunk",
+#     "Duration",
+#     "Correct",
+#     "Predicted",
+#     "Rank",
+#     title=f"Decoding {row.run}",
+# )
+# n_chunks = row.X.shape[0]
+# with Live(table, console=console, vertical_overflow="visible"):
+#     for i in range(n_chunks):
+#         start = time()
+#         context_sentence = " ".join(decoded_chunks[-config["context_length"] :])
+#         continuations = context_sentence + " " + chunks
+#         continuations_latents = model.encode(
+#             continuations,
+#             batch_size=len(continuations) // 4,
+#             convert_to_numpy=False,
+#             convert_to_tensor=True,
+#         )
+#         scores = (
+#             tmf.pairwise_cosine_similarity(
+#                 predicted_latents[[i]], continuations_latents
+#             )[0]
+#             .cpu()
+#             .numpy()
+#         )
+#         ranks = scores.argsort()[::-1].argsort()
+#         rank = ranks[chunks == row.text[i]].item()
+#         best_continuation = chunks[scores.argmax()]
+#         decoded_chunks.append(best_continuation)
+
+#         color = "[green]" if best_continuation == row.text[i] else ""
+#         table.add_row(
+#             f"{i+1} / {n_chunks}",
+#             f"{time() - start:.3g}s",
+#             color + row.text[i],
+#             color + best_continuation,
+#             f"{rank} / {n_possible_chunks}",
+#         )
+
+# Decode simple 2
+
+chunks = list(chunks)
+latents = model.encode(chunks, convert_to_tensor=True)
+scores = tmf.pairwise_cosine_similarity(predicted_latents, latents)
+
 decoded_chunks = []
 table = Table(
     "Chunk",
-    "Duration",
+    # "Duration",
     "Correct",
     "Predicted",
-    "Rank",
+    # "Rank",
     title=f"Decoding {row.run}",
 )
 n_chunks = row.X.shape[0]
 with Live(table, console=console, vertical_overflow="visible"):
     for i in range(n_chunks):
-        start = time()
-        context_sentence = " ".join(decoded_chunks[-config["context_length"] :])
-        continuations = context_sentence + " " + chunks
-        continuations_latents = model.encode(
-            continuations,
-            batch_size=len(continuations) // 4,
-            convert_to_numpy=False,
-            convert_to_tensor=True,
-        )
-        scores = (
-            tmf.pairwise_cosine_similarity(
-                predicted_latents[[i]], continuations_latents
-            )[0]
-            .cpu()
-            .numpy()
-        )
-        ranks = scores.argsort()[::-1].argsort()
-        rank = ranks[chunks == row.text[i]].item()
-        best_continuation = chunks[scores.argmax()]
-        decoded_chunks.append(best_continuation)
+        # start = time()
+        decoded_chunk = chunks[scores[i].argmax().item()]
 
-        color = "[green]" if best_continuation == row.text[i] else ""
+        color = "[green]" if decoded_chunk == row.text[i] else ""
         table.add_row(
             f"{i+1} / {n_chunks}",
-            f"{time() - start:.3g}s",
+            # f"{time() - start:.3g}s",
             color + row.text[i],
-            color + best_continuation,
-            f"{rank} / {n_possible_chunks}",
+            color + decoded_chunk,
+            # f"{rank} / {n_possible_chunks}",
         )
 
 # # Decode Tang

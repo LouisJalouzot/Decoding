@@ -21,8 +21,9 @@ from src.metrics import retrieval_metrics
 from src.utils import console, device
 
 
-def evaluate(df, decoder, negatives, top_percent_accuracies, temperature):
+def evaluate(df, decoder, negatives, top_k_accuracies, temperature):
     decoder.eval()
+    
     metrics = defaultdict(list)
     negatives = negatives.to(device)
     with torch.no_grad():
@@ -38,7 +39,7 @@ def evaluate(df, decoder, negatives, top_percent_accuracies, temperature):
                 Y_preds,
                 negatives,
                 return_ranks=True,
-                top_percent_accuracies=top_percent_accuracies,
+                top_k_accuracies=top_k_accuracies,
             ).items():
                 metrics[key].append(value)
                 metrics[f"{subject}/{key}"].append(value)
@@ -145,7 +146,7 @@ def train_brain_decoder(
     if loss not in losses:
         raise ValueError(f"Unsupported loss {loss}. Choose one of {losses}.")
 
-    top_percent_accuracies = [1, 5, 10]
+    top_k_accuracies = [1, 5, 10]
     best_monitor_metric, patience_counter = np.inf, 0
     torch.autograd.set_detect_anomaly(True)
 
@@ -199,7 +200,7 @@ def train_brain_decoder(
 
             # Validation step
             val_metrics = evaluate(
-                df_valid, decoder, Y_valid, top_percent_accuracies, temperature
+                df_valid, decoder, Y_valid, top_k_accuracies, temperature
             )
 
             # Log metrics
@@ -261,7 +262,7 @@ def train_brain_decoder(
             df_split,
             decoder,
             Y_split,
-            top_percent_accuracies,
+            top_k_accuracies,
             temperature,
         )
         for key, value in metrics.items():

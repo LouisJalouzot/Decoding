@@ -52,7 +52,7 @@ def retrieval_metrics(
     Y_pred: Union[np.ndarray, torch.Tensor],
     negatives: Union[np.ndarray, torch.Tensor] = None,
     metric: str = "cosine",
-    top_percent_accuracies: List[int] = [],
+    top_k_accuracies: List[int] = [],
     n_jobs: int = -2,
     return_ranks: bool = False,
 ) -> Dict[str, float]:
@@ -90,9 +90,9 @@ def retrieval_metrics(
         ground_truth_dist = pdists.diagonal()[:, None]
         ranks = (pdists < ground_truth_dist).sum(1)
         output["relative_median_rank"] = (np.median(ranks) - 1) / (size - 1)
-        for top_percent in top_percent_accuracies:
-            accuracy = (ranks < (top_percent * size / 100)).mean()
-            output[f"top_{top_percent}%_accuracy"] = accuracy
+        for top_k in top_k_accuracies:
+            accuracy = (ranks < top_k).mean()
+            output[f"top_{top_k}_accuracy"] = accuracy
     elif (
         isinstance(Y_true, torch.Tensor)
         and isinstance(Y_pred, torch.Tensor)
@@ -120,10 +120,10 @@ def retrieval_metrics(
             )
         ranks = (dist_to_ground_truth > dist_to_negatives).sum(1).float()
         output["relative_median_rank"] = torch.quantile(ranks, q=0.5).item() / size
-        for top_percent in top_percent_accuracies:
-            accuracy = ranks < (top_percent * size / 100)
+        for top_k in top_k_accuracies:
+            accuracy = ranks < top_k
             accuracy = accuracy.cpu().numpy().mean()
-            output[f"top_{top_percent}%_accuracy"] = accuracy
+            output[f"top_{top_k}_accuracy"] = accuracy
         ranks = ranks.cpu()
     else:
         raise ValueError(

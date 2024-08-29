@@ -13,17 +13,7 @@ DEFAULT_BAD_WORDS = frozenset(
 )
 
 
-def mean_pooling(model_output, attention_mask):
-    token_embeddings = model_output[0]
-    input_mask_expanded = (
-        attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
-    )
-    return (token_embeddings * input_mask_expanded).sum(
-        dim=1
-    ) / input_mask_expanded.sum(1).clamp(min=1e-9)
-
-
-def compute_chunks(textgrid_path: str, tr: int, context_length: int) -> List[str]:
+def compute_chunks(textgrid_path: str, tr: int, context_length: int) -> pd.DataFrame:
     """
     Compute the chunks of text from the given textgrid file.
 
@@ -44,13 +34,15 @@ def compute_chunks(textgrid_path: str, tr: int, context_length: int) -> List[str
         transcript["text"].str.lower().str.strip("{} ").replace("i", "I")
     )
     transcript = transcript[~transcript.text.isin(DEFAULT_BAD_WORDS)]
-    transcript = transcript.groupby("chunk_id", observed=False).text.apply(
-        lambda x: " ".join(x)
+    transcript = (
+        transcript.groupby("chunk_id", observed=False)
+        .text.apply(lambda x: " ".join(x))
+        .to_frame(name="chunk")
     )
-    return [
-        w.str.cat(sep=" ").strip("# ").replace(" #", ",")
-        for w in transcript.rolling(context_length + 1)
+    transcript["chunk_with_context"] = [
+        w.str.cat(sep=" ") for w in transcript.chunk.rolling(context_length)
     ]
+    return transcript.apply(lambda s: s.str.strip("# ").str.replace(" #", ","))
 
 
 def prepare_mel(audio_path: Path, tr: int, context_length: int):
@@ -69,6 +61,7 @@ def prepare_mel(audio_path: Path, tr: int, context_length: int):
 
 
 def prepare_audioclip(textgrid_path, audio_path, tr, context_length, model, verbose):
+    # TODO fix for new chunks format
     import librosa
     import torch
 
@@ -106,7 +99,8 @@ def prepare_audioclip(textgrid_path, audio_path, tr, context_length, model, verb
             else:
                 audio_chunk = audio_chunk[None]
             ((audio_latent, _, text_latent), _), _ = model(
-                audio=audio_chunk, text=[[text_chunks[i]]]
+                audio=audio_chunk,
+                text=[[text_chunks.chunk_with_context.iloc[i]]],
             )
             latent = torch.concat(
                 (text_latent.squeeze(), audio_latent.squeeze()),
@@ -147,7 +141,7 @@ def prepare_clap(textgrid_path, audio_path, tr, context_length, batch_size, verb
         )
         for i in range(0, size, batch_size):
             inputs = processor(
-                text=text_chunks[i : i + batch_size],
+                text=text_chunks.chunk_with_context.iloc[i : i + batch_size],
                 audios=chunked_audio[i : i + batch_size],
                 return_tensors="pt",
                 padding=True,
@@ -170,7 +164,7 @@ def prepare_latents(
     model: str,
     tr: int,
     context_length: int,
-    pooling_mode: str = "mean_tokens",
+    token_aggregation: str = "mean",
     batch_size: int = 64,
     verbose: bool = True,
 ) -> Tuple[np.ndarray, List[str]]:
@@ -195,27 +189,54 @@ def prepare_latents(
             textgrid_path, audio_path, tr, context_length, batch_size, verbose
         )
     else:
+        import warnings
+
         from sentence_transformers import SentenceTransformer
 
+        warnings.filterwarnings("ignore", module="transformers")
         chunks = compute_chunks(textgrid_path, tr, context_length)
 
-        # If model is not a sentence transformer, mean pooling will be applied
         model = SentenceTransformer(
             model,
             device=device,
             truncate_dim=None,
             trust_remote_code=True,
         )
-        model[1].pooling_mode_mean_tokens = False
-        setattr(model[1], "pooling_mode_" + pooling_mode, True)
-        if model[0].tokenizer.pad_token is None:
-            model[0].tokenizer.pad_token = model[0].tokenizer.eos_token
+        if model.tokenizer.pad_token is None:
+            model.tokenizer.pad_token = model.tokenizer.eos_token
+        latents = model.encode(
+            chunks.chunk_with_context,
+            batch_size=batch_size,
+            output_value="token_embeddings",
+        )
+        if token_aggregation == "first":
+            latents = [l[0] for l in latents]
+        elif token_aggregation == "last":
+            latents = [l[1] for l in latents]
+        elif token_aggregation == "mean":
+            latents = [l.mean(axis=0) for l in latents]
+        elif token_aggregation == "max":
+            latents = [l.max(axis=0)[0] for l in latents]
+        else:
+            n_tokens = model.tokenize(chunks.chunk)["attention_mask"].sum(axis=1)
+            if token_aggregation == "chunk_mean":
+                latents = [
+                    l[-length:].mean(axis=0) for l, length in zip(latents, n_tokens)
+                ]
+            elif token_aggregation == "chunk_max":
+                latents = [
+                    l[-length:].max(axis=0)[0] for l, length in zip(latents, n_tokens)
+                ]
+            else:
+                raise ValueError(
+                    f"Unsupported token aggregation method {token_aggregation}"
+                )
 
-        latents = model.encode(chunks)
+    latents = np.array([l.cpu() for l in latents])
     latents /= np.linalg.norm(latents, ord=2, axis=1, keepdims=True)
     latents = StandardScaler().fit_transform(latents)
-    chunks_without_context = compute_chunks(textgrid_path, tr, 0)
+    chunks = compute_chunks(textgrid_path, tr, context_length)
     if "lebel2023" in dataset or "li2022" in dataset:
         latents = latents[5:-5]
-        chunks_without_context = chunks_without_context[5:-5]
-    return latents.astype(np.float32), chunks_without_context[: latents.shape[0]]
+        chunks = chunks.iloc[5:-5]
+    return latents.astype(np.float32), chunks

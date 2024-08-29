@@ -7,7 +7,9 @@ from src.main import main
 parser = argparse.ArgumentParser()
 parser.add_argument("--datasets", nargs="*", default=["lebel2023"])
 parser.add_argument("--subjects", type=json.loads)
-parser.add_argument("--multi_subject_mode", type=str, choices=["individual", "shared"])
+parser.add_argument(
+    "--multi_subject_mode", type=str, choices=["individual", "shared"]
+)
 parser.add_argument("--model", type=str, default="bert-base-uncased")
 parser.add_argument("--decoder", type=str, default="brain_decoder")
 parser.add_argument("--loss", type=str, default="mixco")
@@ -30,17 +32,20 @@ parser.add_argument("--hidden_size", type=int)
 parser.add_argument("--hidden_size_projector", type=int)
 parser.add_argument("--n_res_blocks", type=int)
 parser.add_argument("--n_proj_blocks", type=int)
-parser.add_argument("--top_encoding_voxels", type=lambda x: int(x) if x.isdigit() else json.loads(x))
 parser.add_argument(
-    "--pooling_mode",
+    "--top_encoding_voxels",
+    type=lambda x: int(x) if x.isdigit() else json.loads(x),
+)
+parser.add_argument(
+    "--token_aggregation",
     type=str,
     choices=[
-        "cls_token",
-        "mean_tokens",
-        "max_tokens",
-        "mean_sqrt_len_tokens",
-        "weightedmean_tokens",
-        "lasttoken",
+        "first",
+        "last",
+        "max",
+        "mean",
+        "chunk_mean",
+        "chunk_max",
     ],
 )
 parser.add_argument("--wandb_mode", type=str)

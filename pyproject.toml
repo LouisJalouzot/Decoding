@@ -1,6 +1,9 @@
 [tool.pyright]
 include = ["src"]
 exclude = [".cache", ".env", "data", "datasets"]
+venvPath = "."
+venv = ".env"
+typeCheckingMode = "off"
 
 [tool.poetry]
 name = "decoding"

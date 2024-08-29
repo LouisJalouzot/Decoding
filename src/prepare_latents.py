@@ -200,7 +200,6 @@ def prepare_latents(
             model,
             device=device,
             truncate_dim=None,
-            trust_remote_code=True,
         )
         if model.tokenizer.pad_token is None:
             model.tokenizer.pad_token = model.tokenizer.eos_token

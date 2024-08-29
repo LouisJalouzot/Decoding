@@ -54,7 +54,7 @@ def train(
     top_encoding_voxels: int = None,
     token_aggregation: str = "mean",  # Choose from ["first", "last", "max", "mean"]
     **decoder_params,
-) -> dict:
+):
     assert (
         lag >= stack
     ), "Stacking induces lag so we should have lag >= stack for clarity"
@@ -186,13 +186,13 @@ def train(
                     continue
                 X = np.concatenate(tuple(df_train_sel.X))
                 Y = np.concatenate(tuple(df_train_sel.Y))
-                model = Ridge().fit(Y, X)
+                ridge = Ridge().fit(Y, X)
                 df_valid_sel = df[subject_sel & (df.split == "valid")]
                 X = np.concatenate(tuple(df_valid_sel.X))
                 Y = np.concatenate(tuple(df_valid_sel.Y))
-                X_preds = model.predict(Y)
+                X_preds = ridge.predict(Y)
                 r2 = r2_score(X, X_preds, multioutput="raw_values")
-                voxels_to_keep = r2.argsort()[-top_encoding_voxels:]
+                voxels_to_keep = r2.argsort()[-n_voxels:]  # type: ignore
                 df.loc[subject_sel, "X"] = df[subject_sel].X.apply(
                     lambda X: X[:, voxels_to_keep]
                 )

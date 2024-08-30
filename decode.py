@@ -27,7 +27,7 @@ subjects = {"lebel2023": ["UTS03"]}
 config = {
     "datasets": datasets,
     "subjects": subjects,
-    "model": "bert-base-uncased",
+    "model": "google/flan-t5-xxl",
     "decoder": "brain_decoder",
     "loss": "mixco",
     "valid_ratio": 0.1,
@@ -55,20 +55,83 @@ df_train, df_valid, df_test = main(
 _, decoder = main(wandb_mode="disabled", **config)
 decoder = decoder.to(device)
 
-# Decode simple
-
-model = SentenceTransformer(config["model"], device=device)
-
-chunks = set(df_train.drop_duplicates(["dataset", "run"]).text.sum())
-chunks |= set(df_valid.drop_duplicates(["dataset", "run"]).text.sum())
-chunks = pd.Series(list(chunks))
-n_possible_chunks = len(chunks)
+# Decode T5
 
 row = df_train.sample(1).iloc[0]
 with torch.no_grad():
     predicted_latents = decoder(
         decoder.projector[row.dataset + "/" + row.subject](row.X.to(device))
     )
+
+import torch
+from transformers import T5ForConditionalGeneration, T5Tokenizer
+
+tokenizer = T5Tokenizer.from_pretrained("google/flan-t5-small")
+model = T5ForConditionalGeneration.from_pretrained(
+    "google/flan-t5-small", device_map=device
+)
+
+decoded_chunks = []
+table = Table(
+    "Chunk",
+    "Duration",
+    "Correct",
+    "Predicted",
+    title=f"Decoding {row.run}",
+)
+n_tokens = tokenizer(row.chunks, return_tensors="pt", padding=True, truncation=True)[
+    "attention_mask"
+].sum(axis=1)
+n_chunks = row.X.shape[0]
+with Live(table, console=console, vertical_overflow="visible"):
+    for i, (chunk, max_new_tokens) in enumerate(zip(row.chunks, n_tokens)):
+        start = time()
+
+        latent_norm = torch.norm(predicted_latents[i], p=2)
+
+        def hook_fn(module, input, output):
+            output_norm = torch.norm(output, p=2)
+            return (
+                output + output_norm * predicted_latents[None, [i]] / latent_norm
+            ) / 2
+
+        hook_handle = model.encoder.block[-1].layer[-1].register_forward_hook(hook_fn)
+
+        input_text = "Continue: " + " ".join(
+            decoded_chunks[max(0, -config["context_length"]) :]
+        )
+        input_ids = tokenizer(
+            input_text, return_tensors="pt", padding=True, truncation=True
+        ).input_ids.to(device)
+
+        outputs = model.generate(input_ids, max_new_tokens=max_new_tokens)
+        generated_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
+
+        decoded_chunks.append(generated_text)
+        color = "[green]" if generated_text == chunk else ""
+        table.add_row(
+            f"{i+1} / {n_chunks}",
+            f"{time() - start:.3g}s",
+            color + chunk,
+            color + generated_text,
+        )
+
+        hook_handle.remove()
+
+# Decode simple
+
+# model = SentenceTransformer(config["model"], device=device)
+
+# chunks = set(df_train.drop_duplicates(["dataset", "run"]).text.sum())
+# chunks |= set(df_valid.drop_duplicates(["dataset", "run"]).text.sum())
+# chunks = pd.Series(list(chunks))
+# n_possible_chunks = len(chunks)
+
+# row = df_train.sample(1).iloc[0]
+# with torch.no_grad():
+#     predicted_latents = decoder(
+#         decoder.projector[row.dataset + "/" + row.subject](row.X.to(device))
+#     )
 
 # decoded_chunks = []
 # table = Table(
@@ -114,33 +177,33 @@ with torch.no_grad():
 
 # Decode simple 2
 
-chunks = list(chunks)
-latents = model.encode(chunks, convert_to_tensor=True)
-scores = tmf.pairwise_cosine_similarity(predicted_latents, latents)
+# chunks = list(chunks)
+# latents = model.encode(chunks, convert_to_tensor=True)
+# scores = tmf.pairwise_cosine_similarity(predicted_latents, latents)
 
-decoded_chunks = []
-table = Table(
-    "Chunk",
-    # "Duration",
-    "Correct",
-    "Predicted",
-    # "Rank",
-    title=f"Decoding {row.run}",
-)
-n_chunks = row.X.shape[0]
-with Live(table, console=console, vertical_overflow="visible"):
-    for i in range(n_chunks):
-        # start = time()
-        decoded_chunk = chunks[scores[i].argmax().item()]
+# decoded_chunks = []
+# table = Table(
+#     "Chunk",
+#     # "Duration",
+#     "Correct",
+#     "Predicted",
+#     # "Rank",
+#     title=f"Decoding {row.run}",
+# )
+# n_chunks = row.X.shape[0]
+# with Live(table, console=console, vertical_overflow="visible"):
+#     for i in range(n_chunks):
+#         # start = time()
+#         decoded_chunk = chunks[scores[i].argmax().item()]
 
-        color = "[green]" if decoded_chunk == row.text[i] else ""
-        table.add_row(
-            f"{i+1} / {n_chunks}",
-            # f"{time() - start:.3g}s",
-            color + row.text[i],
-            color + decoded_chunk,
-            # f"{rank} / {n_possible_chunks}",
-        )
+#         color = "[green]" if decoded_chunk == row.text[i] else ""
+#         table.add_row(
+#             f"{i+1} / {n_chunks}",
+#             # f"{time() - start:.3g}s",
+#             color + row.text[i],
+#             color + decoded_chunk,
+#             # f"{rank} / {n_possible_chunks}",
+#         )
 
 # # Decode Tang
 

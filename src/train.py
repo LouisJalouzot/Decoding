@@ -106,22 +106,32 @@ def train(
             scaler.partial_fit(Y)
             if lag > 0:
                 Y = Y[:-lag]
-                chunks = chunks[:-lag]
+                chunks = chunks.iloc[:-lag]
             elif lag < 0:
                 Y = Y[-lag:]
-                chunks = chunks[-lag:]
+                chunks = chunks.iloc[-lag:]
             if Y.shape[0] > n_trs + 1:
                 console.log(
                     f"[red]{Y.shape[0] - n_trs} > 1 latents trimmed for run {run} in dataset {dataset}"
                 )
             # If more latents than brain scans, drop last seconds of run
             Y = Y[:n_trs]
-            chunks = chunks[:n_trs]
-            latents.append([dataset, run, Y.shape[1], Y, chunks])
+            chunks = chunks.iloc[:n_trs]
+            latents.append(
+                [
+                    dataset,
+                    run,
+                    Y.shape[1],
+                    Y,
+                    list(chunks.chunk),
+                    list(chunks.chunk_with_context),
+                ]
+            )
             progress.update(task, advance=1)
         progress.update(task, completed=True)
     latents = pd.DataFrame(
-        latents, columns=["dataset", "run", "hidden_dim", "Y", "text"]
+        latents,
+        columns=["dataset", "run", "hidden_dim", "Y", "chunks", "chunks_with_context"],
     )
     latents["Y"] = latents.Y.apply(
         lambda x: torch.from_numpy(scaler.transform(x).astype(np.float32))

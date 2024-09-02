@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Dict, List, Union
 
 import wandb
+
 from src.train import train
 from src.utils import console, device, ignore, memory
 
@@ -54,7 +55,7 @@ def main(
     wandb.init(
         config=config_wandb,
         id=sha1(repr(sorted(config.items())).encode()).hexdigest(),
-        project="fMRI-Decoding-v4",
+        project="fMRI-Decoding-v5",
         save_code=True,
         mode=wandb_mode,
     )

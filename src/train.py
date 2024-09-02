@@ -9,6 +9,7 @@ from joblib import Parallel, delayed
 from joblib_progress import joblib_progress
 from sklearn.preprocessing import StandardScaler
 
+import wandb
 from src.brain_decoder import train_brain_decoder
 from src.prepare_latents import prepare_latents
 from src.utils import console, progress
@@ -208,6 +209,14 @@ def train(
                 )
                 df.loc[subject_sel, "n_voxels"] = n_voxels
                 progress.update(task, advance=1)
+
+    wandb.log(
+        {
+            "df": wandb.Table(
+                dataframe=df.drop(columns=["X", "Y", "chunks", "chunks_with_context"])
+            )
+        }
+    )
 
     df_train = df[df.split == "train"]
     df_valid = df[df.split == "valid"]

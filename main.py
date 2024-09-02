@@ -8,7 +8,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--datasets", nargs="*", default=["lebel2023"])
 parser.add_argument("--subjects", type=json.loads)
 parser.add_argument(
-    "--multi_subject_mode", type=str, choices=["individual", "shared"]
+    "--multi_subject_mode", type=str, choices=["individual", "shared", "dataset"]
 )
 parser.add_argument("--model", type=str, default="bert-base-uncased")
 parser.add_argument("--decoder", type=str, default="brain_decoder")
@@ -32,6 +32,7 @@ parser.add_argument("--hidden_size", type=int)
 parser.add_argument("--hidden_size_projector", type=int)
 parser.add_argument("--n_res_blocks", type=int)
 parser.add_argument("--n_proj_blocks", type=int)
+parser.add_argument("--monitor", type=str)
 parser.add_argument(
     "--top_encoding_voxels",
     type=lambda x: int(x) if x.isdigit() else json.loads(x),

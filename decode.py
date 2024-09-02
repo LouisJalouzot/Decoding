@@ -27,7 +27,7 @@ subjects = {"lebel2023": ["UTS03"]}
 config = {
     "datasets": datasets,
     "subjects": subjects,
-    "model": "google/flan-t5-xxl",
+    "model": "google/flan-t5-small",
     "decoder": "brain_decoder",
     "loss": "mixco",
     "valid_ratio": 0.1,
@@ -42,7 +42,7 @@ config = {
     "weight_decay": 1e-6,
     "batch_size": 1,
     "temperature": 0.05,
-    "top_encoding_voxels": 5000,
+    # "top_encoding_voxels": 5000,
 }
 
 # gpt2 = pipeline("text-generation", model="gpt2", device=device)

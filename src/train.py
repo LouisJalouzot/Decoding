@@ -215,7 +215,8 @@ def train(
             "df": wandb.Table(
                 dataframe=df.drop(columns=["X", "Y", "chunks", "chunks_with_context"])
             )
-        }
+        },
+        step=0,
     )
 
     df_train = df[df.split == "train"]

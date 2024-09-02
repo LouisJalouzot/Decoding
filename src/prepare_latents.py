@@ -40,7 +40,7 @@ def compute_chunks(textgrid_path: str, tr: int, context_length: int) -> pd.DataF
         .to_frame(name="chunk")
     )
     transcript["chunk_with_context"] = [
-        w.str.cat(sep=" ") for w in transcript.chunk.rolling(context_length)
+        w.str.cat(sep=" ") for w in transcript.chunk.rolling(context_length + 1)
     ]
     return transcript.apply(lambda s: s.str.strip("# ").str.replace(" #", ","))
 

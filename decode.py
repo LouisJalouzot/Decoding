@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import torch
 import torchmetrics.functional as tmf
+from Levenshtein import distance as levenshtein_distance
 from rich.live import Live
 from rich.table import Table
 from sentence_transformers import SentenceTransformer
@@ -16,22 +17,26 @@ from tqdm.auto import tqdm
 from transformers import pipeline
 
 from src.main import main
+from src.prepare_latents import prepare_latents
 from src.utils import console, device
 
 datasets = ["li2022_EN_SS_trimmed_mean"]
 subjects = None
 
-datasets = ["lebel2023"]
-subjects = {"lebel2023": ["UTS03"]}
+# datasets = ["lebel2023"]
+# subjects = {"lebel2023": ["UTS03"]}
+
+datasets = ["lebel2023", "li2022_EN_SS"]
+subjects = None
 
 config = {
     "datasets": datasets,
     "subjects": subjects,
-    "model": "google/flan-t5-small",
+    "model": "bert-base-uncased",
     "decoder": "brain_decoder",
     "loss": "mixco",
-    "valid_ratio": 0.1,
-    "test_ratio": 0.1,
+    "valid_ratio": 0.2,
+    "test_ratio": 0.2,
     "context_length": 6,
     "lag": 3,
     "smooth": 6,
@@ -42,81 +47,189 @@ config = {
     "weight_decay": 1e-6,
     "batch_size": 1,
     "temperature": 0.05,
-    # "top_encoding_voxels": 5000,
+    "top_encoding_voxels": {"lebel2023": 5000, "li2022_EN_SS": 20000},
 }
 
 # gpt2 = pipeline("text-generation", model="gpt2", device=device)
 
 # # Fetch data and decoder
 
-df_train, df_valid, df_test = main(
-    return_data=True, cache=False, wandb_mode="disabled", **config
-)
 _, decoder = main(wandb_mode="disabled", **config)
 decoder = decoder.to(device)
+config_copy = config.copy()
+config_copy["datasets"] = datasets[0]
+config_copy["subjects"] = {"lebel2023": ["UTS03"]}
+df_train, df_valid, df_test = main(
+    return_data=True, cache=False, wandb_mode="disabled", **config_copy
+)
+
+latents = []
+chunks = []
+for _, row in df_train.iterrows():
+    l, c = prepare_latents(row.dataset, row.run, config["model"], 2, 0)
+    c["dataset"] = row.dataset
+    c["run"] = row.run
+    latents.append(l)
+    chunks.append(c)
+chunks = pd.concat(chunks, ignore_index=True)
+latents = torch.from_numpy(np.concatenate(latents)).to(device)
+n_latents = latents.shape[0]
+
+# Semantic/syntactic decoding
+
+for i, row in df_train.iterrows():
+    with torch.no_grad():
+        predicted_latents = decoder(
+            decoder.projector[row.dataset + "/" + row.subject](row.X.to(device))
+        )
+
+    model = SentenceTransformer(config["model"], device=device)
+
+    dist_to_negatives = 1 - tmf.pairwise_cosine_similarity(
+        predicted_latents,
+        latents,
+    )
+    negatives_sorted = dist_to_negatives.argsort(dim=1, stable=True).cpu().numpy()
+    dist_to_ground_truth = 1 - torch.cosine_similarity(
+        row.Y.to(device), predicted_latents, dim=1
+    ).reshape(-1, 1)
+    ranks = (dist_to_negatives < dist_to_ground_truth).sum(dim=1) + 1
+
+    table = Table(
+        "Chunk",
+        "Correct rank",
+        "Score",
+        "Correct",
+        "Top chunks",
+        "BERT score",
+        "Levenshtein distance",
+        "Run",
+        "Length",
+        title=f"Decoding {row.run} ({i+1} / {len(df_train)})",
+    )
+    n_chunks = row.X.shape[0]
+    decoded = []
+    with Live(table, console=console, vertical_overflow="visible"):
+        for j in range(n_chunks):
+            top_chunks_idx = torch.where(ranks[j] < 10)[0].cpu().numpy()
+            for chunk_rank, k in enumerate(negatives_sorted[j, :10]):
+                top_chunk = chunks.chunk.iloc[k]
+                bert_score = 1 - dist_to_negatives[j, k].item()
+                lev_dist = levenshtein_distance(row.chunks[j], top_chunk) / max(
+                    len(row.chunks[j]), len(top_chunk)
+                )
+                if chunk_rank == 0:
+                    chunk_info = (
+                        f"{j+1} / {n_chunks}",
+                        f"{ranks[j].item()} / {n_latents}",
+                        row.chunks[j],
+                        f"{1 - dist_to_ground_truth[j].item():.2g}",
+                    )
+                else:
+                    chunk_info = "", "", "", ""
+                table.add_row(
+                    *chunk_info,
+                    top_chunk,
+                    f"{bert_score:.2g}",
+                    f"{lev_dist:.2g}",
+                    chunks.run.iloc[k],
+                    f"{len(top_chunk)}",
+                )
+                decoded.append(
+                    [
+                        row.chunks[j],
+                        ranks[j].item(),
+                        n_latents,
+                        1 - dist_to_ground_truth[j].item(),
+                        chunk_rank + 1,
+                        top_chunk,
+                        bert_score,
+                        lev_dist,
+                        chunks.run.iloc[k],
+                        len(top_chunk),
+                    ]
+                )
+            table.add_row()
+    decoded = pd.DataFrame(
+        decoded,
+        columns=[
+            "Correct",
+            "Correct rank",
+            "Size",
+            "Score",
+            "Top chunk rank",
+            "Top chunks",
+            "BERT score",
+            "Levenshtein distance",
+            "Run",
+            "Length",
+        ],
+    )
+    decoded.to_csv(f"decoded/{row.run}.csv", index=False)
+    input("Continue?")
 
 # Decode T5
 
-row = df_train.sample(1).iloc[0]
-with torch.no_grad():
-    predicted_latents = decoder(
-        decoder.projector[row.dataset + "/" + row.subject](row.X.to(device))
-    )
+# row = df_train.sample(1).iloc[0]
+# with torch.no_grad():
+#     predicted_latents = decoder(
+#         decoder.projector[row.dataset + "/" + row.subject](row.X.to(device))
+#     )
 
-import torch
-from transformers import T5ForConditionalGeneration, T5Tokenizer
+# import torch
+# from transformers import T5ForConditionalGeneration, T5Tokenizer
 
-tokenizer = T5Tokenizer.from_pretrained("google/flan-t5-small")
-model = T5ForConditionalGeneration.from_pretrained(
-    "google/flan-t5-small", device_map=device
-)
+# tokenizer = T5Tokenizer.from_pretrained("google/flan-t5-small")
+# model = T5ForConditionalGeneration.from_pretrained(
+#     "google/flan-t5-small", device_map=device
+# )
 
-decoded_chunks = []
-table = Table(
-    "Chunk",
-    "Duration",
-    "Correct",
-    "Predicted",
-    title=f"Decoding {row.run}",
-)
-n_tokens = tokenizer(row.chunks, return_tensors="pt", padding=True, truncation=True)[
-    "attention_mask"
-].sum(axis=1)
-n_chunks = row.X.shape[0]
-with Live(table, console=console, vertical_overflow="visible"):
-    for i, (chunk, max_new_tokens) in enumerate(zip(row.chunks, n_tokens)):
-        start = time()
+# decoded_chunks = []
+# table = Table(
+#     "Chunk",
+#     "Duration",
+#     "Correct",
+#     "Predicted",
+#     title=f"Decoding {row.run}",
+# )
+# n_tokens = tokenizer(row.chunks, return_tensors="pt", padding=True, truncation=True)[
+#     "attention_mask"
+# ].sum(axis=1)
+# n_chunks = row.X.shape[0]
+# with Live(table, console=console, vertical_overflow="visible"):
+#     for i, (chunk, max_new_tokens) in enumerate(zip(row.chunks, n_tokens)):
+#         start = time()
 
-        latent_norm = torch.norm(predicted_latents[i], p=2)
+#         latent_norm = torch.norm(predicted_latents[i], p=2)
 
-        def hook_fn(module, input, output):
-            output_norm = torch.norm(output, p=2)
-            return (
-                output + output_norm * predicted_latents[None, [i]] / latent_norm
-            ) / 2
+#         def hook_fn(module, input, output):
+#             output_norm = torch.norm(output, p=2)
+#             return (
+#                 output + output_norm * predicted_latents[None, [i]] / latent_norm
+#             ) / 2
 
-        hook_handle = model.encoder.block[-1].layer[-1].register_forward_hook(hook_fn)
+#         hook_handle = model.encoder.block[-1].layer[-1].register_forward_hook(hook_fn)
 
-        input_text = "Continue: " + " ".join(
-            decoded_chunks[max(0, -config["context_length"]) :]
-        )
-        input_ids = tokenizer(
-            input_text, return_tensors="pt", padding=True, truncation=True
-        ).input_ids.to(device)
+#         input_text = "Continue: " + " ".join(
+#             decoded_chunks[max(0, -config["context_length"]) :]
+#         )
+#         input_ids = tokenizer(
+#             input_text, return_tensors="pt", padding=True, truncation=True
+#         ).input_ids.to(device)
 
-        outputs = model.generate(input_ids, max_new_tokens=max_new_tokens)
-        generated_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
+#         outputs = model.generate(input_ids, max_new_tokens=max_new_tokens)
+#         generated_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
 
-        decoded_chunks.append(generated_text)
-        color = "[green]" if generated_text == chunk else ""
-        table.add_row(
-            f"{i+1} / {n_chunks}",
-            f"{time() - start:.3g}s",
-            color + chunk,
-            color + generated_text,
-        )
+#         decoded_chunks.append(generated_text)
+#         color = "[green]" if generated_text == chunk else ""
+#         table.add_row(
+#             f"{i+1} / {n_chunks}",
+#             f"{time() - start:.3g}s",
+#             color + chunk,
+#             color + generated_text,
+#         )
 
-        hook_handle.remove()
+#         hook_handle.remove()
 
 # Decode simple
 

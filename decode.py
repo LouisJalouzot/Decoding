@@ -63,27 +63,21 @@ df_train, df_valid, df_test = main(
     return_data=True, cache=False, wandb_mode="disabled", **config_copy
 )
 
-latents = []
-chunks = []
-for _, row in df_train.iterrows():
-    l, c = prepare_latents(row.dataset, row.run, config["model"], 2, 0)
-    c["dataset"] = row.dataset
-    c["run"] = row.run
-    latents.append(l)
-    chunks.append(c)
-chunks = pd.concat(chunks, ignore_index=True)
-latents = torch.from_numpy(np.concatenate(latents)).to(device)
+# Semantic/syntactic beam search decoding
+df = df_train
+
+split = df.iloc[0].split
+latents = torch.cat(tuple(df.Y)).to(device)
 n_latents = latents.shape[0]
+chunks = df[["run", "chunks", "chunks_with_context"]].explode(
+    ["chunks", "chunks_with_context"]
+)
 
-# Semantic/syntactic decoding
-
-for i, row in df_train.iterrows():
+for i, row in df.iterrows():
     with torch.no_grad():
         predicted_latents = decoder(
             decoder.projector[row.dataset + "/" + row.subject](row.X.to(device))
         )
-
-    model = SentenceTransformer(config["model"], device=device)
 
     dist_to_negatives = 1 - tmf.pairwise_cosine_similarity(
         predicted_latents,
@@ -105,15 +99,14 @@ for i, row in df_train.iterrows():
         "Levenshtein distance",
         "Run",
         "Length",
-        title=f"Decoding {row.run} ({i+1} / {len(df_train)})",
+        title=f"Decoding {row.run} ({i+1} / {len(df)})",
     )
     n_chunks = row.X.shape[0]
     decoded = []
     with Live(table, console=console, vertical_overflow="visible"):
         for j in range(n_chunks):
-            top_chunks_idx = torch.where(ranks[j] < 10)[0].cpu().numpy()
             for chunk_rank, k in enumerate(negatives_sorted[j, :10]):
-                top_chunk = chunks.chunk.iloc[k]
+                top_chunk = chunks.chunks.iloc[k]
                 bert_score = 1 - dist_to_negatives[j, k].item()
                 lev_dist = levenshtein_distance(row.chunks[j], top_chunk) / max(
                     len(row.chunks[j]), len(top_chunk)
@@ -143,10 +136,12 @@ for i, row in df_train.iterrows():
                         1 - dist_to_ground_truth[j].item(),
                         chunk_rank + 1,
                         top_chunk,
+                        chunks.chunks_with_context.iloc[k],
                         bert_score,
                         lev_dist,
                         chunks.run.iloc[k],
                         len(top_chunk),
+                        split,
                     ]
                 )
             table.add_row()
@@ -159,14 +154,121 @@ for i, row in df_train.iterrows():
             "Score",
             "Top chunk rank",
             "Top chunks",
+            "Top chunks with context",
             "BERT score",
             "Levenshtein distance",
             "Run",
             "Length",
+            "Split",
         ],
     )
     decoded.to_csv(f"decoded/{row.run}.csv", index=False)
     input("Continue?")
+
+# Semantic/syntactic decoding
+
+# latents = []
+# chunks = []
+# for _, row in df_train.iterrows():
+#     l, c = prepare_latents(row.dataset, row.run, config["model"], 2, 0)
+#     c["dataset"] = row.dataset
+#     c["run"] = row.run
+#     latents.append(l)
+#     chunks.append(c)
+# chunks = pd.concat(chunks, ignore_index=True)
+# latents = torch.from_numpy(np.concatenate(latents)).to(device)
+# n_latents = latents.shape[0]
+
+# for i, row in df_train.iterrows():
+#     with torch.no_grad():
+#         predicted_latents = decoder(
+#             decoder.projector[row.dataset + "/" + row.subject](row.X.to(device))
+#         )
+
+#     model = SentenceTransformer(config["model"], device=device)
+
+#     dist_to_negatives = 1 - tmf.pairwise_cosine_similarity(
+#         predicted_latents,
+#         latents,
+#     )
+#     negatives_sorted = dist_to_negatives.argsort(dim=1, stable=True).cpu().numpy()
+#     dist_to_ground_truth = 1 - torch.cosine_similarity(
+#         row.Y.to(device), predicted_latents, dim=1
+#     ).reshape(-1, 1)
+#     ranks = (dist_to_negatives < dist_to_ground_truth).sum(dim=1) + 1
+
+#     table = Table(
+#         "Chunk",
+#         "Correct rank",
+#         "Score",
+#         "Correct",
+#         "Top chunks",
+#         "BERT score",
+#         "Levenshtein distance",
+#         "Run",
+#         "Length",
+#         title=f"Decoding {row.run} ({i+1} / {len(df_train)})",
+#     )
+#     n_chunks = row.X.shape[0]
+#     decoded = []
+#     with Live(table, console=console, vertical_overflow="visible"):
+#         for j in range(n_chunks):
+#             top_chunks_idx = torch.where(ranks[j] < 10)[0].cpu().numpy()
+#             for chunk_rank, k in enumerate(negatives_sorted[j, :10]):
+#                 top_chunk = chunks.chunk.iloc[k]
+#                 bert_score = 1 - dist_to_negatives[j, k].item()
+#                 lev_dist = levenshtein_distance(row.chunks[j], top_chunk) / max(
+#                     len(row.chunks[j]), len(top_chunk)
+#                 )
+#                 if chunk_rank == 0:
+#                     chunk_info = (
+#                         f"{j+1} / {n_chunks}",
+#                         f"{ranks[j].item()} / {n_latents}",
+#                         row.chunks[j],
+#                         f"{1 - dist_to_ground_truth[j].item():.2g}",
+#                     )
+#                 else:
+#                     chunk_info = "", "", "", ""
+#                 table.add_row(
+#                     *chunk_info,
+#                     top_chunk,
+#                     f"{bert_score:.2g}",
+#                     f"{lev_dist:.2g}",
+#                     chunks.run.iloc[k],
+#                     f"{len(top_chunk)}",
+#                 )
+#                 decoded.append(
+#                     [
+#                         row.chunks[j],
+#                         ranks[j].item(),
+#                         n_latents,
+#                         1 - dist_to_ground_truth[j].item(),
+#                         chunk_rank + 1,
+#                         top_chunk,
+#                         bert_score,
+#                         lev_dist,
+#                         chunks.run.iloc[k],
+#                         len(top_chunk),
+#                     ]
+#                 )
+#             table.add_row()
+#     decoded = pd.DataFrame(
+#         decoded,
+#         columns=[
+#             "Correct",
+#             "Correct rank",
+#             "Size",
+#             "Score",
+#             "Top chunk rank",
+#             "Top chunks",
+#             "BERT score",
+#             "Levenshtein distance",
+#             "Run",
+#             "Length",
+#         ],
+#     )
+#     decoded.to_csv(f"decoded/{row.run}.csv", index=False)
+#     input("Continue?")
 
 # Decode T5
 

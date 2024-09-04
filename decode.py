@@ -1,5 +1,5 @@
 #!.env/bin/python
-
+# %%
 import json
 import re
 from pathlib import Path
@@ -19,6 +19,8 @@ from transformers import pipeline
 from src.main import main
 from src.prepare_latents import prepare_latents
 from src.utils import console, device
+
+# %%
 
 datasets = ["li2022_EN_SS_trimmed_mean"]
 subjects = None
@@ -56,18 +58,19 @@ config = {
     "top_encoding_voxels": top_encoding_voxels,
 }
 
-# Fetch data and decoder
+# %% Fetch data and decoder
 
 _, decoder = main(wandb_mode="disabled", **config)
 decoder = decoder.to(device)
 config_copy = config.copy()
-config_copy["datasets"] = "lebel2023"
-config_copy["subjects"] = {"lebel2023": ["UTS03"]}
+if "lebel2023" in config["datasets"]:
+    config_copy["datasets"] = "lebel2023"
+    config_copy["subjects"] = {"lebel2023": ["UTS03"]}
 df_train, df_valid, df_test = main(
     return_data=True, cache=False, wandb_mode="disabled", **config_copy
 )
 
-# Semantic/syntactic beam search decoding
+# %% Semantic/syntactic beam search decoding
 df = df_train
 
 split = df.iloc[0].split
@@ -76,6 +79,8 @@ n_latents = latents.shape[0]
 chunks = df[["run", "chunks", "chunks_with_context"]].explode(
     ["chunks", "chunks_with_context"]
 )
+
+# %%
 
 for i, row in df.iterrows():
     with torch.no_grad():
@@ -91,8 +96,7 @@ for i, row in df.iterrows():
     dist_to_ground_truth = 1 - torch.cosine_similarity(
         row.Y, predicted_latents, dim=1
     ).reshape(-1, 1).numpy()
-    ranks = (dist_to_negatives < dist_to_ground_truth).sum(axis=0) + 1
-
+    ranks = (dist_to_negatives < dist_to_ground_truth).sum(axis=1)
     table = Table(
         "Chunk",
         "Correct rank",
@@ -494,3 +498,5 @@ for i, row in df.iterrows():
 #         )
 #         print("Best hypothesis:", " | ".join(predicted_chunks[::-1]))
 #         print()
+
+# %%

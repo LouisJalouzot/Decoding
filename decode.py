@@ -22,12 +22,18 @@ from src.utils import console, device
 
 datasets = ["li2022_EN_SS_trimmed_mean"]
 subjects = None
+top_encoding_voxels = None
+ratio = 0.1
 
-# datasets = ["lebel2023"]
-# subjects = {"lebel2023": ["UTS03"]}
+datasets = ["lebel2023"]
+subjects = {"lebel2023": ["UTS03"]}
+top_encoding_voxels = 5000
+ratio = 0.1
 
-datasets = ["lebel2023", "li2022_EN_SS"]
-subjects = None
+# datasets = ["lebel2023", "li2022_EN_SS"]
+# subjects = None
+# top_encoding_voxels = {"lebel2023": 5000, "li2022_EN_SS": 20000}
+# ratio = 0.2
 
 config = {
     "datasets": datasets,
@@ -35,9 +41,9 @@ config = {
     "model": "bert-base-uncased",
     "decoder": "brain_decoder",
     "loss": "mixco",
-    "valid_ratio": 0.2,
-    "test_ratio": 0.2,
-    "context_length": 6,
+    "valid_ratio": ratio,
+    "test_ratio": ratio,
+    "context_length": 2,
     "lag": 3,
     "smooth": 6,
     "stack": 0,
@@ -47,17 +53,15 @@ config = {
     "weight_decay": 1e-6,
     "batch_size": 1,
     "temperature": 0.05,
-    "top_encoding_voxels": {"lebel2023": 5000, "li2022_EN_SS": 20000},
+    "top_encoding_voxels": top_encoding_voxels,
 }
 
-# gpt2 = pipeline("text-generation", model="gpt2", device=device)
-
-# # Fetch data and decoder
+# Fetch data and decoder
 
 _, decoder = main(wandb_mode="disabled", **config)
 decoder = decoder.to(device)
 config_copy = config.copy()
-config_copy["datasets"] = datasets[0]
+config_copy["datasets"] = "lebel2023"
 config_copy["subjects"] = {"lebel2023": ["UTS03"]}
 df_train, df_valid, df_test = main(
     return_data=True, cache=False, wandb_mode="disabled", **config_copy
@@ -67,7 +71,7 @@ df_train, df_valid, df_test = main(
 df = df_train
 
 split = df.iloc[0].split
-latents = torch.cat(tuple(df.Y)).to(device)
+latents = torch.cat(tuple(df.Y))
 n_latents = latents.shape[0]
 chunks = df[["run", "chunks", "chunks_with_context"]].explode(
     ["chunks", "chunks_with_context"]
@@ -77,17 +81,17 @@ for i, row in df.iterrows():
     with torch.no_grad():
         predicted_latents = decoder(
             decoder.projector[row.dataset + "/" + row.subject](row.X.to(device))
-        )
+        ).cpu()
 
     dist_to_negatives = 1 - tmf.pairwise_cosine_similarity(
         predicted_latents,
         latents,
-    )
-    negatives_sorted = dist_to_negatives.argsort(dim=1, stable=True).cpu().numpy()
+    ).numpy()
+    negatives_sorted = dist_to_negatives.argsort(axis=1)
     dist_to_ground_truth = 1 - torch.cosine_similarity(
-        row.Y.to(device), predicted_latents, dim=1
-    ).reshape(-1, 1)
-    ranks = (dist_to_negatives < dist_to_ground_truth).sum(dim=1) + 1
+        row.Y, predicted_latents, dim=1
+    ).reshape(-1, 1).numpy()
+    ranks = (dist_to_negatives < dist_to_ground_truth).sum(axis=0) + 1
 
     table = Table(
         "Chunk",
@@ -109,7 +113,7 @@ for i, row in df.iterrows():
                 top_chunk = chunks.chunks.iloc[k]
                 bert_score = 1 - dist_to_negatives[j, k].item()
                 lev_dist = levenshtein_distance(row.chunks[j], top_chunk) / max(
-                    len(row.chunks[j]), len(top_chunk)
+                    1, max(len(row.chunks[j]), len(top_chunk))
                 )
                 if chunk_rank == 0:
                     chunk_info = (
@@ -130,39 +134,41 @@ for i, row in df.iterrows():
                 )
                 decoded.append(
                     [
-                        row.chunks[j],
                         ranks[j].item(),
-                        n_latents,
-                        1 - dist_to_ground_truth[j].item(),
-                        chunk_rank + 1,
-                        top_chunk,
+                        row.chunks_with_context[j],
                         chunks.chunks_with_context.iloc[k],
-                        bert_score,
-                        lev_dist,
                         chunks.run.iloc[k],
-                        len(top_chunk),
+                        chunk_rank + 1,
+                        1 - dist_to_ground_truth[j].item(),
+                        bert_score,
+                        n_latents,
+                        row.chunks[j],
+                        top_chunk,
                         split,
+                        lev_dist,
+                        len(top_chunk),
                     ]
                 )
             table.add_row()
     decoded = pd.DataFrame(
         decoded,
         columns=[
-            "Correct",
             "Correct rank",
-            "Size",
-            "Score",
-            "Top chunk rank",
-            "Top chunks",
+            "Correct with context",
             "Top chunks with context",
-            "BERT score",
-            "Levenshtein distance",
             "Run",
-            "Length",
+            "Top chunk rank",
+            "Score",
+            "Top chunk score",
+            "Size",
+            "Correct",
+            "Top chunks",
             "Split",
+            "Levenshtein distance",
+            "Length",
         ],
     )
-    decoded.to_csv(f"decoded/{row.run}.csv", index=False)
+    decoded.to_csv(f"decoded/{row.run}_{split}_context_{config["context_length"]}.csv", index=False)
     input("Continue?")
 
 # Semantic/syntactic decoding

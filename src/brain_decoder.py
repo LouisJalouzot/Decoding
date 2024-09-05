@@ -130,7 +130,7 @@ def train_brain_decoder(
         in_dims=in_dims,
         **decoder_params,
     ).to(device)
-    # decoder = torch.compile(decoder)
+    decoder = torch.compile(decoder)
 
     n_params = sum([p.numel() for p in decoder.parameters()])
     console.log(f"Decoder has {n_params:.3g} parameters.")

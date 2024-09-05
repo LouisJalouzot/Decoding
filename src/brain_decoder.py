@@ -27,35 +27,42 @@ def evaluate(df, decoder, negatives, top_k_accuracies, temperature):
     metrics = defaultdict(list)
     negatives = negatives.to(device)
     with torch.no_grad():
-        for _, row in df.iterrows():
-            subject_id = f"{row.dataset}/{row.subject}"
-            run_id = f"{row.dataset}/{row.run}"
-            X = decoder.projector[row.dataset][row.subject](row.X.to(device))
-            X = pack_sequence([X], enforce_sorted=False)
-            Y_preds = decoder(X)
-            Y = row.Y.to(device)
-            # Evaluate retrieval metrics
-            for key, value in retrieval_metrics(
-                Y,
-                Y_preds,
-                negatives,
-                return_ranks=True,
-                top_k_accuracies=top_k_accuracies,
-            ).items():
-                metrics[key].append(value)
-                metrics[f"{subject_id}/{key}"].append(value)
-                metrics[f"{run_id}/{key}"].append(value)
-            # Evaluate losses
-            mse_loss = compute_mse_loss(X, Y, decoder)
-            symm_nce_loss = compute_symm_nce_loss(X, Y, decoder, temperature)
-            mixco_loss = compute_mixco_symm_nce_loss(X, Y, decoder, temperature)
-            for name in ["", f"{subject_id}/", f"{run_id}/"]:
-                metrics[name + "mse"].append(mse_loss.item())
-                metrics[name + "symm_nce"].append(symm_nce_loss.item())
-                metrics[name + "mixco"].append(mixco_loss.item())
-                metrics[name + "aug"].append(
-                    mixco_loss.item() - symm_nce_loss.item()
+        with torch.autocast(device_type=device.type, dtype=torch.bfloat16):
+            for _, row in df.iterrows():
+                subject_id = f"{row.dataset}/{row.subject}"
+                run_id = f"{row.dataset}/{row.run}"
+                X = decoder.projector[row.dataset][row.subject](
+                    row.X.to(device)
                 )
+                X = pack_sequence([X], enforce_sorted=False)
+                Y_preds = decoder(X)
+                Y = row.Y.to(device)
+                # Evaluate retrieval metrics
+                for key, value in retrieval_metrics(
+                    Y,
+                    Y_preds,
+                    negatives,
+                    return_ranks=True,
+                    top_k_accuracies=top_k_accuracies,
+                ).items():
+                    metrics[key].append(value)
+                    metrics[f"{subject_id}/{key}"].append(value)
+                    metrics[f"{run_id}/{key}"].append(value)
+                # Evaluate losses
+                mse_loss = compute_mse_loss(X, Y, decoder)
+                symm_nce_loss = compute_symm_nce_loss(
+                    X, Y, decoder, temperature
+                )
+                mixco_loss = compute_mixco_symm_nce_loss(
+                    X, Y, decoder, temperature
+                )
+                for name in ["", f"{subject_id}/", f"{run_id}/"]:
+                    metrics[name + "mse"].append(mse_loss.item())
+                    metrics[name + "symm_nce"].append(symm_nce_loss.item())
+                    metrics[name + "mixco"].append(mixco_loss.item())
+                    metrics[name + "aug"].append(
+                        mixco_loss.item() - symm_nce_loss.item()
+                    )
     other_metrics = {}
     for key, value in metrics.items():
         if key.endswith("relative_ranks"):
@@ -115,8 +122,7 @@ def train_brain_decoder(
     in_dims = df_train[["dataset", "subject", "n_voxels"]].drop_duplicates()
     in_dims = in_dims.set_index(["dataset", "subject"]).n_voxels
     in_dims = {
-        level: in_dims.xs(level).to_dict()
-        for level in in_dims.index.levels[0]
+        level: in_dims.xs(level).to_dict() for level in in_dims.index.levels[0]
     }
     wandb.config["in_dims"] = in_dims
     decoder = DecoderWrapper(
@@ -124,6 +130,7 @@ def train_brain_decoder(
         in_dims=in_dims,
         **decoder_params,
     ).to(device)
+    # decoder = torch.compile(decoder)
 
     n_params = sum([p.numel() for p in decoder.parameters()])
     console.log(f"Decoder has {n_params:.3g} parameters.")
@@ -178,30 +185,33 @@ def train_brain_decoder(
                 X = []
                 Y = []
                 for _, row in df_train.iloc[i : i + batch_size].iterrows():
-                    X.append(
-                        decoder.projector[row.dataset][row.subject](
-                            row.X.to(device)
+                    with torch.autocast(
+                        device_type=device.type, dtype=torch.bfloat16
+                    ):
+                        X.append(
+                            decoder.projector[row.dataset][row.subject](
+                                row.X.to(device)
+                            )
                         )
-                    )
                     Y.append(row.Y)
-                X = pack_sequence(X, enforce_sorted=False)
-                Y = torch.cat(Y).to(device)
+                    X = pack_sequence(X, enforce_sorted=False)
+                    Y = torch.cat(Y).to(device)
 
-                if loss == "mse":
-                    # Evaluate MSE loss
-                    train_loss = compute_mse_loss(X, Y, decoder)
+                    if loss == "mse":
+                        # Evaluate MSE loss
+                        train_loss = compute_mse_loss(X, Y, decoder)
 
-                if loss == "symm_nce":
-                    # Evaluate symmetrical NCE loss
-                    train_loss = compute_symm_nce_loss(
-                        X, Y, decoder, temperature
-                    )
+                    if loss == "symm_nce":
+                        # Evaluate symmetrical NCE loss
+                        train_loss = compute_symm_nce_loss(
+                            X, Y, decoder, temperature
+                        )
 
-                if loss == "mixco":
-                    # Evaluate mixco loss and back-propagate on it
-                    train_loss = compute_mixco_symm_nce_loss(
-                        X, Y, decoder, temperature
-                    )
+                    if loss == "mixco":
+                        # Evaluate mixco loss and back-propagate on it
+                        train_loss = compute_mixco_symm_nce_loss(
+                            X, Y, decoder, temperature
+                        )
 
                 if plot_gradient:
                     from torchviz import make_dot

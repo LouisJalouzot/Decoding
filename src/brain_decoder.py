@@ -23,13 +23,14 @@ from src.utils import console, device
 
 def evaluate(df, decoder, negatives, top_k_accuracies, temperature):
     decoder.eval()
-    
+
     metrics = defaultdict(list)
     negatives = negatives.to(device)
     with torch.no_grad():
         for _, row in df.iterrows():
-            subject = row.subject_id
-            X = decoder.projector[subject](row.X.to(device))
+            subject_id = f"{row.dataset}/{row.subject}"
+            run_id = f"{row.dataset}/{row.run}"
+            X = decoder.projector[row.dataset][row.subject](row.X.to(device))
             X = pack_sequence([X], enforce_sorted=False)
             Y_preds = decoder(X)
             Y = row.Y.to(device)
@@ -42,28 +43,31 @@ def evaluate(df, decoder, negatives, top_k_accuracies, temperature):
                 top_k_accuracies=top_k_accuracies,
             ).items():
                 metrics[key].append(value)
-                metrics[f"{subject}/{key}"].append(value)
+                metrics[f"{subject_id}/{key}"].append(value)
+                metrics[f"{run_id}/{key}"].append(value)
             # Evaluate losses
             mse_loss = compute_mse_loss(X, Y, decoder)
             symm_nce_loss = compute_symm_nce_loss(X, Y, decoder, temperature)
             mixco_loss = compute_mixco_symm_nce_loss(X, Y, decoder, temperature)
-            for name in ["", f"{subject}/"]:
+            for name in ["", f"{subject_id}/", f"{run_id}/"]:
                 metrics[name + "mse"].append(mse_loss.item())
                 metrics[name + "symm_nce"].append(symm_nce_loss.item())
                 metrics[name + "mixco"].append(mixco_loss.item())
-                metrics[name + "aug"].append(mixco_loss.item() - symm_nce_loss.item())
+                metrics[name + "aug"].append(
+                    mixco_loss.item() - symm_nce_loss.item()
+                )
     other_metrics = {}
     for key, value in metrics.items():
         if key.endswith("relative_ranks"):
             relative_ranks = torch.cat(value).cpu()
             relative_median_rank = torch.quantile(relative_ranks, q=0.5).item()
             metrics[key] = wandb.Histogram(relative_ranks, num_bins=100)
-            other_metrics[key.replace("relative_ranks", "relative_median_rank")] = (
-                relative_median_rank
+            other_metrics[
+                key.replace("relative_ranks", "relative_median_rank")
+            ] = relative_median_rank
+            other_metrics[key.replace("relative_ranks", "size")] = (
+                relative_ranks.shape[0]
             )
-            other_metrics[key.replace("relative_ranks", "size")] = relative_ranks.shape[
-                0
-            ]
         else:
             metrics[key] = np.mean(value)
     metrics.update(other_metrics)
@@ -87,7 +91,9 @@ def train_brain_decoder(
     **decoder_params,
 ):
     if decoder.lower() in ["rnn", "gru", "lstm"] and loss == "mixco":
-        console.log("[red]MixCo augmentation should not be used with time series.")
+        console.log(
+            "[red]MixCo augmentation should not be used with time series."
+        )
 
     Y_valid = df_valid.drop_duplicates(["dataset", "run"]).Y
     Y_valid = torch.cat(tuple(Y_valid)).to(device)
@@ -106,8 +112,12 @@ def train_brain_decoder(
         decoder = SimpleMLP(out_dim=out_dim, **decoder_params)
     else:
         raise ValueError(f"Unsupported decoder {decoder}.")
-    in_dims = df_train[["subject_id", "n_voxels"]].drop_duplicates()
-    in_dims = in_dims.set_index("subject_id").n_voxels.to_dict()
+    in_dims = df_train[["dataset", "subject", "n_voxels"]].drop_duplicates()
+    in_dims = in_dims.set_index(["dataset", "subject"]).n_voxels
+    in_dims = {
+        level: in_dims.xs(level).to_dict()
+        for level in in_dims.index.levels[0]
+    }
     wandb.config["in_dims"] = in_dims
     decoder = DecoderWrapper(
         decoder=decoder,
@@ -168,7 +178,11 @@ def train_brain_decoder(
                 X = []
                 Y = []
                 for _, row in df_train.iloc[i : i + batch_size].iterrows():
-                    X.append(decoder.projector[row.subject_id](row.X.to(device)))
+                    X.append(
+                        decoder.projector[row.dataset][row.subject](
+                            row.X.to(device)
+                        )
+                    )
                     Y.append(row.Y)
                 X = pack_sequence(X, enforce_sorted=False)
                 Y = torch.cat(Y).to(device)
@@ -179,11 +193,15 @@ def train_brain_decoder(
 
                 if loss == "symm_nce":
                     # Evaluate symmetrical NCE loss
-                    train_loss = compute_symm_nce_loss(X, Y, decoder, temperature)
+                    train_loss = compute_symm_nce_loss(
+                        X, Y, decoder, temperature
+                    )
 
                 if loss == "mixco":
                     # Evaluate mixco loss and back-propagate on it
-                    train_loss = compute_mixco_symm_nce_loss(X, Y, decoder, temperature)
+                    train_loss = compute_mixco_symm_nce_loss(
+                        X, Y, decoder, temperature
+                    )
 
                 if plot_gradient:
                     from torchviz import make_dot

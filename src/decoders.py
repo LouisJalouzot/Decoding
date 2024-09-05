@@ -28,10 +28,14 @@ class SimpleMLP(nn.Module):
             else partial(nn.LayerNorm, normalized_shape=self.hidden_size)
         )
         activation = (
-            partial(nn.ReLU, inplace=True) if self.norm_type == "bn" else nn.GELU
+            partial(nn.ReLU, inplace=True)
+            if self.norm_type == "bn"
+            else nn.GELU
         )
         self.activation_and_norm = (
-            (activation, norm) if self.activation_layer_first else (norm, activation)
+            (activation, norm)
+            if self.activation_layer_first
+            else (norm, activation)
         )
 
         for _ in range(num_layers - 1):
@@ -164,7 +168,9 @@ class BrainDecoder(nn.Module):
             else partial(nn.LayerNorm, normalized_shape=self.hidden_size)
         )
         activation_backbone = (
-            partial(nn.ReLU, inplace=True) if self.norm_type == "bn" else nn.GELU
+            partial(nn.ReLU, inplace=True)
+            if self.norm_type == "bn"
+            else nn.GELU
         )
         self.activation_and_norm = (
             (activation_backbone, norm_backbone)
@@ -185,7 +191,9 @@ class BrainDecoder(nn.Module):
         )
 
         # Second linear
-        self.lin1 = nn.Linear(self.hidden_size, self.hidden_size_projector, bias=True)
+        self.lin1 = nn.Linear(
+            self.hidden_size, self.hidden_size_projector, bias=True
+        )
 
         # Projector
         assert self.n_proj_blocks >= 0
@@ -195,7 +203,9 @@ class BrainDecoder(nn.Module):
                 [
                     nn.LayerNorm(self.hidden_size_projector),
                     nn.GELU(),
-                    nn.Linear(self.hidden_size_projector, self.hidden_size_projector),
+                    nn.Linear(
+                        self.hidden_size_projector, self.hidden_size_projector
+                    ),
                 ]
             )
         projector_layers.extend(
@@ -248,7 +258,9 @@ class DecoderWrapper(nn.Module):
             else partial(nn.LayerNorm, normalized_shape=self.hidden_size)
         )
         activation_backbone = (
-            partial(nn.ReLU, inplace=True) if self.norm_type == "bn" else nn.GELU
+            partial(nn.ReLU, inplace=True)
+            if self.norm_type == "bn"
+            else nn.GELU
         )
         self.activation_and_norm = (
             (activation_backbone, norm_backbone)
@@ -257,28 +269,61 @@ class DecoderWrapper(nn.Module):
         )
 
         if self.multi_subject_mode == "shared":
-            assert len(
-                np.unique(list(self.in_dims.values())) == 1
+            all_dims = [
+                dim for dims in self.in_dims.values() for dim in dims.values()
+            ]
+            assert (
+                len(set(all_dims)) == 1
             ), f"In multi_subject_mode 'shared', all subjects must have the same input dimension but got {self.in_dims}"
-            in_dim = next(iter(self.in_dims.values()))
+            in_dim = all_dims[0]
             projector = nn.Sequential(
                 nn.Linear(in_dim, self.hidden_size),
                 *[item() for item in self.activation_and_norm],
                 nn.Dropout(self.dropout),
             )
             self.projector = nn.ModuleDict(
-                {subject: projector for subject in self.in_dims}
+                {
+                    dataset: nn.ModuleDict(
+                        {subject: projector for subject in dims}
+                    )
+                    for dataset, dims in self.in_dims.items()
+                }
             )
+        elif self.multi_subject_mode == "dataset":
+            self.projector = nn.ModuleDict()
+            for dataset, dims in self.in_dims.items():
+                dims = list(dims.values())
+                assert (
+                    len(set(dims)) == 1
+                ), f"In multi_subject_mode 'dataset', all subjects in a dataset must have the same input dimension but got {in_dims[dataset]} for {dataset}"
+                in_dim = dims[0]
+                projector = nn.Sequential(
+                    nn.Linear(in_dim, self.hidden_size),
+                    *[item() for item in self.activation_and_norm],
+                    nn.Dropout(self.dropout),
+                )
+                self.projector[dataset] = nn.ModuleDict(
+                    {subject: projector for subject in self.in_dims[dataset]}
+                )
         elif self.multi_subject_mode == "individual":
             self.projector = nn.ModuleDict(
                 {
-                    subject: nn.Sequential(
-                        nn.Linear(in_dim, self.hidden_size),
-                        *[item() for item in self.activation_and_norm],
-                        nn.Dropout(self.dropout),
+                    dataset: nn.ModuleDict(
+                        {
+                            subject: nn.Sequential(
+                                nn.Linear(in_dim, self.hidden_size),
+                                *[item() for item in self.activation_and_norm],
+                                nn.Dropout(self.dropout),
+                            )
+                            for subject, in_dim in dims.items()
+                        }
                     )
-                    for subject, in_dim in self.in_dims.items()
+                    for dataset, dims in self.in_dims.items()
                 }
+            )
+        else:
+            raise ValueError(
+                f"multi_subject_mode must be one of ['shared', 'dataset', 'individual'] but got {self.multi_subject_mode}"
             )
 
     def forward(self, X):

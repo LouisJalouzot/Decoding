@@ -71,7 +71,7 @@ df_train, df_valid, df_test = main(
 )
 
 # %% Semantic/syntactic beam search decoding
-df = df_train
+df = df_test
 
 split = df.iloc[0].split
 latents = torch.cat(tuple(df.Y))
@@ -138,6 +138,7 @@ for i, row in df.iterrows():
                 )
                 decoded.append(
                     [
+                        j,
                         ranks[j].item(),
                         row.chunks_with_context[j],
                         chunks.chunks_with_context.iloc[k],
@@ -149,6 +150,7 @@ for i, row in df.iterrows():
                         row.chunks[j],
                         top_chunk,
                         split,
+                        row.run,
                         lev_dist,
                         len(top_chunk),
                     ]
@@ -157,10 +159,11 @@ for i, row in df.iterrows():
     decoded = pd.DataFrame(
         decoded,
         columns=[
+            "Chunk index",
             "Correct rank",
             "Correct with context",
             "Top chunks with context",
-            "Run",
+            "Chunk run",
             "Top chunk rank",
             "Score",
             "Top chunk score",
@@ -168,11 +171,12 @@ for i, row in df.iterrows():
             "Correct",
             "Top chunks",
             "Split",
+            "Run",
             "Levenshtein distance",
             "Length",
         ],
     )
-    decoded.to_csv(f"decoded/{row.run}_{split}_context_{config["context_length"]}.csv", index=False)
+    decoded.to_csv(f"decoded/{row.run}_{split}_context_{config["context_length"]}.csv", float_format="%.3g", index=False)
     input("Continue?")
 
 # Semantic/syntactic decoding

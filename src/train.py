@@ -66,7 +66,9 @@ def train(
         raise ValueError(
             f"No runs found in datasets {datasets}, have you run preprocess.py?"
         )
-    with joblib_progress(f"Loading brain scans for datasets {datasets}", total=n_runs):
+    with joblib_progress(
+        f"Loading brain scans for datasets {datasets}", total=n_runs
+    ):
         df = Parallel(n_jobs=-1)(
             delayed(read)(dataset, subject, run, lag, smooth, stack)
             for dataset in runs
@@ -74,9 +76,9 @@ def train(
             for run in runs[dataset][subject]
         )
     df = pd.DataFrame(
-        sorted(df), columns=["dataset", "subject", "run", "n_trs", "n_voxels", "X"]
+        sorted(df),
+        columns=["dataset", "subject", "run", "n_trs", "n_voxels", "X"],
     )
-    df["subject_id"] = df.apply(lambda x: x.dataset + "/" + x.subject, axis=1)
     assert (
         df.groupby(["dataset", "run"]).n_trs.nunique().eq(1).all()
     ), "Runs should have the same number of TRs for all subjects"
@@ -132,7 +134,14 @@ def train(
         progress.update(task, completed=True)
     latents = pd.DataFrame(
         latents,
-        columns=["dataset", "run", "hidden_dim", "Y", "chunks", "chunks_with_context"],
+        columns=[
+            "dataset",
+            "run",
+            "hidden_dim",
+            "Y",
+            "chunks",
+            "chunks_with_context",
+        ],
     )
     latents["Y"] = latents.Y.apply(
         lambda x: torch.from_numpy(scaler.transform(x).astype(np.float32))
@@ -167,11 +176,16 @@ def train(
         return ["train"] * n_train + ["valid"] * n_valid + ["test"] * n_test
 
     run_counts.loc[main_runs, "split"] = (
-        run_counts[main_runs].groupby("dataset").split.transform(return_split_sizes)
+        run_counts[main_runs]
+        .groupby("dataset")
+        .split.transform(return_split_sizes)
     )
     df = df.merge(run_counts[["dataset", "run", "split"]])
     assert np.isin(
-        df.subject_id.unique(), df[df.split == "train"].subject_id.unique()
+        df[["dataset", "subject"]].drop_duplicates().values,
+        df[df.split == "train"][["dataset", "subject"]]
+        .drop_duplicates()
+        .values,
     ).all(), "All subjects should have at least one run in the train split"
 
     if top_encoding_voxels is not None:
@@ -213,7 +227,9 @@ def train(
     wandb.log(
         {
             "df": wandb.Table(
-                dataframe=df.drop(columns=["X", "Y", "chunks", "chunks_with_context"])
+                dataframe=df.drop(
+                    columns=["X", "Y", "chunks", "chunks_with_context"]
+                )
             )
         },
         step=0,

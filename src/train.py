@@ -192,15 +192,14 @@ def train(
         from sklearn.linear_model import Ridge
         from sklearn.metrics import r2_score
 
+        dataset_subject = df[["dataset", "subject"]].drop_duplicates()
         with progress:
             task = progress.add_task(
                 f"Fitting a Ridge encoder for each subject and keeping the best {top_encoding_voxels} voxels.",
-                total=df.subject_id.nunique(),
+                total=len(dataset_subject),
             )
-            for _, (dataset, subject_id) in (
-                df[["dataset", "subject_id"]].drop_duplicates().iterrows()
-            ):
-                subject_sel = df.subject_id == subject_id
+            for _, (dataset, subject) in dataset_subject.iterrows():
+                subject_sel = (df.dataset == dataset) & (df.subject == subject)
                 df_train_sel = df[subject_sel & (df.split == "train")]
                 if isinstance(top_encoding_voxels, dict):
                     n_voxels = top_encoding_voxels[dataset]

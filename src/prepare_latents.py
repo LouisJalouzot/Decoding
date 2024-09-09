@@ -13,7 +13,9 @@ DEFAULT_BAD_WORDS = frozenset(
 )
 
 
-def compute_chunks(textgrid_path: str, tr: int, context_length: int) -> pd.DataFrame:
+def compute_chunks(
+    textgrid_path: str, tr: int, context_length: int
+) -> pd.DataFrame:
     """
     Compute the chunks of text from the given textgrid file.
 
@@ -45,6 +47,41 @@ def compute_chunks(textgrid_path: str, tr: int, context_length: int) -> pd.DataF
     return transcript.apply(lambda s: s.str.strip("# ").str.replace(" #", ","))
 
 
+def prepare_wav2vec(audio_path, tr, context_length):
+    import librosa
+    import numpy as np
+    import torch
+    from transformers import AutoModel, AutoProcessor
+
+    model_name = "facebook/wav2vec2-base-960h"
+    processor = AutoProcessor.from_pretrained(model_name)
+    model = AutoModel.from_pretrained(model_name).to(device)
+
+    sampling_rate = processor.feature_extractor.sampling_rate
+    audio, _ = librosa.load(audio_path, sr=sampling_rate)
+
+    chunk_length = tr * sampling_rate
+    audios = [
+        audio[max(0, i - chunk_length * context_length) : i + chunk_length]
+        for i in range(0, len(audio), chunk_length)
+    ]
+
+    latents = []
+
+    for audio_chunk in audios:
+        inputs = processor(
+            audio_chunk, return_tensors="pt", sampling_rate=sampling_rate
+        ).to(device)
+
+        with torch.no_grad():
+            outputs = model(**inputs)
+
+        latent = outputs.last_hidden_state[0].mean(0).cpu().numpy()
+        latents.append(latent)
+
+    return np.vstack(latents)
+
+
 def prepare_mel(audio_path: Path, tr: int, context_length: int):
     import torchaudio
 
@@ -60,12 +97,12 @@ def prepare_mel(audio_path: Path, tr: int, context_length: int):
     return mel(wav.to(device)).reshape(768, -1).T.cpu().numpy()
 
 
-def prepare_audioclip(textgrid_path, audio_path, tr, context_length, model, verbose):
-    # TODO fix for new chunks format
+def prepare_audioclip(
+    text_chunks, audio_path, tr, context_length, model, verbose
+):
     import librosa
     import torch
 
-    text_chunks = compute_chunks(textgrid_path, tr, context_length)
     target_sample_rate = 44_100
     wav, _ = librosa.load(audio_path, sr=target_sample_rate, mono=False)
     wav = torch.from_numpy(wav)
@@ -86,7 +123,7 @@ def prepare_audioclip(textgrid_path, audio_path, tr, context_length, model, verb
     model.eval()
     with torch.no_grad():
         task = progress.add_task(
-            f"Computing AudioCLIP latents for run {textgrid_path.stem}",
+            f"Computing AudioCLIP latents for run {audio_path.stem}",
             total=size,
             visible=verbose,
         )
@@ -112,19 +149,21 @@ def prepare_audioclip(textgrid_path, audio_path, tr, context_length, model, verb
     return np.vstack(latents)
 
 
-def prepare_clap(textgrid_path, audio_path, tr, context_length, batch_size, verbose):
+def prepare_clap(
+    text_chunks, audio_path, tr, context_length, batch_size, verbose
+):
     import librosa
     import torch
     from transformers import AutoProcessor, ClapModel
 
-    text_chunks = compute_chunks(textgrid_path, tr, context_length)
     target_sample_rate = 48_000
     wav, _ = librosa.load(audio_path, sr=target_sample_rate, mono=True)
     size = len(text_chunks)
     audio_chunk_size = target_sample_rate * tr
     chunked_audio = [
         wav[
-            max(0, (i - context_length) * audio_chunk_size) : (i + 1) * audio_chunk_size
+            max(0, (i - context_length) * audio_chunk_size) : (i + 1)
+            * audio_chunk_size
         ]
         for i in range(size)
     ]
@@ -135,7 +174,7 @@ def prepare_clap(textgrid_path, audio_path, tr, context_length, batch_size, verb
     model.eval()
     with torch.no_grad():
         task = progress.add_task(
-            f"Computing CLAP latents for run {textgrid_path.stem}",
+            f"Computing CLAP latents for run {audio_path.stem}",
             total=-(-size // batch_size),
             visible=verbose,
         )
@@ -168,33 +207,34 @@ def prepare_latents(
     batch_size: int = 64,
     verbose: bool = True,
 ) -> Tuple[np.ndarray, List[str]]:
+    import warnings
+
+    warnings.filterwarnings("ignore", module="transformers")
 
     if "lebel2023" in dataset:
         textgrid_path = f"data/lebel2023/derivative/TextGrids/{run}.TextGrid"
         audio_path = f"data/lebel2023/stimuli/{run}.wav"
     elif "li2022" in dataset:
-        audio_path = f"data/li2022/stimuli/task-lppEN_section_{run}.wav"
+        audio_path = f"data/li2022/stimuli/task-lppEN_section-{run}.wav"
         textgrid_path = f"data/li2022/annotation/EN/lppEN_section{run}.TextGrid"
     else:
         raise ValueError(f"Unsupported dataset {dataset}")
+    chunks = compute_chunks(textgrid_path, tr, context_length)
 
-    if model.lower() == "mel":
+    if model.lower() == "wav2vec":
+        latents = prepare_wav2vec(audio_path, tr, context_length)
+    elif model.lower() == "mel":
         latents = prepare_mel(audio_path, tr, context_length)
     elif model.lower() == "audioclip":
         latents = prepare_audioclip(
-            textgrid_path, audio_path, tr, context_length, model, verbose
+            chunks, audio_path, tr, context_length, model, verbose
         )
     elif model.lower() == "clap":
         latents = prepare_clap(
-            textgrid_path, audio_path, tr, context_length, batch_size, verbose
+            chunks, audio_path, tr, context_length, batch_size, verbose
         )
     else:
-        import warnings
-
         from sentence_transformers import SentenceTransformer
-
-        warnings.filterwarnings("ignore", module="transformers")
-        chunks = compute_chunks(textgrid_path, tr, context_length)
 
         model = SentenceTransformer(
             model,
@@ -208,6 +248,7 @@ def prepare_latents(
             batch_size=batch_size,
             output_value="token_embeddings",
         )
+
         if token_aggregation == "first":
             latents = [l[0] for l in latents]
         elif token_aggregation == "last":
@@ -217,24 +258,28 @@ def prepare_latents(
         elif token_aggregation == "max":
             latents = [l.max(axis=0)[0] for l in latents]
         else:
-            n_tokens = model.tokenize(chunks.chunk)["attention_mask"].sum(axis=1)
+            n_tokens = model.tokenize(chunks.chunk)["attention_mask"].sum(
+                axis=1
+            )
             if token_aggregation == "chunk_mean":
                 latents = [
-                    l[-length:].mean(axis=0) for l, length in zip(latents, n_tokens)
+                    l[-length:].mean(axis=0)
+                    for l, length in zip(latents, n_tokens)
                 ]
             elif token_aggregation == "chunk_max":
                 latents = [
-                    l[-length:].max(axis=0)[0] for l, length in zip(latents, n_tokens)
+                    l[-length:].max(axis=0)[0]
+                    for l, length in zip(latents, n_tokens)
                 ]
             else:
                 raise ValueError(
                     f"Unsupported token aggregation method {token_aggregation}"
                 )
 
-    latents = np.array([l.cpu() for l in latents])
+        latents = np.vstack([l.cpu().numpy() for l in latents])
+
     latents /= np.linalg.norm(latents, ord=2, axis=1, keepdims=True)
     latents = StandardScaler().fit_transform(latents)
-    chunks = compute_chunks(textgrid_path, tr, context_length)
     if "lebel2023" in dataset or "li2022" in dataset:
         latents = latents[5:-5]
         chunks = chunks.iloc[5:-5]

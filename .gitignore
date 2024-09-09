@@ -1,6 +1,7 @@
 logs
 data
 datasets
+decoded
 models
 AudioCLIP
 scripts

@@ -1,257 +1,290 @@
 from collections import defaultdict
+from copy import deepcopy
 from pathlib import Path
-from typing import Dict, List, Union
+from time import time
 
 import numpy as np
-import pandas as pd
 import torch
-from joblib import Parallel, delayed
-from joblib_progress import joblib_progress
-from sklearn.preprocessing import StandardScaler
+from rich.live import Live
+from rich.table import Table
+from sklearn.utils import shuffle
 
 import wandb
-from src.brain_decoder import train_brain_decoder
-from src.prepare_latents import prepare_latents
-from src.utils import console, progress
+from src.base_decoders import GRU, LSTM, RNN, BrainDecoder, SimpleMLP
+from src.decoder_wrapper import DecoderWrapper
+from src.metrics import retrieval_metrics, scores
+from src.utils import console, device
 
 
-def read(dataset, subject, run, lag, smooth, stack):
-    path = Path("datasets") / dataset / subject / run
-    path = path.with_suffix(".npy")
-    X = torch.from_numpy(np.load(path))
-    if smooth > 0:
-        new_X = X.clone()
-        count = np.ones((X.shape[0], 1))
-        for i in range(1, smooth + 1):
-            new_X[i:] += X[:-i]
-            count[i:] += 1
-        X = (new_X / count).to(torch.float32)
-    if stack > 0:
-        X = X.unfold(0, stack + 1, 1).flatten(-2)
-    lag -= stack
-    if lag > 0:
-        X = X[lag:]
-    elif lag < 0:
-        X = X[:lag]
-    return dataset, subject, run, X.shape[0], X.shape[1], X
+def evaluate(
+    df,
+    decoder,
+    negatives,
+    top_k_accuracies,
+    extra_metrics,
+    log_run_metrics,
+):
+    decoder.eval()
+
+    metrics = defaultdict(list)
+    negatives = negatives.to(device)
+    with torch.no_grad():
+        for _, row in df.iterrows():
+            X = row.X.to(device)
+            Y = row.Y.to(device)
+            run_metrics = {}
+            with torch.autocast(device_type=device.type, dtype=torch.bfloat16):
+                X_proj = decoder.projector[row.dataset][row.subject](X)
+                # Evaluate losses
+                _, mixco = decoder.mixco_loss(X_proj, Y)
+                run_metrics["mixco"] = mixco.item()
+                Y_preds, symm_nce = decoder.symm_nce_loss(X_proj, Y)
+                run_metrics["symm_nce"] = symm_nce.item()
+                run_metrics["mse"] = decoder.mse_loss(X_proj, Y, Y_preds)[
+                    1
+                ].item()
+            # Evaluate retrieval metrics
+            run_metrics = retrieval_metrics(
+                Y,
+                Y_preds,
+                negatives,
+                return_ranks=True,
+                top_k_accuracies=top_k_accuracies,
+            )
+            # if extra_metrics:
+            #     run_metrics.update(scores(Y, Y_preds))
+            #     relative_ranks = run_metrics["relative_ranks"]
+            #     negatives_sorted = relative_ranks.argsort(dim=1)[:10]
+            subject_id = f"{row.dataset}/{row.subject}"
+            if log_run_metrics:
+                run_id = f"{row.dataset}/{row.run}"
+                names = ["", f"{subject_id}/", f"{run_id}/"]
+            else:
+                names = ["", f"{subject_id}/"]
+            for key, value in run_metrics.items():
+                for name in names:
+                    metrics[name + key].append(value)
+    metrics_agg = {}
+    for key, value in metrics.items():
+        if key.endswith("relative_ranks"):
+            relative_ranks = torch.cat(value).cpu()
+            relative_median_rank = torch.quantile(relative_ranks, q=0.5).item()
+            metrics[key] = wandb.Histogram(relative_ranks, num_bins=100)
+            metrics_agg[
+                key.replace("relative_ranks", "relative_median_rank")
+            ] = relative_median_rank
+            metrics_agg[key.replace("relative_ranks", "size")] = (
+                relative_ranks.shape[0]
+            )
+        else:
+            metrics[key] = np.mean(value)
+    metrics.update(metrics_agg)
+    return metrics
 
 
 def train(
-    datasets: Union[str, List[str]] = "lebel2023/all_subjects",
-    subjects: Dict[str, List[str]] = None,
-    runs: Dict[str, Dict[str, List[str]]] = None,
-    decoder: str = "brain_decoder",
-    model: str = "bert-base-uncased",
-    context_length: int = 6,
-    tr: int = 2,
-    lag: int = 3,
-    smooth: int = 0,
-    stack: int = 0,
-    valid_ratio: float = 0.1,
-    test_ratio: float = 0.1,
-    seed: int = 0,
-    latents_batch_size: int = 64,
-    return_data: bool = False,
-    top_encoding_voxels: int = None,
-    token_aggregation: str = "mean",  # Choose from ["first", "last", "max", "mean"]
+    df_train,
+    df_valid,
+    df_test,
+    decoder="brain_decoder",
+    patience=20,
+    monitor="valid/relative_median_rank",
+    loss="mixco",
+    weight_decay=1e-6,
+    lr=1e-4,
+    max_epochs=200,
+    clip_grad_norm=1.0,
+    batch_size=1,
+    log_run_metrics=False,
+    extra_metrics=True,
     **decoder_params,
 ):
-    assert (
-        lag >= stack
-    ), "Stacking induces lag so we should have lag >= stack for clarity"
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    n_runs = sum([len(r) for s in runs.values() for r in s.values()])
-    if n_runs == 0:
-        raise ValueError(
-            f"No runs found in datasets {datasets}, have you run preprocess.py?"
+    if decoder.lower() in ["rnn", "gru", "lstm"] and loss == "mixco":
+        console.log(
+            "[red]MixCo augmentation should not be used with time series."
         )
-    with joblib_progress(
-        f"Loading brain scans for datasets {datasets}", total=n_runs
-    ):
-        df = Parallel(n_jobs=-1)(
-            delayed(read)(dataset, subject, run, lag, smooth, stack)
-            for dataset in runs
-            for subject in runs[dataset]
-            for run in runs[dataset][subject]
-        )
-    df = pd.DataFrame(
-        sorted(df),
-        columns=["dataset", "subject", "run", "n_trs", "n_voxels", "X"],
-    )
-    assert (
-        df.groupby(["dataset", "run"]).n_trs.nunique().eq(1).all()
-    ), "Runs should have the same number of TRs for all subjects"
-    n_trs_by_run = df.groupby(["dataset", "run"]).n_trs.first().reset_index()
-    # runs sorted by decreasing number of occurrences
-    runs = (
-        df.groupby(["dataset", "run"])
-        .subject.count()
-        .sort_values(ascending=False)
-        .reset_index()[["dataset", "run"]]
-    )
-    n_runs = len(runs)
-    scaler = StandardScaler()
-    with progress:
-        task = progress.add_task("", total=n_runs)
-        progress.update(task, description=f"Fetching latents for {n_runs} runs")
-        latents = []
-        for _, (dataset, run, n_trs) in n_trs_by_run.iterrows():
-            Y, chunks = prepare_latents(
-                dataset=dataset,
-                run=run,
-                model=model,
-                tr=tr,
-                context_length=context_length,
-                token_aggregation=token_aggregation,
-                batch_size=latents_batch_size,
-            )
-            scaler.partial_fit(Y)
-            if lag > 0:
-                Y = Y[:-lag]
-                chunks = chunks.iloc[:-lag]
-            elif lag < 0:
-                Y = Y[-lag:]
-                chunks = chunks.iloc[-lag:]
-            if Y.shape[0] > n_trs + 1:
-                console.log(
-                    f"[red]{Y.shape[0] - n_trs} > 1 latents trimmed for run {run} in dataset {dataset}"
-                )
-            # If more latents than brain scans, drop last seconds of run
-            Y = Y[:n_trs]
-            chunks = chunks.iloc[:n_trs]
-            latents.append(
-                [
-                    dataset,
-                    run,
-                    Y.shape[1],
-                    Y,
-                    list(chunks.chunk),
-                    list(chunks.chunk_with_context),
-                ]
-            )
-            progress.update(task, advance=1)
-        progress.update(task, completed=True)
-    latents = pd.DataFrame(
-        latents,
-        columns=[
-            "dataset",
-            "run",
-            "hidden_dim",
-            "Y",
-            "chunks",
-            "chunks_with_context",
-        ],
-    )
-    latents["Y"] = latents.Y.apply(
-        lambda x: torch.from_numpy(scaler.transform(x).astype(np.float32))
-    )
-    df = df.merge(latents, on=["dataset", "run"])
 
-    run_counts = (
-        df.groupby(["dataset", "run"])
-        .subject.count()
-        .to_frame(name="occurrences")
-        .reset_index()
-    )
-    n_subjects = (
-        df.groupby("dataset")
-        .subject.nunique()
-        .to_frame(name="n_subjects")
-        .reset_index()
-    )
-    run_counts = run_counts.merge(n_subjects)
-    # By default put all runs in the train split
-    run_counts["split"] = "train"
+    Y_valid = df_valid.drop_duplicates(["dataset", "run"]).Y
+    Y_valid = torch.cat(tuple(Y_valid)).to(device)
 
-    # Main runs are runs that have all subjects
-    main_runs = run_counts.occurrences == run_counts.n_subjects
+    out_dim = df_train.hidden_dim.iloc[0]
+    wandb.config["out_dim"] = out_dim
+    if decoder.lower() == "brain_decoder":
+        decoder = BrainDecoder(out_dim=out_dim, **decoder_params)
+    elif decoder.lower() == "rnn":
+        decoder = RNN(out_dim=out_dim, **decoder_params)
+    elif decoder.lower() == "gru":
+        decoder = GRU(out_dim=out_dim, **decoder_params)
+    elif decoder.lower() == "lstm":
+        decoder = LSTM(out_dim=out_dim, **decoder_params)
+    elif decoder.lower() == "simple_mlp":
+        decoder = SimpleMLP(out_dim=out_dim, **decoder_params)
+    else:
+        raise ValueError(f"Unsupported decoder {decoder}.")
+    in_dims = df_train[["dataset", "subject", "n_voxels"]].drop_duplicates()
+    in_dims = in_dims.set_index(["dataset", "subject"]).n_voxels
+    in_dims = {
+        level: in_dims.xs(level).to_dict() for level in in_dims.index.levels[0]
+    }
+    wandb.config["in_dims"] = in_dims
+    decoder = DecoderWrapper(
+        decoder=decoder,
+        in_dims=in_dims,
+        loss=loss,
+        **decoder_params,
+    ).to(device)
+    decoder = torch.compile(decoder)
 
-    # Distribute those runs in train, valid and test splits
-    def return_split_sizes(x):
-        n_runs = len(x)
-        n_valid = max(1, int(valid_ratio * n_runs))
-        n_test = max(1, int(test_ratio * n_runs))
-        n_train = n_runs - n_valid - n_test
-        return ["train"] * n_train + ["valid"] * n_valid + ["test"] * n_test
+    n_params = sum([p.numel() for p in decoder.parameters()])
+    console.log(f"Decoder has {n_params:.3g} parameters.")
+    wandb.config["n_params"] = n_params
 
-    run_counts.loc[main_runs, "split"] = (
-        run_counts[main_runs]
-        .groupby("dataset")
-        .split.transform(return_split_sizes)
-    )
-    df = df.merge(run_counts[["dataset", "run", "split"]])
-    assert np.isin(
-        df[["dataset", "subject"]].drop_duplicates().values,
-        df[df.split == "train"][["dataset", "subject"]]
-        .drop_duplicates()
-        .values,
-    ).all(), "All subjects should have at least one run in the train split"
-
-    if top_encoding_voxels is not None:
-        from sklearn.linear_model import Ridge
-        from sklearn.metrics import r2_score
-
-        dataset_subject = df[["dataset", "subject"]].drop_duplicates()
-        with progress:
-            task = progress.add_task(
-                f"Fitting a Ridge encoder for each subject and keeping the best {top_encoding_voxels} voxels.",
-                total=len(dataset_subject),
-            )
-            for _, (dataset, subject) in dataset_subject.iterrows():
-                subject_sel = (df.dataset == dataset) & (df.subject == subject)
-                df_train_sel = df[subject_sel & (df.split == "train")]
-                if isinstance(top_encoding_voxels, dict):
-                    n_voxels = top_encoding_voxels[dataset]
-                else:
-                    n_voxels = top_encoding_voxels
-                if df_train_sel.n_voxels.iloc[0] <= n_voxels:
-                    progress.update(task, advance=1)
-                    continue
-                X = np.concatenate(tuple(df_train_sel.X))
-                Y = np.concatenate(tuple(df_train_sel.Y))
-                ridge = Ridge().fit(Y, X)
-                df_valid_sel = df[subject_sel & (df.split == "valid")]
-                X = np.concatenate(tuple(df_valid_sel.X))
-                Y = np.concatenate(tuple(df_valid_sel.Y))
-                X_preds = ridge.predict(Y)
-                r2 = r2_score(X, X_preds, multioutput="raw_values")
-                voxels_to_keep = r2.argsort()[-n_voxels:]  # type: ignore
-                df.loc[subject_sel, "X"] = df[subject_sel].X.apply(
-                    lambda X: X[:, voxels_to_keep]
-                )
-                df.loc[subject_sel, "n_voxels"] = n_voxels
-                progress.update(task, advance=1)
-
-    wandb.log(
+    no_decay = ["bias", "LayerNorm.weight"]
+    opt_grouped_parameters = [
         {
-            "df": wandb.Table(
-                dataframe=df.drop(
-                    columns=["X", "Y", "chunks", "chunks_with_context"]
-                )
-            )
+            "params": [
+                p
+                for n, p in decoder.named_parameters()
+                if not any(nd in n for nd in no_decay)
+            ],
+            "weight_decay": weight_decay,
         },
-        step=0,
+        {
+            "params": [
+                p
+                for n, p in decoder.named_parameters()
+                if any(nd in n for nd in no_decay)
+            ],
+            "weight_decay": 0.0,
+        },
+    ]
+    optimizer = torch.optim.AdamW(
+        opt_grouped_parameters,
+        lr=lr,
     )
 
-    df_train = df[df.split == "train"]
-    df_valid = df[df.split == "valid"]
-    df_test = df[df.split == "test"]
+    top_k_accuracies = [1, 5, 10]
+    best_monitor_metric, patience_counter = np.inf, 0
+    torch.autograd.set_detect_anomaly(True)
 
-    run_counts = run_counts.split.value_counts()
-    console.log(
-        f"Train split: {run_counts.train} runs with {len(df_train)} occurrences and {df_train.n_trs.sum()} scans.\n"
-        f"Valid split: {run_counts.valid} runs with {len(df_valid)} occurrences and {df_valid.n_trs.sum()} scans.\n"
-        f"Test split: {run_counts.test} runs with {len(df_test)} occurrences and {df_test.n_trs.sum()} scans."
+    table = Table(
+        "Epoch",
+        "Monitor",
+        "Patience",
+        "Duration",
+        title="Training loop",
     )
+    with Live(table, console=console, vertical_overflow="visible"):
+        for epoch in range(1, max_epochs + 1):
+            df_train = shuffle(df_train)
+            t = time()
+            decoder.train()
+            train_losses = []
+            for i in range(0, len(df_train), batch_size):
+                optimizer.zero_grad()
+                for _, row in df_train.iloc[i : i + batch_size].iterrows():
+                    X = row.X.to(device)
+                    Y = row.Y.to(device)
+                    with torch.autocast(
+                        device_type=device.type, dtype=torch.bfloat16
+                    ):
+                        X_proj = decoder.projector[row.dataset][row.subject](X)
+                        _, train_loss = decoder.loss(X_proj, Y)
+                        train_loss /= batch_size
 
-    if return_data:
-        return df_train, df_valid, df_test
+                    train_loss.backward()
+                    train_losses.append(train_loss.item())
 
-    output = train_brain_decoder(
-        df_train, df_valid, df_test, decoder=decoder, **decoder_params
-    )
+                if clip_grad_norm != 0.0:
+                    torch.nn.utils.clip_grad_norm_(
+                        decoder.parameters(), clip_grad_norm
+                    )
+                optimizer.step()
 
-    torch.cuda.empty_cache()
+            # Validation step
+            val_metrics = evaluate(
+                df=df_valid,
+                decoder=decoder,
+                negatives=Y_valid,
+                top_k_accuracies=top_k_accuracies,
+                extra_metrics=extra_metrics,
+                log_run_metrics=log_run_metrics,
+            )
 
-    return output
+            # Log metrics
+            output = {
+                "train/" + loss: np.mean(train_losses),
+                **{"valid/" + key: value for key, value in val_metrics.items()},
+            }
+            if epoch == 1:
+                for key in output:
+                    if not key.endswith("ranks") and key.count("/") < 2:
+                        table.add_column(key)
+                for col in table.columns:
+                    col.overflow = "fold"
+            wandb.log(output)
+
+            # Early stopping
+            monitor_metric = np.mean(output[monitor])
+            if monitor_metric < best_monitor_metric:
+                best_epoch = epoch
+                best_monitor_metric = monitor_metric
+                patience_counter = 0
+                monitor_metric = f"[green]{monitor_metric:.5g}"
+                best_decoder_state_dict = deepcopy(decoder.state_dict())
+                best_optimizer_state_dict = deepcopy(optimizer.state_dict())
+            else:
+                patience_counter += 1
+                monitor_metric = f"[red]{monitor_metric:.5g}"
+
+            table.add_row(
+                f"{epoch} / {max_epochs}",
+                monitor_metric,
+                str(patience - patience_counter),
+                f"{time() - t:.3g}s",
+                *[
+                    f"{v:.3g}"
+                    for k, v in output.items()
+                    if not k.endswith("ranks") and k.count("/") < 2
+                ],
+            )
+
+            if patience_counter >= patience:
+                console.log(
+                    f"Early stopping at epoch {epoch} as [bold green]{monitor}[/] did not improve for {patience} epochs."
+                )
+                break
+
+    # Restore best model and optimizer
+    output["best_epoch"] = best_epoch
+    decoder.load_state_dict(best_decoder_state_dict)
+    optimizer.load_state_dict(best_optimizer_state_dict)
+
+    for split, df_split in [
+        ("train/", df_train),
+        ("test/", df_test),
+    ]:
+        Y_split = df_split.drop_duplicates(["dataset", "run"]).Y
+        Y_split = torch.cat(tuple(Y_split))
+        metrics = evaluate(
+            df=df_split,
+            decoder=decoder,
+            negatives=Y_split,
+            top_k_accuracies=top_k_accuracies,
+            extra_metrics=extra_metrics,
+            log_run_metrics=log_run_metrics,
+        )
+        for key, value in metrics.items():
+            output[split + key] = value
+    wandb.log(output)
+
+    for key, value in output.items():
+        if isinstance(value, wandb.Histogram):
+            output[key] = {"bins": value.bins, "histogram": value.histogram}
+
+    for split in ["Train", "Valid", "Test"]:
+        console.log(
+            f"{split} relative median rank {output[f'{split.lower()}/relative_median_rank']:.3g} (size {output[f'{split.lower()}/size']})"
+        )
+
+    return output, decoder.cpu()

@@ -1,9 +1,10 @@
 from typing import Dict, List, Union
 
 import numpy as np
+import pandas as pd
 import torch
-import torchmetrics.functional as tmf
-from sklearn.metrics import pairwise_distances, r2_score
+import torchmetrics as tm
+from sklearn.metrics import r2_score
 
 from src.utils import console
 
@@ -48,14 +49,13 @@ def corr(
 
 
 def retrieval_metrics(
-    Y_true: Union[np.ndarray, torch.Tensor],
-    Y_pred: Union[np.ndarray, torch.Tensor],
-    negatives: Union[np.ndarray, torch.Tensor] = None,
+    Y_true: torch.Tensor,
+    Y_pred: torch.Tensor,
+    negatives: torch.Tensor = None,
     metric: str = "cosine",
     top_k_accuracies: List[int] = [],
-    n_jobs: int = -2,
     return_ranks: bool = False,
-) -> Dict[str, float]:
+):
     """
     Calculate retrieval rank metrics between true and predicted values.
 
@@ -65,7 +65,6 @@ def retrieval_metrics(
         negatives: Negative values for contrastive loss.
         metric: Distance metric to use for calculating pairwise distances.
         top_k_accuracies: List of top-k values for accuracy calculation.
-        n_jobs: Number of parallel jobs to run for pairwise distance calculation.
 
     Returns:
         Dictionary with batch size, median relative rank, and top-k accuracies.
@@ -79,56 +78,33 @@ def retrieval_metrics(
         negatives = Y_true
     size = len(negatives)
     output = {"size": size}
-    if isinstance(Y_true, np.ndarray) and isinstance(Y_pred, np.ndarray):
-        # TODO Adapt the numpy part to mimic the pytorch part with negatives
-        pdists = pairwise_distances(
-            Y_true,
+    if metric == "cosine":
+        dist_to_negatives = 1 - tm.functional.pairwise_cosine_similarity(
             Y_pred,
-            metric=metric,
-            n_jobs=n_jobs,
+            negatives,
         )
-        ground_truth_dist = pdists.diagonal()[:, None]
-        ranks = (pdists < ground_truth_dist).sum(1)
-        output["relative_median_rank"] = (np.median(ranks) - 1) / (size - 1)
-        for top_k in top_k_accuracies:
-            accuracy = (ranks < top_k).mean()
-            output[f"top_{top_k}_accuracy"] = accuracy
-    elif (
-        isinstance(Y_true, torch.Tensor)
-        and isinstance(Y_pred, torch.Tensor)
-        and isinstance(negatives, torch.Tensor)
-    ):
-        if metric == "cosine":
-            dist_to_negatives = 1 - tmf.pairwise_cosine_similarity(
-                Y_pred,
-                negatives,
-            )
-            dist_to_ground_truth = 1 - torch.cosine_similarity(
-                Y_true, Y_pred, dim=1
-            ).reshape(-1, 1)
-        elif metric == "euclidean":
-            dist_to_negatives = tmf.pairwise_euclidean_distance(
-                Y_pred,
-                negatives,
-            )
-            dist_to_ground_truth = (
-                ((Y_true - Y_pred) ** 2).sum(dim=1).sqrt().reshape(-1, 1)
-            )
-        else:
-            raise ValueError(
-                "Metric not supported. Supported metrics are cosine and euclidean."
-            )
-        ranks = (dist_to_ground_truth > dist_to_negatives).sum(1).float()
-        output["relative_median_rank"] = torch.quantile(ranks, q=0.5).item() / size
-        for top_k in top_k_accuracies:
-            accuracy = ranks < top_k
-            accuracy = accuracy.cpu().numpy().mean()
-            output[f"top_{top_k}_accuracy"] = accuracy
-        ranks = ranks.cpu()
+        dist_to_ground_truth = 1 - torch.cosine_similarity(
+            Y_true, Y_pred, dim=1
+        ).reshape(-1, 1)
+    elif metric == "euclidean":
+        dist_to_negatives = tm.functional.pairwise_euclidean_distance(
+            Y_pred,
+            negatives,
+        )
+        dist_to_ground_truth = (
+            ((Y_true - Y_pred) ** 2).sum(dim=1).sqrt().reshape(-1, 1)
+        )
     else:
         raise ValueError(
-            "Input types not supported. Supported types are np.ndarray and torch.Tensor."
+            "Metric not supported. Supported metrics are cosine and euclidean."
         )
+    ranks = (dist_to_ground_truth > dist_to_negatives).sum(1).float()
+    output["relative_median_rank"] = torch.quantile(ranks, q=0.5).item() / size
+    for top_k in top_k_accuracies:
+        accuracy = ranks < top_k
+        accuracy = accuracy.cpu().numpy().mean()
+        output[f"top_{top_k}_accuracy"] = accuracy
+    ranks = ranks.cpu()
     if return_ranks:
         output["relative_ranks"] = ranks / size
     return output
@@ -137,37 +113,39 @@ def retrieval_metrics(
 def scores(
     Y_true: np.ndarray,
     Y_pred: np.ndarray,
-    metric: str = "cosine",
-    top_k_accuracies: List[int] = [1, 5, 10, 50],
-    n_jobs: int = -2,
-) -> Dict[str, np.ndarray]:
-    """
-    Calculate different scores between true and predicted values.
-
-    Args:
-        Y_true: True values.
-        Y_pred: Predicted values.
-        metric: Distance metric to use for calculating pairwise distances.
-        top_k_accuracies: List of top-k values for accuracy calculation.
-        n_jobs: Number of parallel jobs to run for pairwise distance calculation.
-
-    Returns:
-        Dictionary of scores.
-
-    """
-    output = {
-        "mse": ((Y_true - Y_pred) ** 2).mean(axis=0),
-        "r2": r2_score(Y_true, Y_pred, multioutput="raw_values"),
-        "r": corr(Y_true, Y_pred, axis=0),
+) -> Dict[str, float]:
+    return {
+        "median_r2": np.median(
+            r2_score(Y_true, Y_pred, multioutput="raw_values")
+        ),
+        "median_r": np.median(corr(Y_true, Y_pred, axis=0)),
     }
-    output.update(
-        retrieval_metrics(
-            Y_true,
+
+
+def nlp_metrics(
+    Y_pred: torch.Tensor,
+    true_chunks: List[str],
+    candidates: torch.Tensor,
+    chunks_with_context: pd.Series,
+    metric: str = "cosine",
+    n_nlp_candidates: int = 10,
+):
+    if metric == "cosine":
+        dist_to_candidates = 1 - tm.functional.pairwise_cosine_similarity(
             Y_pred,
-            None,
-            metric,
-            top_k_accuracies,
-            n_jobs,
+            candidates,
         )
+    elif metric == "euclidean":
+        dist_to_candidates = tm.functional.pairwise_euclidean_distance(
+            Y_pred,
+            candidates,
+        )
+    else:
+        raise ValueError(
+            "Metric not supported. Supported metrics are cosine and euclidean."
+        )
+    candidates_sorted = dist_to_candidates.argsort(axis=1)[:, :n_nlp_candidates]
+    top_candidates = chunks_with_context.values[candidates_sorted.flatten()]
+    bertscore = tm.text.bert.BERTScore(
+        "microsoft/deberta-xlarge-mnli", idf=True, rescale_with_baseline=True
     )
-    return output

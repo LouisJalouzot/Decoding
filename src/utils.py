@@ -40,6 +40,8 @@ ignore = [
     "return_data",
     "cache",
     "wandb_mode",
+    "log_run_metrics",
+    "extra_metrics",
 ]
 
 

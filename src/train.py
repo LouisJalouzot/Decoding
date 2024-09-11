@@ -1,6 +1,4 @@
-from collections import defaultdict
 from copy import deepcopy
-from pathlib import Path
 from time import time
 
 import numpy as np
@@ -12,74 +10,8 @@ from sklearn.utils import shuffle
 import wandb
 from src.base_decoders import GRU, LSTM, RNN, BrainDecoder, SimpleMLP
 from src.decoder_wrapper import DecoderWrapper
-from src.metrics import retrieval_metrics, scores
+from src.evaluator import Evaluator
 from src.utils import console, device
-
-
-def evaluate(
-    df,
-    decoder,
-    negatives,
-    top_k_accuracies,
-    extra_metrics,
-    log_run_metrics,
-):
-    decoder.eval()
-
-    metrics = defaultdict(list)
-    negatives = negatives.to(device)
-    with torch.no_grad():
-        for _, row in df.iterrows():
-            X = row.X.to(device)
-            Y = row.Y.to(device)
-            run_metrics = {}
-            with torch.autocast(device_type=device.type, dtype=torch.bfloat16):
-                X_proj = decoder.projector[row.dataset][row.subject](X)
-                # Evaluate losses
-                _, mixco = decoder.mixco_loss(X_proj, Y)
-                run_metrics["mixco"] = mixco.item()
-                Y_preds, symm_nce = decoder.symm_nce_loss(X_proj, Y)
-                run_metrics["symm_nce"] = symm_nce.item()
-                run_metrics["mse"] = decoder.mse_loss(X_proj, Y, Y_preds)[
-                    1
-                ].item()
-            # Evaluate retrieval metrics
-            run_metrics = retrieval_metrics(
-                Y,
-                Y_preds,
-                negatives,
-                return_ranks=True,
-                top_k_accuracies=top_k_accuracies,
-            )
-            # if extra_metrics:
-            #     run_metrics.update(scores(Y, Y_preds))
-            #     relative_ranks = run_metrics["relative_ranks"]
-            #     negatives_sorted = relative_ranks.argsort(dim=1)[:10]
-            subject_id = f"{row.dataset}/{row.subject}"
-            if log_run_metrics:
-                run_id = f"{row.dataset}/{row.run}"
-                names = ["", f"{subject_id}/", f"{run_id}/"]
-            else:
-                names = ["", f"{subject_id}/"]
-            for key, value in run_metrics.items():
-                for name in names:
-                    metrics[name + key].append(value)
-    metrics_agg = {}
-    for key, value in metrics.items():
-        if key.endswith("relative_ranks"):
-            relative_ranks = torch.cat(value).cpu()
-            relative_median_rank = torch.quantile(relative_ranks, q=0.5).item()
-            metrics[key] = wandb.Histogram(relative_ranks, num_bins=100)
-            metrics_agg[
-                key.replace("relative_ranks", "relative_median_rank")
-            ] = relative_median_rank
-            metrics_agg[key.replace("relative_ranks", "size")] = (
-                relative_ranks.shape[0]
-            )
-        else:
-            metrics[key] = np.mean(value)
-    metrics.update(metrics_agg)
-    return metrics
 
 
 def train(
@@ -88,12 +20,11 @@ def train(
     df_test,
     decoder="brain_decoder",
     patience=20,
-    monitor="valid/relative_median_rank",
+    monitor="valid/relative_ranks_median",
     loss="mixco",
     weight_decay=1e-6,
     lr=1e-4,
     max_epochs=200,
-    clip_grad_norm=1.0,
     batch_size=1,
     log_run_metrics=False,
     extra_metrics=True,
@@ -106,6 +37,7 @@ def train(
 
     Y_valid = df_valid.drop_duplicates(["dataset", "run"]).Y
     Y_valid = torch.cat(tuple(Y_valid)).to(device)
+    chunks_valid = df_valid.chunks_with_context.explode().values
 
     out_dim = df_train.hidden_dim.iloc[0]
     wandb.config["out_dim"] = out_dim
@@ -167,6 +99,11 @@ def train(
     best_monitor_metric, patience_counter = np.inf, 0
     torch.autograd.set_detect_anomaly(True)
 
+    # Initialize the Evaluator
+    evaluator = Evaluator(
+        extra_metrics=extra_metrics, log_run_metrics=log_run_metrics
+    )
+
     table = Table(
         "Epoch",
         "Monitor",
@@ -195,20 +132,15 @@ def train(
                     train_loss.backward()
                     train_losses.append(train_loss.item())
 
-                if clip_grad_norm != 0.0:
-                    torch.nn.utils.clip_grad_norm_(
-                        decoder.parameters(), clip_grad_norm
-                    )
                 optimizer.step()
 
             # Validation step
-            val_metrics = evaluate(
+            val_metrics = evaluator.evaluate(
                 df=df_valid,
                 decoder=decoder,
                 negatives=Y_valid,
+                negative_chunks=chunks_valid,
                 top_k_accuracies=top_k_accuracies,
-                extra_metrics=extra_metrics,
-                log_run_metrics=log_run_metrics,
             )
 
             # Log metrics
@@ -217,9 +149,9 @@ def train(
                 **{"valid/" + key: value for key, value in val_metrics.items()},
             }
             if epoch == 1:
-                for key in output:
-                    if not key.endswith("ranks") and key.count("/") < 2:
-                        table.add_column(key)
+                for k, v in output.items():
+                    if k.count("/") < 2 and not isinstance(v, wandb.Histogram):
+                        table.add_column(k)
                 for col in table.columns:
                     col.overflow = "fold"
             wandb.log(output)
@@ -245,7 +177,7 @@ def train(
                 *[
                     f"{v:.3g}"
                     for k, v in output.items()
-                    if not k.endswith("ranks") and k.count("/") < 2
+                    if k.count("/") < 2 and not isinstance(v, wandb.Histogram)
                 ],
             )
 
@@ -266,13 +198,12 @@ def train(
     ]:
         Y_split = df_split.drop_duplicates(["dataset", "run"]).Y
         Y_split = torch.cat(tuple(Y_split))
-        metrics = evaluate(
+        metrics = evaluator.evaluate(
             df=df_split,
             decoder=decoder,
             negatives=Y_split,
+            negative_chunks=df_split.chunks_with_context.explode().values,
             top_k_accuracies=top_k_accuracies,
-            extra_metrics=extra_metrics,
-            log_run_metrics=log_run_metrics,
         )
         for key, value in metrics.items():
             output[split + key] = value
@@ -284,7 +215,7 @@ def train(
 
     for split in ["Train", "Valid", "Test"]:
         console.log(
-            f"{split} relative median rank {output[f'{split.lower()}/relative_median_rank']:.3g} (size {output[f'{split.lower()}/size']})"
+            f"{split} relative median rank {output[f'{split.lower()}/relative_ranks_median']:.3g} (size {output[f'{split.lower()}/size']})"
         )
 
     return output, decoder.cpu()

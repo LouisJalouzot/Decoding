@@ -1,3 +1,4 @@
+import os
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Union
@@ -12,7 +13,7 @@ from sklearn.preprocessing import StandardScaler
 import wandb
 from src.prepare_latents import prepare_latents
 from src.train import train
-from src.utils import console, progress
+from src.utils import console, device, progress
 
 
 def read(dataset, subject, run, lag, smooth, stack):
@@ -49,12 +50,38 @@ def main(
     valid_ratio: float = 0.1,
     test_ratio: float = 0.1,
     seed: int = 0,
+    top_encoding_voxels: int = None,
+    token_aggregation: str = "mean",
     latents_batch_size: int = 64,
     return_data: bool = False,
-    top_encoding_voxels: int = None,
-    token_aggregation: str = "mean",  # Choose from ["first", "last", "max", "mean"]
+    log_run_metrics: bool = False,
+    extra_metrics: bool = True,
     **decoder_params,
 ):
+    console.log("Running on device", device)
+    if subjects is None:
+        if runs is None:
+            subjects = {
+                dataset: sorted(os.listdir(f"datasets/{dataset}"))
+                for dataset in datasets
+            }
+            runs = {
+                dataset: {
+                    subject: sorted(
+                        [
+                            Path(f).stem
+                            for f in os.listdir(f"datasets/{dataset}/{subject}")
+                        ]
+                    )
+                    for subject in subjects[dataset]
+                }
+                for dataset in subjects
+            }
+            wandb.config["runs"] = runs
+        else:
+            subjects = {dataset: list(runs[dataset].keys()) for dataset in runs}
+        wandb.config["subjects"] = subjects
+
     np.random.seed(seed)
     torch.manual_seed(seed)
     n_runs = sum([len(r) for s in runs.values() for r in s.values()])
@@ -248,7 +275,13 @@ def main(
         return df_train, df_valid, df_test
 
     output = train(
-        df_train, df_valid, df_test, decoder=decoder, **decoder_params
+        df_train,
+        df_valid,
+        df_test,
+        decoder=decoder,
+        log_run_metrics=log_run_metrics,
+        extra_metrics=extra_metrics,
+        **decoder_params,
     )
 
     torch.cuda.empty_cache()

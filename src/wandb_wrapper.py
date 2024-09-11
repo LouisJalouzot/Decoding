@@ -1,12 +1,10 @@
 import json
-import os
 from hashlib import sha1
-from pathlib import Path
 from typing import Dict, List, Union
 
 import wandb
 from src.main import main
-from src.utils import console, device, ignore, memory
+from src.utils import ignore, memory, wandb_ignore
 
 wandb.require("core")
 
@@ -14,6 +12,7 @@ wandb.require("core")
 def wandb_wrapper(
     datasets: Union[str, List[str]] = ["lebel2023"],
     subjects: Dict[str, List[str]] = None,
+    runs: Dict[str, Dict[str, List[str]]] = None,
     decoder: str = "brain_decoder",
     model: str = "bert-base-uncased",
     context_length: int = 6,
@@ -26,33 +25,14 @@ def wandb_wrapper(
     wandb_mode: str = "online",
     **kwargs,
 ):
-    console.log("Running on device", device)
-    if subjects is None:
-        subjects = {
-            dataset: sorted(os.listdir(f"datasets/{dataset}"))
-            for dataset in datasets
-        }
-    runs = {
-        dataset: {
-            subject: sorted(
-                [
-                    Path(f).stem
-                    for f in os.listdir(f"datasets/{dataset}/{subject}")
-                ]
-            )
-            for subject in subjects[dataset]
-        }
-        for dataset in subjects
-    }
-
     config = {
         key: value
         for key, value in locals().items()
-        if key not in ["cache", "wandb_mode", "kwargs"]
+        if key not in ["cache", "wandb_mode", "kwargs"] and value is not None
     }
     config.update(kwargs)
     config_wandb = {
-        key: value for key, value in config.items() if key not in ignore
+        key: value for key, value in config.items() if key not in wandb_ignore
     }
     for key, value in config.items():
         if isinstance(value, dict):

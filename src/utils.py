@@ -34,15 +34,12 @@ progress = Progress(
 )
 
 ignore = [
-    "verbose",
-    "n_jobs",
     "latents_batch_size",
     "return_data",
-    "cache",
-    "wandb_mode",
     "log_run_metrics",
     "extra_metrics",
 ]
+wandb_ignore = ignore + ["cache", "wandb_mode", "n_jobs", "verbose"]
 
 
 def _get_free_gpu():

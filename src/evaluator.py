@@ -159,7 +159,7 @@ class Evaluator:
             import warnings
 
             warnings.filterwarnings("ignore", module="transformers")
-            nltk.download("universal_tagset", quiet=True)
+            nltk.download("punkt_tab", quiet=True)
             self.bertscore = tm.text.bert.BERTScore(
                 "distilbert-base-uncased-distilled-squad",
                 rescale_with_baseline=True,

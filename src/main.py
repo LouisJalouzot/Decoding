@@ -59,31 +59,34 @@ def main(
     **decoder_params,
 ):
     console.log("Running on device", device)
-    if subjects is None:
-        if runs is None:
+    if runs is None:
+        if subjects is None:
             subjects = {
                 dataset: sorted(os.listdir(f"datasets/{dataset}"))
                 for dataset in datasets
             }
-            runs = {
-                dataset: {
-                    subject: sorted(
-                        [
-                            Path(f).stem
-                            for f in os.listdir(f"datasets/{dataset}/{subject}")
-                        ]
-                    )
-                    for subject in subjects[dataset]
-                }
-                for dataset in subjects
+            wandb.config["subjects"] = subjects
+        runs = {
+            dataset: {
+                subject: sorted(
+                    [
+                        Path(f).stem
+                        for f in os.listdir(f"datasets/{dataset}/{subject}")
+                    ]
+                )
+                for subject in subjects[dataset]
             }
-            wandb.config["runs"] = runs
-        else:
-            subjects = {dataset: list(runs[dataset].keys()) for dataset in runs}
+            for dataset in subjects
+        }
+        wandb.config["runs"] = runs
+    else:
+        subjects = {dataset: list(runs[dataset].keys()) for dataset in runs}
         wandb.config["subjects"] = subjects
 
     np.random.seed(seed)
     torch.manual_seed(seed)
+    if device.type == "cuda":
+        torch.cuda.manual_seed(seed)
     n_runs = sum([len(r) for s in runs.values() for r in s.values()])
     if n_runs == 0:
         raise ValueError(

@@ -41,7 +41,7 @@ nilearn = "^0.10.4"
 joblib-progress = "^1.0.5"
 h5py = "^3.11.0"
 nltk = "^3.9.1"
-werpy = "^2.1.2"
+werpy = {git = "https://github.com/LouisJalouzot/werpy"}
 
 
 [tool.poetry.group.dev.dependencies]

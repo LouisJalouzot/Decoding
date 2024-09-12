@@ -244,18 +244,20 @@ class Evaluator:
                     # Compute GloVe bag of words cosine similarity
                     chunks_glove = np.array(
                         [self.get_glove_embedding(chunk) for chunk in chunks]
-                    ).reshape(-1, 1)
+                    )[:, None]
                     top_negatives_glove = np.array(
                         [
                             self.get_glove_embedding(chunk)
                             for chunk in top_negatives_chunks.flatten()
                         ]
-                    ).reshape(-1, 10)
+                    ).reshape(top_negatives_chunks.shape + (-1,))
                     glove_cosine = (chunks_glove * top_negatives_glove).sum(
-                        axis=1
+                        axis=-1
                     ) / (
-                        np.linalg.norm(chunks_glove, axis=1)
-                        * np.linalg.norm(top_negatives_glove, axis=1)
+                        np.linalg.norm(chunks_glove, axis=-1)
+                        * np.linalg.norm(top_negatives_glove, axis=-1)
+                    ).clip(
+                        1e-9
                     )
                     run_metrics["glove_bow_cosine"] = torch.from_numpy(
                         glove_cosine.reshape(-1)

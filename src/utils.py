@@ -79,3 +79,24 @@ def ewma(data, halflife):
     cumsums = mult.cumsum(0)
     out = offsets + cumsums * scale_arr[::-1, None]
     return out
+
+
+def compute_gradient_norm(model, norm_type=2):
+    """
+    Computes the norm of gradients of all parameters in the model.
+
+    Args:
+        model (torch.nn.Module): The neural network model.
+        norm_type (float): The type of norm to compute (default is 2, which is the L2 norm).
+
+    Returns:
+        float: The computed norm of the gradients.
+    """
+    total_norm = 0
+    for p in model.parameters():
+        if p.grad is not None and p.requires_grad:
+            param_norm = p.grad.detach().data.norm(norm_type)
+            total_norm += param_norm.item() ** norm_type
+    total_norm = total_norm ** (1.0 / norm_type)
+
+    return total_norm

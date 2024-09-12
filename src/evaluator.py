@@ -204,9 +204,7 @@ class Evaluator:
                 X = row.X.to(device)
                 Y = row.Y.to(device)
                 run_metrics = {}
-                with torch.autocast(
-                    device_type=device.type, dtype=torch.bfloat16
-                ):
+                with torch.autocast(device_type=device.type):
                     X_proj = decoder.projector[row.dataset][row.subject](X)
                     # Evaluate losses
                     _, mixco = decoder.mixco_loss(X_proj, Y)

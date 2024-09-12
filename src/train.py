@@ -11,7 +11,7 @@ import wandb
 from src.base_decoders import GRU, LSTM, RNN, BrainDecoder, SimpleMLP
 from src.decoder_wrapper import DecoderWrapper
 from src.evaluator import Evaluator
-from src.utils import console, device
+from src.utils import compute_gradient_norm, console, device
 
 
 def train(
@@ -96,6 +96,8 @@ def train(
         lr=lr,
     )
 
+    scaler = torch.cuda.amp.GradScaler()
+
     top_k_accuracies = [1, 5, 10]
     best_monitor_metric, patience_counter = np.inf, 0
     torch.autograd.set_detect_anomaly(True)
@@ -118,23 +120,23 @@ def train(
             df_train = shuffle(df_train)
             t = time()
             decoder.train()
-            train_losses = []
+            train_losses, grad_norms = [], []
             for i in range(0, len(df_train), batch_size):
                 optimizer.zero_grad()
                 for _, row in df_train.iloc[i : i + batch_size].iterrows():
                     X = row.X.to(device)
                     Y = row.Y.to(device)
-                    with torch.autocast(
-                        device_type=device.type, dtype=torch.bfloat16
-                    ):
+                    with torch.autocast(device_type=device.type):
                         X_proj = decoder.projector[row.dataset][row.subject](X)
                         _, train_loss = decoder.loss(X_proj, Y)
                         train_loss /= batch_size
 
-                    train_loss.backward()
+                    scaler.scale(train_loss).backward()
                     train_losses.append(train_loss.item())
 
-                optimizer.step()
+                grad_norms.append(compute_gradient_norm(decoder))
+                scaler.step(optimizer)
+                scaler.update()
 
             # Validation step
             val_metrics = evaluator.evaluate(
@@ -149,6 +151,7 @@ def train(
             # Log metrics
             output = {
                 "train/" + loss: np.mean(train_losses),
+                "grad_norm": np.mean(grad_norms),
                 **{"valid/" + key: value for key, value in val_metrics.items()},
             }
             if epoch == 1:

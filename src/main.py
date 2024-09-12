@@ -55,7 +55,7 @@ def main(
     latents_batch_size: int = 64,
     return_data: bool = False,
     log_run_metrics: bool = False,
-    extra_metrics: bool = True,
+    extra_metrics: bool = False,
     extra_metrics_loop: bool = False,
     **decoder_params,
 ):

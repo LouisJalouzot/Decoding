@@ -27,7 +27,7 @@ def train(
     max_epochs=200,
     batch_size=1,
     log_run_metrics=False,
-    extra_metrics=True,
+    extra_metrics=False,
     extra_metrics_loop=False,
     **decoder_params,
 ):
@@ -99,7 +99,10 @@ def train(
     scaler = torch.cuda.amp.GradScaler()
 
     top_k_accuracies = [1, 5, 10]
-    best_monitor_metric, patience_counter = np.inf, 0
+    best_monitor_metric = np.inf
+    patience_counter = 0
+    best_epoch = -1
+    output = {}
     torch.autograd.set_detect_anomaly(True)
 
     # Initialize the Evaluator
@@ -195,8 +198,9 @@ def train(
 
     # Restore best model and optimizer
     output["best_epoch"] = best_epoch
-    decoder.load_state_dict(best_decoder_state_dict)
-    optimizer.load_state_dict(best_optimizer_state_dict)
+    if best_epoch != -1:
+        decoder.load_state_dict(best_decoder_state_dict)
+        optimizer.load_state_dict(best_optimizer_state_dict)
 
     for split, df_split in [
         ("train/", df_train),
@@ -221,8 +225,10 @@ def train(
             output[key] = {"bins": value.bins, "histogram": value.histogram}
 
     for split in ["Train", "Valid", "Test"]:
-        console.log(
-            f"{split} relative median rank {output[f'{split.lower()}/relative_ranks_median']:.3g} (size {output[f'{split.lower()}/size']})"
-        )
+        split_key = f"{split.lower()}/relative_ranks_median"
+        if split_key in output:
+            console.log(
+                f"{split} relative median rank {output[split_key]:.3g} (size {output[f'{split.lower()}/size']})"
+            )
 
-    return output, decoder.cpu()
+    return output, decoder._orig_mod.cpu()

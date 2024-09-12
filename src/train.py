@@ -96,8 +96,6 @@ def train(
         lr=lr,
     )
 
-    scaler = torch.cuda.amp.GradScaler()
-
     top_k_accuracies = [1, 5, 10]
     best_monitor_metric = np.inf
     patience_counter = 0
@@ -129,17 +127,15 @@ def train(
                 for _, row in df_train.iloc[i : i + batch_size].iterrows():
                     X = row.X.to(device)
                     Y = row.Y.to(device)
-                    with torch.autocast(device_type=device.type):
-                        X_proj = decoder.projector[row.dataset][row.subject](X)
-                        _, train_loss = decoder.loss(X_proj, Y)
-                        train_loss /= batch_size
+                    X_proj = decoder.projector[row.dataset][row.subject](X)
+                    _, train_loss = decoder.loss(X_proj, Y)
+                    train_loss /= batch_size
 
-                    scaler.scale(train_loss).backward()
+                    train_loss.backward()
                     train_losses.append(train_loss.item())
 
                 grad_norms.append(compute_gradient_norm(decoder))
-                scaler.step(optimizer)
-                scaler.update()
+                optimizer.step()
 
             # Validation step
             val_metrics = evaluator.evaluate(

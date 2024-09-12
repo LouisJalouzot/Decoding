@@ -185,8 +185,11 @@ class Evaluator:
         negatives,
         negative_chunks=None,
         top_k_accuracies=[],
+        extra_metrics=None,
     ):
-        if self.extra_metrics:
+        if extra_metrics is None:
+            extra_metrics = self.extra_metrics
+        if extra_metrics:
             assert (
                 negative_chunks is not None
             ), "Negative chunks required for extra metrics"
@@ -226,10 +229,10 @@ class Evaluator:
                     negatives,
                     top_k_accuracies=top_k_accuracies,
                     return_ranks=True,
-                    return_negatives_dist=self.extra_metrics,
+                    return_negatives_dist=extra_metrics,
                 )
 
-                if self.extra_metrics:
+                if extra_metrics:
                     negatives_dist = run_metrics["negatives_dist"]
                     top_negatives_idx = negatives_dist.argsort(dim=1)[:, :10]
                     top_negatives_chunks = negative_chunks[

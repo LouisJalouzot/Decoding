@@ -56,6 +56,7 @@ def main(
     return_data: bool = False,
     log_run_metrics: bool = False,
     extra_metrics: bool = True,
+    extra_metrics_loop: bool = False,
     **decoder_params,
 ):
     console.log("Running on device", device)
@@ -284,6 +285,7 @@ def main(
         decoder=decoder,
         log_run_metrics=log_run_metrics,
         extra_metrics=extra_metrics,
+        extra_metrics_loop=extra_metrics_loop,
         **decoder_params,
     )
 

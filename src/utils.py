@@ -38,6 +38,7 @@ ignore = [
     "return_data",
     "log_run_metrics",
     "extra_metrics",
+    "extra_metrics_loop",
 ]
 wandb_ignore = ignore + ["cache", "wandb_mode", "n_jobs", "verbose"]
 

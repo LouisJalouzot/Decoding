@@ -28,6 +28,7 @@ def train(
     batch_size=1,
     log_run_metrics=False,
     extra_metrics=True,
+    extra_metrics_loop=False,
     **decoder_params,
 ):
     if decoder.lower() in ["rnn", "gru", "lstm"] and loss == "mixco":
@@ -101,7 +102,8 @@ def train(
 
     # Initialize the Evaluator
     evaluator = Evaluator(
-        extra_metrics=extra_metrics, log_run_metrics=log_run_metrics
+        extra_metrics=extra_metrics or extra_metrics_loop,
+        log_run_metrics=log_run_metrics,
     )
 
     table = Table(
@@ -141,6 +143,7 @@ def train(
                 negatives=Y_valid,
                 negative_chunks=chunks_valid,
                 top_k_accuracies=top_k_accuracies,
+                extra_metrics=extra_metrics_loop,
             )
 
             # Log metrics
@@ -204,6 +207,7 @@ def train(
             negatives=Y_split,
             negative_chunks=df_split.chunks_with_context.explode().values,
             top_k_accuracies=top_k_accuracies,
+            extra_metrics=extra_metrics or extra_metrics_loop,
         )
         for key, value in metrics.items():
             output[split + key] = value

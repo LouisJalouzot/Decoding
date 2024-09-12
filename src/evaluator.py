@@ -277,12 +277,9 @@ class Evaluator:
                         top_negatives_chunks.flatten(), chunks.repeat(10)
                     )["f1"]
 
-                subject_id = f"{row.dataset}/{row.subject}"
+                names = ["", f"subject_{row.dataset}_{row.subject}/"]
                 if self.log_run_metrics:
-                    run_id = f"{row.dataset}/{row.run}"
-                    names = ["", f"{subject_id}/", f"{run_id}/"]
-                else:
-                    names = ["", f"{subject_id}/"]
+                    names.append(f"run_{row.dataset}_{row.run}/")
                 for key, value in run_metrics.items():
                     if key != "negatives_dist":
                         for name in names:

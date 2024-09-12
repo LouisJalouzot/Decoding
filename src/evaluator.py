@@ -173,10 +173,10 @@ class Evaluator:
         # Remove punctuation
         text = text.translate(str.maketrans("", "", string.punctuation))
         words = text.lower().split()
-        vectors = [
-            self.glove_embeddings.get(word, np.zeros(50)) for word in words
-        ]
-        return np.mean(vectors, axis=0)
+        glove_bow = np.zeros(50)
+        for word in words:
+            glove_bow += self.glove_embeddings.get(word, np.zeros(50))
+        return glove_bow / max(1, len(words))
 
     def evaluate(
         self,

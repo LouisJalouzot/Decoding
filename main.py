@@ -51,9 +51,10 @@ parser.add_argument(
     ],
 )
 parser.add_argument("--wandb_mode", type=str)
-parser.add_argument("--no-cache", dest="cache", action="store_false")
+parser.add_argument("--cache_model", action="store_true")
 parser.add_argument("--extra_metrics", action="store_true")
 parser.add_argument("--extra_metrics_loop", action="store_true")
+parser.add_argument("--n_candidates", type=int)
 
 args = parser.parse_args()
 args = {key: value for key, value in vars(args).items() if value is not None}

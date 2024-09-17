@@ -26,7 +26,6 @@ def train(
     lr=1e-4,
     max_epochs=200,
     batch_size=1,
-    log_run_metrics=False,
     extra_metrics=False,
     extra_metrics_loop=False,
     **decoder_params,
@@ -106,7 +105,6 @@ def train(
     # Initialize the Evaluator
     evaluator = Evaluator(
         extra_metrics=extra_metrics or extra_metrics_loop,
-        log_run_metrics=log_run_metrics,
     )
 
     table = Table(
@@ -216,10 +214,6 @@ def train(
             output[split + key] = value
     wandb.log(output)
 
-    for key, value in output.items():
-        if isinstance(value, wandb.Histogram):
-            output[key] = {"bins": value.bins, "histogram": value.histogram}
-
     for split in ["Train", "Valid", "Test"]:
         split_key = f"{split.lower()}/relative_ranks_median"
         if split_key in output:
@@ -227,4 +221,4 @@ def train(
                 f"{split} relative median rank {output[split_key]:.3g} (size {output[f'{split.lower()}/size']})"
             )
 
-    return output, decoder._orig_mod.cpu()
+    return decoder._orig_mod.cpu()

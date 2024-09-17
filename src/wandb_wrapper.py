@@ -21,14 +21,15 @@ def wandb_wrapper(
     smooth: int = 0,
     multi_subject_mode: str = "individual",
     return_data: bool = False,
-    cache: bool = True,
+    cache_model: bool = True,
     wandb_mode: str = "online",
     **kwargs,
 ):
     config = {
         key: value
         for key, value in locals().items()
-        if key not in ["cache", "wandb_mode", "kwargs"] and value is not None
+        if key not in ["cache_model", "wandb_mode", "kwargs"]
+        and value is not None
     }
     config.update(kwargs)
     config_wandb = {
@@ -40,13 +41,15 @@ def wandb_wrapper(
     wandb.init(
         config=config_wandb,
         id=sha1(repr(sorted(config.items())).encode()).hexdigest(),
-        project="fMRI-Decoding-v5",
+        # project="fMRI-Decoding-v5",
+        project="Test",
         save_code=True,
         mode=wandb_mode,
     )
-    if cache:
+    if cache_model:
         output = memory.cache(main, ignore=ignore)(**config)
     else:
         output = main(**config)
     wandb.finish()
+
     return output

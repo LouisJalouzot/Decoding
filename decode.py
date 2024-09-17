@@ -63,7 +63,7 @@ config = {
 _, decoder = main(wandb_mode="disabled", **config)
 decoder = decoder.to(device)
 df_train, df_valid, df_test = main(
-    return_data=True, cache=False, wandb_mode="disabled", **config
+    return_data=True, cache_model=False, wandb_mode="disabled", **config
 )
 
 # %% Semantic/syntactic beam search decoding

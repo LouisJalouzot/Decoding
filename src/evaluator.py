@@ -7,6 +7,7 @@ from typing import List, Union
 
 import nltk
 import numpy as np
+import pandas as pd
 import requests
 import torch
 import torchmetrics as tm
@@ -71,7 +72,8 @@ def retrieval_metrics(
         )
     if negatives is None:
         negatives = Y_true
-    size = len(negatives)
+    size = len(Y_true)
+    retrieval_size = len(negatives)
     output = {"size": size}
     if metric == "cosine":
         dist_to_negatives = 1 - tm.functional.pairwise_cosine_similarity(
@@ -99,7 +101,7 @@ def retrieval_metrics(
         accuracy = accuracy.cpu().numpy().mean()
         output[f"top_{top_k}_accuracy"] = accuracy
     if return_ranks:
-        output["relative_ranks"] = (ranks / size).cpu()
+        output["relative_ranks"] = (ranks / retrieval_size).cpu()
     if return_negatives_dist:
         output["negatives_dist"] = dist_to_negatives.cpu()
     return output
@@ -151,9 +153,8 @@ def nltk_pos_tag(chunks):
 
 
 class Evaluator:
-    def __init__(self, extra_metrics=False, log_run_metrics=False):
+    def __init__(self, extra_metrics=False):
         self.extra_metrics = extra_metrics
-        self.log_run_metrics = log_run_metrics
 
         if self.extra_metrics:
             import warnings
@@ -186,6 +187,7 @@ class Evaluator:
         negative_chunks=None,
         top_k_accuracies=[],
         extra_metrics=None,
+        n_candidates=10,
     ):
         if extra_metrics is None:
             extra_metrics = self.extra_metrics
@@ -193,12 +195,17 @@ class Evaluator:
             assert (
                 negative_chunks is not None
             ), "Negative chunks required for extra metrics"
+            assert len(negative_chunks) == len(negatives)
+            assert n_candidates is not None
             negative_chunks = np.array(negative_chunks)
 
         decoder.eval()
 
         metrics = defaultdict(list)
         negatives = negatives.to(device)
+
+        # extra_metrics_data = []
+
         with torch.no_grad():
             for _, row in df.iterrows():
                 X = row.X.to(device)
@@ -214,12 +221,11 @@ class Evaluator:
                     run_metrics["mse"] = decoder.mse_loss(X_proj, Y, Y_preds)[
                         1
                     ].item()
-                    run_metrics["median_r"] = corr(Y, Y_preds).median().item()
-                    run_metrics["median_r2"] = np.median(
-                        r2_score(
-                            Y.cpu(), Y_preds.cpu(), multioutput="raw_values"
-                        )
-                    )
+                    run_metrics["mean_r"] = corr(Y, Y_preds).mean().item()
+                    run_metrics["mean_r2"] = r2_score(
+                        row.Y, Y_preds.cpu(), multioutput="raw_values"
+                    ).mean()
+
                 # Evaluate retrieval metrics
                 run_metrics = retrieval_metrics(
                     Y,
@@ -241,64 +247,69 @@ class Evaluator:
                     )
                     chunks = np.array(row.chunks_with_context)
 
-                    # Compute GloVe bag of words cosine similarity
-                    chunks_glove = np.array(
-                        [self.get_glove_embedding(chunk) for chunk in chunks]
-                    )[:, None]
-                    top_negatives_glove = np.array(
-                        [
-                            self.get_glove_embedding(chunk)
-                            for chunk in top_negatives_chunks.flatten()
-                        ]
-                    ).reshape(top_negatives_chunks.shape + (-1,))
-                    glove_cosine = (chunks_glove * top_negatives_glove).sum(
-                        axis=-1
-                    ) / (
-                        np.linalg.norm(chunks_glove, axis=-1)
-                        * np.linalg.norm(top_negatives_glove, axis=-1)
-                    ).clip(
-                        1e-9
-                    )
-                    run_metrics["glove_bow_cosine"] = torch.from_numpy(
-                        glove_cosine.reshape(-1)
-                    )
+                    # all_chunks.extend(chunks)
+                    # all_top_negatives_chunks.extend(top_negatives_chunks)
 
-                    # Compute POS WER
-                    chunks_pos = nltk_pos_tag(chunks)
-                    top_negatives_chunks_pos = nltk_pos_tag(
-                        top_negatives_chunks.flatten()
-                    ).reshape(-1, 10)
-                    pos_wer = werpy.wers(chunks_pos, top_negatives_chunks_pos.T)
-                    run_metrics["pos_wer"] = torch.Tensor(pos_wer).reshape(-1)
-
-                    # Compute WER
-                    wers = werpy.wers(chunks, top_negatives_chunks.T)
-                    run_metrics["wer"] = torch.Tensor(wers).reshape(-1)
-
-                    # Compute F1 BERTScore
-                    run_metrics["bert_f1"] = self.bertscore(
-                        top_negatives_chunks.flatten(), chunks.repeat(10)
-                    )["f1"]
-
-                names = ["", f"subject_{row.dataset}_{row.subject}/"]
-                if self.log_run_metrics:
-                    names.append(f"run_{row.dataset}_{row.run}/")
                 for key, value in run_metrics.items():
                     if key != "negatives_dist":
-                        for name in names:
-                            metrics[name + key].append(value)
+                        if isinstance(value, torch.Tensor):
+                            value = [
+                                [row.dataset, row.subject, row.run, v.item()]
+                                for v in value
+                            ]
+                            metrics[key].extend(value)
+                        else:
+                            metrics[key].append(
+                                [row.dataset, row.subject, row.run, value]
+                            )
 
-        metrics_median = {}
+        if extra_metrics:
+            all_chunks = np.array(all_chunks)
+            all_top_negatives_chunks = np.array(all_top_negatives_chunks)
+
+            # Compute GloVe bag of words cosine similarity
+            chunks_glove = np.array(
+                [self.get_glove_embedding(chunk) for chunk in all_chunks]
+            )[:, None]
+            top_negatives_glove = np.array(
+                [
+                    self.get_glove_embedding(chunk)
+                    for chunk in all_top_negatives_chunks.flatten()
+                ]
+            ).reshape(all_top_negatives_chunks.shape + (-1,))
+            glove_cosine = (chunks_glove * top_negatives_glove).sum(axis=-1) / (
+                np.linalg.norm(chunks_glove, axis=-1)
+                * np.linalg.norm(top_negatives_glove, axis=-1)
+            ).clip(1e-9)
+            metrics["glove_bow_cosine"] = torch.from_numpy(
+                glove_cosine.reshape(-1)
+            )
+
+            # Compute POS WER
+            chunks_pos = nltk_pos_tag(all_chunks)
+            top_negatives_chunks_pos = nltk_pos_tag(
+                all_top_negatives_chunks.flatten()
+            ).reshape(-1, 10)
+            pos_wer = werpy.wers(chunks_pos, top_negatives_chunks_pos.T)
+            metrics["pos_wer"] = torch.Tensor(pos_wer).reshape(-1)
+
+            # Compute WER
+            wers = werpy.wers(
+                all_chunks, all_top_negatives_chunks.reshape(-1, 10).T
+            )
+            metrics["wer"] = torch.Tensor(wers).reshape(-1)
+
+            # Compute F1 BERTScore
+            metrics["bert_f1"] = self.bertscore(
+                all_top_negatives_chunks.flatten(), all_chunks.repeat(10)
+            )["f1"]
+
+        output = {}
         for key, value in metrics.items():
-            if isinstance(value[0], torch.Tensor):
-                value = torch.cat(value).cpu()
-                metrics[key] = wandb.Histogram(value, num_bins=100)
-                metrics_median[key + "_median"] = torch.quantile(
-                    value, q=0.5
-                ).item()
-            elif key.endswith("_size"):
-                metrics[key] = np.sum(value)
-            else:
-                metrics[key] = np.mean(value)
-        metrics.update(metrics_median)
-        return metrics
+            df = pd.DataFrame(value, columns=["dataset", "subject", "run", key])
+            output[key] = df
+            if key == "relative_ranks":
+                output["relative_ranks_median"] = df["relative_ranks"].median()
+        output["retrieval_size"] = len(negatives)
+
+        return output

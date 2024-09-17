@@ -54,9 +54,9 @@ def main(
     token_aggregation: str = "mean",
     latents_batch_size: int = 64,
     return_data: bool = False,
-    log_run_metrics: bool = False,
     extra_metrics: bool = False,
     extra_metrics_loop: bool = False,
+    n_candidates: int = 10,
     **decoder_params,
 ):
     console.log("Running on device", device)
@@ -261,7 +261,7 @@ def main(
                 )
             )
         },
-        step=0,
+        commit=False,
     )
 
     df_train = df[df.split == "train"]
@@ -283,7 +283,6 @@ def main(
         df_valid,
         df_test,
         decoder=decoder,
-        log_run_metrics=log_run_metrics,
         extra_metrics=extra_metrics,
         extra_metrics_loop=extra_metrics_loop,
         **decoder_params,

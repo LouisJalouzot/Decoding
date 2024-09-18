@@ -3,11 +3,11 @@ from time import time
 
 import numpy as np
 import torch
+import wandb
 from rich.live import Live
 from rich.table import Table
 from sklearn.utils import shuffle
 
-import wandb
 from src.base_decoders import GRU, LSTM, RNN, BrainDecoder, SimpleMLP
 from src.decoder_wrapper import DecoderWrapper
 from src.evaluator import Evaluator
@@ -20,14 +20,14 @@ def train(
     df_test,
     decoder="brain_decoder",
     patience=20,
-    monitor="valid/relative_ranks_median",
+    monitor="valid/relative_rank_median",
     loss="mixco",
     weight_decay=1e-6,
     lr=1e-4,
     max_epochs=200,
     batch_size=1,
-    extra_metrics=False,
-    extra_metrics_loop=False,
+    log_extra_metrics=False,
+    log_extra_metrics_loop=False,
     **decoder_params,
 ):
     if decoder.lower() in ["rnn", "gru", "lstm"] and loss == "mixco":
@@ -104,7 +104,7 @@ def train(
 
     # Initialize the Evaluator
     evaluator = Evaluator(
-        extra_metrics=extra_metrics or extra_metrics_loop,
+        log_extra_metrics=log_extra_metrics or log_extra_metrics_loop,
     )
 
     table = Table(
@@ -142,7 +142,7 @@ def train(
                 negatives=Y_valid,
                 negative_chunks=chunks_valid,
                 top_k_accuracies=top_k_accuracies,
-                extra_metrics=extra_metrics_loop,
+                log_extra_metrics=log_extra_metrics_loop,
             )
 
             # Log metrics
@@ -153,7 +153,7 @@ def train(
             }
             if epoch == 1:
                 for k, v in output.items():
-                    if not isinstance(v, wandb.Table):
+                    if isinstance(v, float):
                         table.add_column(k)
                 for col in table.columns:
                     col.overflow = "fold"
@@ -177,11 +177,7 @@ def train(
                 monitor_metric,
                 str(patience - patience_counter),
                 f"{time() - t:.3g}s",
-                *[
-                    f"{v:.3g}"
-                    for v in output.values()
-                    if not isinstance(v, wandb.Table)
-                ],
+                *[f"{v:.3g}" for v in output.values() if isinstance(v, float)],
             )
 
             if patience_counter >= patience:
@@ -209,14 +205,14 @@ def train(
             negatives=Y_split,
             negative_chunks=df_split.chunks_with_context.explode().values,
             top_k_accuracies=top_k_accuracies,
-            extra_metrics=extra_metrics or extra_metrics_loop,
+            log_extra_metrics=log_extra_metrics or log_extra_metrics_loop,
             log_tables=True,
         ).items():
             output[split + key] = value
     wandb.summary.update(output)
 
     for split in ["Train", "Valid", "Test"]:
-        split_key = f"{split.lower()}/relative_ranks_median"
+        split_key = f"{split.lower()}/relative_rank_median"
         if split_key in output:
             console.log(
                 f"{split} relative median rank {output[split_key]:.3g} (size {output[f'{split.lower()}/size']})"

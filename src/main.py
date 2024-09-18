@@ -54,8 +54,8 @@ def main(
     token_aggregation: str = "mean",
     latents_batch_size: int = 64,
     return_data: bool = False,
-    extra_metrics: bool = False,
-    extra_metrics_loop: bool = False,
+    log_extra_metrics: bool = False,
+    log_extra_metrics_loop: bool = False,
     n_candidates: int = 10,
     **decoder_params,
 ):
@@ -283,8 +283,8 @@ def main(
         df_valid,
         df_test,
         decoder=decoder,
-        extra_metrics=extra_metrics,
-        extra_metrics_loop=extra_metrics_loop,
+        log_extra_metrics=log_extra_metrics,
+        log_extra_metrics_loop=log_extra_metrics_loop,
         **decoder_params,
     )
 

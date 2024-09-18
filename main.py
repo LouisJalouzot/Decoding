@@ -52,8 +52,8 @@ parser.add_argument(
 )
 parser.add_argument("--wandb_mode", type=str)
 parser.add_argument("--cache_model", action="store_true")
-parser.add_argument("--extra_metrics", action="store_true")
-parser.add_argument("--extra_metrics_loop", action="store_true")
+parser.add_argument("--log_extra_metrics", action="store_true")
+parser.add_argument("--log_extra_metrics_loop", action="store_true")
 parser.add_argument("--n_candidates", type=int)
 
 args = parser.parse_args()

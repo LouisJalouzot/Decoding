@@ -101,9 +101,9 @@ def retrieval_metrics(
         accuracy = accuracy.cpu().numpy().mean()
         output[f"top_{top_k}_accuracy"] = accuracy
     if return_ranks:
-        output["relative_ranks"] = (ranks / retrieval_size).cpu()
+        output["relative_ranks"] = (ranks / retrieval_size).cpu().numpy()
     if return_negatives_dist:
-        output["negatives_dist"] = dist_to_negatives.cpu()
+        output["negatives_dist"] = dist_to_negatives.cpu().numpy()
     return output
 
 
@@ -201,33 +201,41 @@ class Evaluator:
 
         decoder.eval()
 
+        output = {}
         metrics = defaultdict(list)
+        relative_ranks = defaultdict(list)
         negatives = negatives.to(device)
 
         # extra_metrics_data = []
 
         with torch.no_grad():
             for _, row in df.iterrows():
+                run_id = row[["dataset", "subject", "run"]]
+                for k, v in run_id.items():
+                    metrics[k].append(v)
+                    relative_ranks[k].extend([v] * row.n_trs)
+                relative_ranks["tr"].extend(range(row.n_trs))
                 X = row.X.to(device)
                 Y = row.Y.to(device)
-                run_metrics = {}
                 with torch.autocast(device_type=device.type):
                     X_proj = decoder.projector[row.dataset][row.subject](X)
                     # Evaluate losses
                     _, mixco = decoder.mixco_loss(X_proj, Y)
-                    run_metrics["mixco"] = mixco.item()
+                    metrics["mixco"].append(mixco.item())
                     Y_preds, symm_nce = decoder.symm_nce_loss(X_proj, Y)
-                    run_metrics["symm_nce"] = symm_nce.item()
-                    run_metrics["mse"] = decoder.mse_loss(X_proj, Y, Y_preds)[
-                        1
-                    ].item()
-                    run_metrics["mean_r"] = corr(Y, Y_preds).mean().item()
-                    run_metrics["mean_r2"] = r2_score(
-                        row.Y, Y_preds.cpu(), multioutput="raw_values"
-                    ).mean()
+                    metrics["symm_nce"].append(symm_nce.item())
+                    metrics["mse"].append(
+                        decoder.mse_loss(X_proj, Y, Y_preds)[1].item()
+                    )
+                    metrics["mean_r"].append(corr(Y, Y_preds).mean().item())
+                    metrics["mean_r2"].append(
+                        r2_score(
+                            row.Y, Y_preds.cpu(), multioutput="raw_values"
+                        ).mean()
+                    )
 
                 # Evaluate retrieval metrics
-                run_metrics = retrieval_metrics(
+                r_metrics = retrieval_metrics(
                     Y,
                     Y_preds,
                     negatives,
@@ -235,33 +243,25 @@ class Evaluator:
                     return_ranks=True,
                     return_negatives_dist=extra_metrics,
                 )
+                relative_ranks["relative_ranks"].extend(
+                    r_metrics["relative_ranks"]
+                )
 
                 if extra_metrics:
-                    negatives_dist = run_metrics["negatives_dist"]
-                    top_negatives_idx = negatives_dist.argsort(dim=1)[:, :10]
-                    top_negatives_chunks = negative_chunks[
-                        top_negatives_idx.cpu().numpy()
+                    negatives_dist = r_metrics["negatives_dist"]
+                    top_negatives_idx = negatives_dist.argsort(axis=1)[
+                        :, :n_candidates
                     ]
-                    run_metrics["extra_metrics_size"] = (
-                        top_negatives_chunks.size
-                    )
+                    top_negatives_chunks = negative_chunks[top_negatives_idx]
+                    r_metrics["extra_metrics_size"] = top_negatives_chunks.size
                     chunks = np.array(row.chunks_with_context)
 
                     # all_chunks.extend(chunks)
                     # all_top_negatives_chunks.extend(top_negatives_chunks)
 
-                for key, value in run_metrics.items():
-                    if key != "negatives_dist":
-                        if isinstance(value, torch.Tensor):
-                            value = [
-                                [row.dataset, row.subject, row.run, v.item()]
-                                for v in value
-                            ]
-                            metrics[key].extend(value)
-                        else:
-                            metrics[key].append(
-                                [row.dataset, row.subject, row.run, value]
-                            )
+                for key, value in r_metrics.items():
+                    if key not in ["negatives_dist", "relative_ranks"]:
+                        metrics[key].append(value)
 
         if extra_metrics:
             all_chunks = np.array(all_chunks)
@@ -304,12 +304,17 @@ class Evaluator:
                 all_top_negatives_chunks.flatten(), all_chunks.repeat(10)
             )["f1"]
 
-        output = {}
-        for key, value in metrics.items():
-            df = pd.DataFrame(value, columns=["dataset", "subject", "run", key])
-            output[key] = df
-            if key == "relative_ranks":
-                output["relative_ranks_median"] = df["relative_ranks"].median()
+        df_metrics = pd.DataFrame(metrics)
+        output["metrics"] = wandb.Table(dataframe=df_metrics)
+        df_relative_ranks = pd.DataFrame(relative_ranks)
+        output["relative_ranks"] = wandb.Table(dataframe=df_relative_ranks)
+        for df in df_metrics, df_relative_ranks:
+            for key in df.columns:
+                if key not in ["dataset", "subject", "run", "tr"]:
+                    if key == "relative_ranks":
+                        output[key + "_median"] = df[key].median()
+                    else:
+                        output[key] = df[key].mean()
         output["retrieval_size"] = len(negatives)
 
         return output

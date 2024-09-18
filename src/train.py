@@ -153,7 +153,7 @@ def train(
             }
             if epoch == 1:
                 for k, v in output.items():
-                    if k.count("/") < 2 and not isinstance(v, wandb.Histogram):
+                    if not isinstance(v, wandb.Table):
                         table.add_column(k)
                 for col in table.columns:
                     col.overflow = "fold"
@@ -179,8 +179,8 @@ def train(
                 f"{time() - t:.3g}s",
                 *[
                     f"{v:.3g}"
-                    for k, v in output.items()
-                    if k.count("/") < 2 and not isinstance(v, wandb.Histogram)
+                    for v in output.values()
+                    if not isinstance(v, wandb.Table)
                 ],
             )
 

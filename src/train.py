@@ -198,21 +198,22 @@ def train(
 
     for split, df_split in [
         ("train/", df_train),
+        ("valid/", df_valid),
         ("test/", df_test),
     ]:
         Y_split = df_split.drop_duplicates(["dataset", "run"]).Y
         Y_split = torch.cat(tuple(Y_split))
-        metrics = evaluator.evaluate(
+        for key, value in evaluator.evaluate(
             df=df_split,
             decoder=decoder,
             negatives=Y_split,
             negative_chunks=df_split.chunks_with_context.explode().values,
             top_k_accuracies=top_k_accuracies,
             extra_metrics=extra_metrics or extra_metrics_loop,
-        )
-        for key, value in metrics.items():
+            log_tables=True,
+        ).items():
             output[split + key] = value
-    wandb.log(output)
+    wandb.summary.update(output)
 
     for split in ["Train", "Valid", "Test"]:
         split_key = f"{split.lower()}/relative_ranks_median"

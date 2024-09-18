@@ -188,6 +188,7 @@ class Evaluator:
         top_k_accuracies=[],
         extra_metrics=None,
         n_candidates=10,
+        log_tables=False,
     ):
         if extra_metrics is None:
             extra_metrics = self.extra_metrics
@@ -305,9 +306,11 @@ class Evaluator:
             )["f1"]
 
         df_metrics = pd.DataFrame(metrics)
-        output["metrics"] = wandb.Table(dataframe=df_metrics)
         df_relative_ranks = pd.DataFrame(relative_ranks)
-        output["relative_ranks"] = wandb.Table(dataframe=df_relative_ranks)
+        df_relative_ranks["retrieval_size"] = len(negatives)
+        if log_tables:
+            output["metrics"] = wandb.Table(dataframe=df_metrics)
+            output["relative_ranks"] = wandb.Table(dataframe=df_relative_ranks)
         for df in df_metrics, df_relative_ranks:
             for key in df.columns:
                 if key not in ["dataset", "subject", "run", "tr"]:
@@ -315,6 +318,5 @@ class Evaluator:
                         output[key + "_median"] = df[key].median()
                     else:
                         output[key] = df[key].mean()
-        output["retrieval_size"] = len(negatives)
 
         return output

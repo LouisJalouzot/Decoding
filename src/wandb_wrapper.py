@@ -6,8 +6,6 @@ import wandb
 from src.main import main
 from src.utils import ignore, memory, wandb_ignore
 
-wandb.require("core")
-
 
 def wandb_wrapper(
     datasets: Union[str, List[str]] = ["lebel2023"],

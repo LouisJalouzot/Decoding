@@ -6,11 +6,11 @@ from typing import Dict, List, Union
 import numpy as np
 import pandas as pd
 import torch
+import wandb
 from joblib import Parallel, delayed
 from joblib_progress import joblib_progress
 from sklearn.preprocessing import StandardScaler
 
-import wandb
 from src.prepare_latents import prepare_latents
 from src.train import train
 from src.utils import console, device, progress
@@ -54,6 +54,7 @@ def main(
     token_aggregation: str = "mean",
     latents_batch_size: int = 64,
     return_data: bool = False,
+    log_tables: bool = False,
     log_extra_metrics: bool = False,
     log_extra_metrics_loop: bool = False,
     n_candidates: int = 10,
@@ -283,8 +284,10 @@ def main(
         df_valid,
         df_test,
         decoder=decoder,
+        log_tables=log_tables,
         log_extra_metrics=log_extra_metrics,
         log_extra_metrics_loop=log_extra_metrics_loop,
+        n_candidates=n_candidates,
         **decoder_params,
     )
 

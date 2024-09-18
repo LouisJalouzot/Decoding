@@ -26,6 +26,7 @@ def train(
     lr=1e-4,
     max_epochs=200,
     batch_size=1,
+    log_tables=False,
     log_extra_metrics=False,
     log_extra_metrics_loop=False,
     **decoder_params,
@@ -206,7 +207,7 @@ def train(
             negative_chunks=df_split.chunks_with_context.explode().values,
             top_k_accuracies=top_k_accuracies,
             log_extra_metrics=log_extra_metrics or log_extra_metrics_loop,
-            log_tables=True,
+            log_tables=log_tables,
         ).items():
             output[split + key] = value
     wandb.summary.update(output)

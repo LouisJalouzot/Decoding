@@ -7,6 +7,7 @@ from src.wandb_wrapper import wandb_wrapper
 parser = argparse.ArgumentParser()
 parser.add_argument("--datasets", nargs="*", default=["lebel2023"])
 parser.add_argument("--subjects", type=json.loads)
+parser.add_argument("--watching_subjects", type=json.loads)
 parser.add_argument(
     "--multi_subject_mode",
     type=str,
@@ -51,8 +52,8 @@ parser.add_argument(
     ],
 )
 parser.add_argument("--wandb_mode", type=str)
-parser.add_argument("--cache_model", action="store_true")
-parser.add_argument("--log_tables", action="store_true")
+parser.add_argument("--cache", action="store_true")
+parser.add_argument("--return_tables", action="store_true")
 parser.add_argument("--log_extra_metrics", action="store_true")
 parser.add_argument("--log_extra_metrics_loop", action="store_true")
 parser.add_argument("--n_candidates", type=int)

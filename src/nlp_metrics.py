@@ -107,6 +107,9 @@ def get_glove_bows(chunks):
 
 
 def nltk_pos_tag(chunks):
+    nltk.download("universal_tagset", quiet=True)
+    nltk.download("punkt_tab", quiet=True)
+    nltk.download("averaged_perceptron_tagger_eng", quiet=True)
     tokenized_chunks = [nltk.tokenize.word_tokenize(chunk) for chunk in chunks]
     pos_tagged_chunks = [
         [e[1] for e in nltk.tag.pos_tag(tokenized_chunk, tagset="universal")]

@@ -10,7 +10,7 @@ from sklearn.utils import shuffle
 import wandb
 from src.base_decoders import GRU, LSTM, RNN, BrainDecoder, SimpleMLP
 from src.decoder_wrapper import DecoderWrapper
-from src.evaluator import Evaluator
+from src.evaluate import evaluate
 from src.utils import compute_gradient_norm, console, device
 
 
@@ -26,8 +26,10 @@ def train(
     lr=1e-4,
     max_epochs=200,
     batch_size=1,
-    log_tables=False,
-    log_extra_metrics=False,
+    return_tables=False,
+    watching_subjects=None,
+    log_nlp_distances=False,
+    nlp_distances=None,
     **decoder_params,
 ):
     if decoder.lower() in ["rnn", "gru", "lstm"] and loss == "mixco":
@@ -102,11 +104,6 @@ def train(
     output = {}
     torch.autograd.set_detect_anomaly(True)
 
-    # Initialize the Evaluator
-    evaluator = Evaluator(
-        log_extra_metrics=log_extra_metrics,
-    )
-
     table = Table(
         "Epoch",
         "Monitor",
@@ -136,13 +133,13 @@ def train(
                 optimizer.step()
 
             # Validation step
-            val_metrics = evaluator.evaluate(
+            val_metrics = evaluate(
                 df=df_valid,
                 decoder=decoder,
                 negatives=Y_valid,
-                negative_chunks=chunks_valid,
                 top_k_accuracies=top_k_accuracies,
-                log_extra_metrics=log_extra_metrics,
+                nlp_distances=nlp_distances,
+                watching_subjects=watching_subjects,
             )
 
             # Log metrics
@@ -199,14 +196,14 @@ def train(
     ]:
         Y_split = df_split.drop_duplicates(["dataset", "run"]).Y
         Y_split = torch.cat(tuple(Y_split))
-        for key, value in evaluator.evaluate(
+        for key, value in evaluate(
             df=df_split,
             decoder=decoder,
             negatives=Y_split,
-            negative_chunks=df_split.chunks_with_context.explode().values,
             top_k_accuracies=top_k_accuracies,
-            log_extra_metrics=log_extra_metrics,
-            log_tables=log_tables,
+            nlp_distances=nlp_distances,
+            return_tables=return_tables,
+            watching_subjects=watching_subjects,
         ).items():
             output[split + key] = value
     wandb.summary.update(output)
@@ -218,4 +215,4 @@ def train(
                 f"{split} relative median rank {output[split_key]:.3g} (size {output[f'{split.lower()}/size']})"
             )
 
-    return decoder._orig_mod.cpu()
+    return output, decoder._orig_mod.cpu()

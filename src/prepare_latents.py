@@ -19,7 +19,7 @@ def compute_chunks(
     textgrid_path: str,
     tr: int,
     context_length: int,
-    extra_metrics: bool = False,
+    nlp_distances: bool = False,
 ) -> pd.DataFrame:
     """
     Compute the chunks of text from the given textgrid file.
@@ -53,7 +53,7 @@ def compute_chunks(
     transcript = transcript.apply(
         lambda s: s.str.strip("# ").str.replace(" #", ",")
     )
-    if extra_metrics:
+    if nlp_distances:
         chunks_with_context = transcript.chunks_with_context.tolist()
         transcript["glove_bow"] = get_glove_bows(chunks_with_context)
         tokenized_chunks, pos_tagged_chunks = nltk_pos_tag(chunks_with_context)
@@ -229,7 +229,7 @@ def prepare_latents(
     model: str,
     tr: int,
     context_length: int,
-    extra_metrics: bool = False,
+    nlp_distances: bool = False,
     token_aggregation: str = "mean",
     verbose: bool = True,
 ) -> Tuple[np.ndarray, List[str]]:
@@ -245,7 +245,7 @@ def prepare_latents(
         textgrid_path = f"data/li2022/annotation/EN/lppEN_section{run}.TextGrid"
     else:
         raise ValueError(f"Unsupported dataset {dataset}")
-    chunks = compute_chunks(textgrid_path, tr, context_length, extra_metrics)
+    chunks = compute_chunks(textgrid_path, tr, context_length, nlp_distances)
 
     if model.lower() == "wav2vec":
         latents = prepare_wav2vec(audio_path, tr, context_length)

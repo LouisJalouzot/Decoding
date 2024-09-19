@@ -34,10 +34,10 @@ progress = Progress(
 
 ignore = [
     "return_data",
-    "log_extra_metrics",
+    "log_nlp_distances",
 ]
 
-wandb_ignore = ignore + ["cache_model", "wandb_mode", "n_jobs", "verbose"]
+wandb_ignore = ignore + ["cache", "wandb_mode", "n_jobs", "verbose"]
 
 
 def _get_free_gpu():
@@ -121,3 +121,17 @@ def corr(
             "Input types not supported. Supported types are np.ndarray and torch.Tensor."
         )
 
+
+class BatchIncrementalMean:
+    def __init__(self):
+        self.mean = 0
+        self.n = 0
+
+    def extend(self, new_values):
+        batch_size = len(new_values)
+        batch_mean = sum(new_values) / batch_size
+        new_n = self.n + batch_size
+        self.mean = (self.n * self.mean + batch_size * batch_mean) / new_n
+        self.n = new_n
+
+        return self.mean

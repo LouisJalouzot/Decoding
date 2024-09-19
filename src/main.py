@@ -54,8 +54,9 @@ def main(
     top_encoding_voxels: int = None,
     token_aggregation: str = "mean",
     return_data: bool = False,
-    log_tables: bool = False,
-    log_extra_metrics: bool = False,
+    return_tables: bool = False,
+    watching_subjects: Dict[str, List[str]] = None,
+    log_nlp_distances: bool = False,
     n_candidates: int = 10,
     **decoder_params,
 ):
@@ -131,7 +132,7 @@ def main(
                 tr=tr,
                 context_length=context_length,
                 token_aggregation=token_aggregation,
-                extra_metrics=log_extra_metrics,
+                nlp_distances=log_nlp_distances,
             )
             scaler.partial_fit(data.Y)
             if stack > 0:
@@ -253,7 +254,7 @@ def main(
     df_train = df[df.split == "train"]
     df_valid = df[df.split == "valid"]
     df_test = df[df.split == "test"]
-    if log_extra_metrics:
+    if log_nlp_distances:
         nlp_distances = {}
         for split, df in [
             ("train", df_train),
@@ -286,10 +287,11 @@ def main(
         df_valid,
         df_test,
         decoder=decoder,
-        log_tables=log_tables,
-        log_extra_metrics=log_extra_metrics,
+        return_tables=return_tables,
+        log_nlp_distances=log_nlp_distances,
         nlp_distances=nlp_distances,
         n_candidates=n_candidates,
+        watching_subjects=watching_subjects,
         **decoder_params,
     )
 

@@ -65,7 +65,7 @@ def evaluate(
     df,
     decoder,
     negatives,
-    watching_subjects=None,
+    watch_subjects=None,
     top_k_accuracies=[],
     nlp_distances=None,
     n_candidates=10,
@@ -74,24 +74,26 @@ def evaluate(
     decoder.eval()
 
     if return_tables:
-        watching_subjects = None
-        all_chunks = df.chunks_with_context.explode().values
-        corresp = nlp_distances.pop("corresp")
+        watch_subjects = None
         metrics = defaultdict(list)
         nlp = defaultdict(list)
     else:
         metrics = defaultdict(BatchIncrementalMean)
         nlp = defaultdict(BatchIncrementalMean)
     relative_ranks = defaultdict(list)
-    negatives = negatives.to(device)
 
+    if nlp_distances is not None:
+        all_chunks = df.chunks_with_context.explode().values
+        corresp = nlp_distances["corresp"]
+
+    negatives = negatives.to(device)
     with torch.no_grad():
         for _, row in df.iterrows():
             prefix = [""]
             if (
-                watching_subjects is not None
-                and row.dataset in watching_subjects
-                and row.subject in watching_subjects[row.dataset]
+                watch_subjects is not None
+                and row.dataset in watch_subjects
+                and row.subject in watch_subjects[row.dataset]
             ):
                 prefix.append(f"{row.dataset}_{row.subject}/")
 
@@ -102,6 +104,8 @@ def evaluate(
                     relative_ranks[k].extend([v] * row.n_trs)
                     if nlp_distances is not None:
                         nlp[k].extend([v] * row.n_trs * n_candidates)
+                if nlp_distances is not None:
+                    nlp["tr"].extend(list(range(row.n_trs)) * n_candidates)
                 relative_ranks["tr"].extend(range(row.n_trs))
 
             X = row.X.to(device)
@@ -109,7 +113,7 @@ def evaluate(
             with torch.autocast(device_type=device.type):
                 X_proj = decoder.projector[row.dataset][row.subject](X)
                 # Evaluate losses
-                _, mixco = decoder.mixco_loss(X_proj, Y)[1]
+                _, mixco = decoder.mixco_loss(X_proj, Y)
                 Y_preds, symm_nce = decoder.symm_nce_loss(X_proj, Y)
                 _, mse = decoder.mse_loss(X_proj, Y, Y_preds)
                 mean_r = corr(Y, Y_preds).mean().item()
@@ -132,35 +136,38 @@ def evaluate(
                 return_ranks=True,
                 return_negatives_dist=nlp_distances is not None,
             )
-            for key, value in r_metrics.items():
-                if key not in ["negatives_dist", "relative_rank"]:
-                    metrics[key].extend([value])
-            relative_ranks["relative_rank"].extend(r_metrics["relative_rank"])
+            for p in prefix:
+                for key, value in r_metrics.items():
+                    if key not in ["negatives_dist", "relative_rank", "size"]:
+                        metrics[p + key].extend([value])
+                relative_ranks[p + "relative_rank"].extend(
+                    r_metrics["relative_rank"]
+                )
 
             if nlp_distances is not None:
                 negatives_dist = r_metrics["negatives_dist"]
                 candidates_idx = negatives_dist.argsort(axis=1)[
                     :, :n_candidates
                 ].reshape(-1)
-                chunk_idx = np.tile(row.chunk_index.values, n_candidates)
+                chunk_idx = np.tile(row.chunks_index, n_candidates)
                 corresp_idx = corresp[chunk_idx, candidates_idx]
                 for k, v in nlp_distances.items():
-                    for p in prefix:
-                        nlp[p + k].extcandidates_idxend(v[corresp_idx])
+                    if k != "corresp":
+                        for p in prefix:
+                            nlp[p + k].extend(v[corresp_idx])
                 if return_tables:
-                    nlp_distances["chunk"].extend(
-                        row.chunks_with_context * n_candidates
+                    nlp["chunk"].extend(
+                        np.tile(row.chunks_with_context, n_candidates)
                     )
-                    nlp_distances["top"].extend(
+                    nlp["top"].extend(
                         np.tile(np.arange(n_candidates), row.n_trs) + 1
                     )
-                    nlp_distances["candidate"].extend(
-                        all_chunks[candidates_idx]
-                    )
+                    nlp["candidate"].extend(all_chunks[candidates_idx])
 
     output = {"retrieval_size": len(negatives)}
     relative_ranks = pd.DataFrame(relative_ranks)
     output["relative_rank_median"] = relative_ranks.relative_rank.median()
+    dfs = [relative_ranks]
     if return_tables:
         metrics = pd.DataFrame(metrics)
         output["metrics"] = metrics
@@ -181,13 +188,10 @@ def evaluate(
                     "chunk",
                     "candidate",
                 ]:
-                    if key == "size":
-                        output[key] = df[key].sum()
-                    else:
-                        output[key] = df[key].mean()
+                    output[key] = df[key].mean()
     else:
-        output.update(metrics)
+        output.update({k: v.mean for k, v in metrics.items()})
         if nlp_distances is not None:
-            output.update(nlp)
+            output.update({k: v.mean for k, v in nlp.items()})
 
     return output

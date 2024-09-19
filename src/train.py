@@ -1,7 +1,9 @@
+from collections import defaultdict
 from copy import deepcopy
 from time import time
 
 import numpy as np
+import pandas as pd
 import torch
 from rich.live import Live
 from rich.table import Table
@@ -27,9 +29,8 @@ def train(
     max_epochs=200,
     batch_size=1,
     return_tables=False,
-    watching_subjects=None,
-    log_nlp_distances=False,
-    nlp_distances=None,
+    watch_subjects=None,
+    nlp_distances=defaultdict(lambda: None),
     **decoder_params,
 ):
     if decoder.lower() in ["rnn", "gru", "lstm"] and loss == "mixco":
@@ -39,9 +40,8 @@ def train(
 
     Y_valid = df_valid.drop_duplicates(["dataset", "run"]).Y
     Y_valid = torch.cat(tuple(Y_valid)).to(device)
-    chunks_valid = df_valid.chunks_with_context.explode().values
 
-    out_dim = df_train.hidden_dim.iloc[0]
+    out_dim = df_train.Y.iloc[0].shape[1]
     wandb.config["out_dim"] = out_dim
     if decoder.lower() == "brain_decoder":
         decoder = BrainDecoder(out_dim=out_dim, **decoder_params)
@@ -138,8 +138,8 @@ def train(
                 decoder=decoder,
                 negatives=Y_valid,
                 top_k_accuracies=top_k_accuracies,
-                nlp_distances=nlp_distances,
-                watching_subjects=watching_subjects,
+                nlp_distances=nlp_distances["valid"],
+                watch_subjects=watch_subjects,
             )
 
             # Log metrics
@@ -150,7 +150,7 @@ def train(
             }
             if epoch == 1:
                 for k, v in output.items():
-                    if isinstance(v, float):
+                    if isinstance(v, float) and len(k.split("/")) < 2:
                         table.add_column(k)
                 for col in table.columns:
                     col.overflow = "fold"
@@ -174,7 +174,11 @@ def train(
                 monitor_metric,
                 str(patience - patience_counter),
                 f"{time() - t:.3g}s",
-                *[f"{v:.3g}" for v in output.values() if isinstance(v, float)],
+                *[
+                    f"{v:.3g}"
+                    for k, v in output.items()
+                    if isinstance(v, float) and len(k.split("/")) < 2
+                ],
             )
 
             if patience_counter >= patience:
@@ -190,9 +194,9 @@ def train(
         optimizer.load_state_dict(best_optimizer_state_dict)
 
     for split, df_split in [
-        ("train/", df_train),
-        ("valid/", df_valid),
-        ("test/", df_test),
+        ("train", df_train),
+        ("valid", df_valid),
+        ("test", df_test),
     ]:
         Y_split = df_split.drop_duplicates(["dataset", "run"]).Y
         Y_split = torch.cat(tuple(Y_split))
@@ -201,18 +205,21 @@ def train(
             decoder=decoder,
             negatives=Y_split,
             top_k_accuracies=top_k_accuracies,
-            nlp_distances=nlp_distances,
+            nlp_distances=nlp_distances[split],
             return_tables=return_tables,
-            watching_subjects=watching_subjects,
+            watch_subjects=watch_subjects,
         ).items():
-            output[split + key] = value
-    wandb.summary.update(output)
+            output[split + "/" + key] = value
+    wandb.summary.update(
+        {
+            k: wandb.Table(dataframe=v) if isinstance(v, pd.DataFrame) else v
+            for k, v in output.items()
+        }
+    )
 
     for split in ["Train", "Valid", "Test"]:
         split_key = f"{split.lower()}/relative_rank_median"
         if split_key in output:
-            console.log(
-                f"{split} relative median rank {output[split_key]:.3g} (size {output[f'{split.lower()}/size']})"
-            )
+            console.log(f"{split} relative median rank {output[split_key]:.3g}")
 
     return output, decoder._orig_mod.cpu()

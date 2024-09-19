@@ -55,7 +55,7 @@ def main(
     token_aggregation: str = "mean",
     return_data: bool = False,
     return_tables: bool = False,
-    watching_subjects: Dict[str, List[str]] = None,
+    watch_subjects: Dict[str, List[str]] = None,
     log_nlp_distances: bool = False,
     n_candidates: int = 10,
     **decoder_params,
@@ -132,7 +132,6 @@ def main(
                 tr=tr,
                 context_length=context_length,
                 token_aggregation=token_aggregation,
-                nlp_distances=log_nlp_distances,
             )
             scaler.partial_fit(data.Y)
             if stack > 0:
@@ -267,10 +266,10 @@ def main(
             df["chunks_index"] = df.apply(
                 lambda row: np.arange(row.n_trs) + row.chunks_index, axis=1
             )
-            console.print(f"Fetching NLP distances for {split} split")
+            console.log(f"Fetching NLP distances for [green]{split}[/] split")
             nlp_distances[split] = compute_nlp_distances(df[nlp_cols])
     else:
-        nlp_distances = {}
+        nlp_distances = defaultdict(lambda: None)
 
     run_counts = run_counts.split.value_counts()
     console.log(
@@ -288,10 +287,9 @@ def main(
         df_test,
         decoder=decoder,
         return_tables=return_tables,
-        log_nlp_distances=log_nlp_distances,
         nlp_distances=nlp_distances,
         n_candidates=n_candidates,
-        watching_subjects=watching_subjects,
+        watch_subjects=watch_subjects,
         **decoder_params,
     )
 

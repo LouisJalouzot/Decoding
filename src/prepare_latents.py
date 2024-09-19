@@ -6,8 +6,9 @@ import numpy as np
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
 
+from src.nlp_metrics import get_glove_bows, nltk_pos_tag
 from src.textgrids import TextGrid
-from src.utils import device, get_glove_bows, memory, nltk_pos_tag, progress
+from src.utils import device, memory, progress
 
 DEFAULT_BAD_WORDS = frozenset(
     ["sentence_start", "sentence_end", "br", "lg", "ls", "ns", "sp", ""]

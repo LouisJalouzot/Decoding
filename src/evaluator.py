@@ -7,11 +7,11 @@ import numpy as np
 import pandas as pd
 import torch
 import torchmetrics as tm
-import wandb
 import werpy
 from sklearn.metrics import r2_score
 
-from src.utils import console, corr, device, load_glove_embeddings, nltk_pos_tag
+import wandb
+from src.utils import console, corr, device
 
 
 def retrieval_metrics(
@@ -171,71 +171,6 @@ class Evaluator:
                 for key, value in r_metrics.items():
                     if key not in ["negatives_dist", "relative_rank"]:
                         metrics[key].append(value)
-
-        if log_extra_metrics:
-            chunks = extra_metrics["chunk"]
-            candidates = extra_metrics["candidate"]
-
-            # Compute GloVe bag of words cosine similarity
-            chunks_clean, chunks_glove = zip(
-                *[self.get_bow_glove_embedding(chunk) for chunk in chunks]
-            )
-            candidates_clean, candidates_glove = zip(
-                *[self.get_bow_glove_embedding(chunk) for chunk in candidates]
-            )
-            glove_cosine = torch.cosine_similarity(
-                torch.from_numpy(np.array(chunks_glove)),
-                torch.from_numpy(np.array(candidates_glove)),
-                dim=-1,
-            )
-            extra_metrics["glove_bow_cosine"] = glove_cosine.tolist()
-
-            # Compute POS
-            chunks_pos = nltk_pos_tag(chunks)
-            candidates_pos = nltk_pos_tag(candidates)
-
-            # Compute POS GloVe bag of words cosine similarity
-            restrict_pos = lambda chunk, pos: " ".join(
-                w for w, p in zip(chunk, pos) if p in ["NOUN", "VERB", "ADJ"]
-            )
-            chunks_reduced_pos = [
-                restrict_pos(c, p) for c, p in zip(chunks_clean, chunks_pos)
-            ]
-            candidates_reduced_pos = [
-                restrict_pos(c, p)
-                for c, p in zip(candidates_clean, candidates_pos)
-            ]
-            _, chunks_reduced_pos_glove = zip(
-                *[
-                    self.get_bow_glove_embedding(chunk)
-                    for chunk in chunks_reduced_pos
-                ]
-            )
-            _, candidates_reduced_pos_glove = zip(
-                *[
-                    self.get_bow_glove_embedding(chunk)
-                    for chunk in candidates_reduced_pos
-                ]
-            )
-            pos_glove_cosine = torch.cosine_similarity(
-                torch.from_numpy(np.array(chunks_reduced_pos_glove)),
-                torch.from_numpy(np.array(candidates_reduced_pos_glove)),
-                dim=-1,
-            )
-            extra_metrics["pos_glove_bow_cosine"] = pos_glove_cosine.tolist()
-
-            # Compute POS WER
-            extra_metrics["pos_wer"] = werpy.wers(
-                [" ".join(chunk) for chunk in chunks_pos],
-                [" ".join(candidate) for candidate in candidates_pos],
-            )
-
-            # Compute WER
-            extra_metrics["wer"] = werpy.wers(chunks, candidates)
-
-            # Compute F1 BERTScore
-            bert_f1 = self.bertscore(candidates, chunks)["f1"]
-            extra_metrics["bert_f1"] = bert_f1.tolist()
 
         df_metrics = pd.DataFrame(metrics)
         df_relative_rank = pd.DataFrame(relative_ranks)

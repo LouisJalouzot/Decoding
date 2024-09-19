@@ -11,9 +11,10 @@ from joblib_progress import joblib_progress
 from sklearn.preprocessing import StandardScaler
 
 import wandb
+from src.nlp_metrics import compute_nlp_distances, nlp_cols, nlp_dist_cols
 from src.prepare_latents import prepare_latents
 from src.train import train
-from src.utils import console, device, nlp_cols, progress
+from src.utils import console, device, progress
 
 
 def read(dataset, subject, run, lag, smooth, stack):
@@ -240,7 +241,7 @@ def main(
                         "Y",
                         "chunks",
                         "chunks_with_context",
-                        *nlp_cols,
+                        *nlp_dist_cols,
                     ],
                     errors="ignore",
                 )
@@ -252,11 +253,24 @@ def main(
     df_train = df[df.split == "train"]
     df_valid = df[df.split == "valid"]
     df_test = df[df.split == "test"]
-    for df in [df_train, df_valid, df_test]:
-        df["chunks_index"] = df.n_trs.shift(1).cumsum().fillna(0).astype(int)
-        df["chunks_index"] = df.apply(
-            lambda row: np.arange(row.n_trs) + row.chunks_index, axis=1
-        )
+    if log_extra_metrics:
+        nlp_distances = {}
+        for split, df in [
+            ("train", df_train),
+            ("valid", df_valid),
+            ("test", df_test),
+        ]:
+            df["chunks_index"] = (
+                df.n_trs.shift(1).cumsum().fillna(0).astype(int)
+            )
+            df["chunks_index"] = df.apply(
+                lambda row: np.arange(row.n_trs) + row.chunks_index, axis=1
+            )
+            console.print(f"Fetching NLP distances for {split} split")
+            nlp_distances[split] = compute_nlp_distances(df[nlp_cols])
+
+    else:
+        nlp_distances = {}
 
     run_counts = run_counts.split.value_counts()
     console.log(
@@ -266,7 +280,7 @@ def main(
     )
 
     if return_data:
-        return df_train, df_valid, df_test
+        return df_train, df_valid, df_test, nlp_distances
 
     output = train(
         df_train,
@@ -275,10 +289,11 @@ def main(
         decoder=decoder,
         log_tables=log_tables,
         log_extra_metrics=log_extra_metrics,
+        nlp_distances=nlp_distances,
         n_candidates=n_candidates,
         **decoder_params,
     )
 
     torch.cuda.empty_cache()
- 
+
     return output

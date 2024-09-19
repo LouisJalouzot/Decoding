@@ -1,12 +1,7 @@
-import string
 import subprocess
-import zipfile
-from pathlib import Path
 from typing import Union
 
-import nltk
 import numpy as np
-import requests
 import torch
 from joblib import memory
 from rich.console import Console
@@ -41,13 +36,8 @@ ignore = [
     "return_data",
     "log_extra_metrics",
 ]
+
 wandb_ignore = ignore + ["cache_model", "wandb_mode", "n_jobs", "verbose"]
-nlp_cols = [
-    "glove_bow",
-    "POS",
-    "POS_restricted",
-    "glove_bow_POS_restricted",
-]
 
 
 def _get_free_gpu():
@@ -131,63 +121,3 @@ def corr(
             "Input types not supported. Supported types are np.ndarray and torch.Tensor."
         )
 
-
-def load_glove_embeddings():
-    glove_file = Path("data/glove.6B.50d.txt")
-    if not glove_file.exists():
-        url = (
-            "https://huggingface.co/stanfordnlp/glove/resolve/main/glove.6B.zip"
-        )
-        response = requests.get(url, stream=True)
-        total_size = int(response.headers.get("content-length", 0))
-        chunk_size = 131072
-        zip_path = Path("data/glove.6B.zip")
-
-        with open(zip_path, "wb") as file, progress:
-            task = progress.add_task(
-                "Downloading GloVe embeddings", total=total_size // chunk_size
-            )
-            for data in response.iter_content(chunk_size=chunk_size):
-                file.write(data)
-                progress.update(task, advance=1)
-
-        with zipfile.ZipFile(zip_path, "r") as zip_ref:
-            zip_ref.extract("glove.6B.50d.txt", "data/")
-        zip_path.unlink()
-        console.log(f"Saved GloVe embeddings to {glove_file}")
-
-    embeddings = {}
-    with open(glove_file, "r", encoding="utf-8") as f:
-        for line in f:
-            values = line.split()
-            word = values[0]
-            vector = np.asarray(values[1:], dtype="float32")
-            embeddings[word] = vector
-    return embeddings
-
-
-def get_glove_bows(chunks):
-    glove_embeddings = load_glove_embeddings()
-    # Remove punctuation
-    chunks = [
-        chunk.translate(str.maketrans("", "", string.punctuation))
-        for chunk in chunks
-    ]
-    chunks = [chunk.lower().split() for chunk in chunks]
-    glove_bows = []
-    for chunk in chunks:
-        glove_bow = np.zeros(50)
-        for word in chunk:
-            glove_bow += glove_embeddings.get(word, np.zeros(50))
-        glove_bows.append(glove_bow / max(1, len(chunk)))
-
-    return glove_bows
-
-
-def nltk_pos_tag(chunks):
-    tokenized_chunks = [nltk.tokenize.word_tokenize(chunk) for chunk in chunks]
-    pos_tagged_chunks = [
-        [e[1] for e in nltk.tag.pos_tag(tokenized_chunk, tagset="universal")]
-        for tokenized_chunk in tokenized_chunks
-    ]
-    return tokenized_chunks, pos_tagged_chunks

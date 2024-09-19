@@ -1,3 +1,4 @@
+import itertools
 import subprocess
 from typing import Union
 
@@ -136,3 +137,20 @@ class BatchIncrementalMean:
         self.n = new_n
 
         return self.mean
+
+
+def batch_combinations(iterable, r, batch_size):
+    # Create an iterator for the combinations
+    combinations = itertools.combinations(iterable, r)
+    batch = []
+
+    # Yield combinations in batches
+    for comb in combinations:
+        batch.append(comb)
+        if len(batch) == batch_size:
+            yield np.array(batch).swapaxes(0, 1)
+            batch = []
+
+    # Yield any remaining combinations if they don't fill the last batch
+    if batch:
+        yield np.array(batch).swapaxes(0, 1)

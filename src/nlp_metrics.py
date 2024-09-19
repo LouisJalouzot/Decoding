@@ -8,17 +8,17 @@ import numpy as np
 import requests
 import torch
 import werpy
-from evaluate import load
-from joblib import Parallel, cpu_count, delayed
+from joblib import Parallel, delayed
 from joblib_progress import joblib_progress
 
-from src.utils import console, device, memory, progress
+from evaluate import load
+from src.utils import batch_combinations, console, device, memory, progress
 
 nlp_dist_cols = [
     "glove_bow",
-    "POS",
-    "POS_restricted",
-    "glove_bow_POS_restricted",
+    "pos",
+    "pos_restricted",
+    "glove_bow_pos_restricted",
 ]
 nlp_cols = [
     "n_trs",
@@ -123,6 +123,13 @@ def return_all_pairs(l):
     return np.array(list(pairs)).swapaxes(0, 1)
 
 
+def cosine_similarity_batch(a, b, axis=-1):
+    ab = np.sum(a * b, axis=axis)
+    norm_a = np.linalg.norm(a, axis=axis)
+    norm_b = np.linalg.norm(b, axis=axis)
+    return ab / (norm_a * norm_b).clip(1e-9)
+
+
 @memory.cache(ignore=["batch_size"])
 def compute_nlp_distances(df, batch_size=4096):
     import warnings
@@ -143,33 +150,36 @@ def compute_nlp_distances(df, batch_size=4096):
     corresp += corresp_null_diag.T
     distances["corresp"] = corresp
 
-    console.log("Computing GloVe BOW distances")
-    for glove in ["glove_bow", "glove_bow_POS_restricted"]:
+    for glove in ["glove_bow", "glove_bow_pos_restricted"]:
         glove_bow = df[glove].explode()
-        glove_pairs = return_all_pairs(glove_bow)
-        glove_bow_cosine = torch.cosine_similarity(
-            torch.from_numpy(glove_pairs[0]),
-            torch.from_numpy(glove_pairs[1]),
-            dim=-1,
-        )
-        distances[glove + "_cosine"] = glove_bow_cosine.numpy()
 
-    pos_pairs = return_all_pairs(df.POS.explode())
-    chunks_pairs = return_all_pairs(df.chunks_with_context.explode())
+        with joblib_progress(
+            f"Computing {glove} cosine similarity", total=n_batches
+        ):
+            glove_bow_cosine = np.concatenate(
+                Parallel(n_jobs=-1)(
+                    delayed(cosine_similarity_batch)(a, b)
+                    for a, b in batch_combinations(glove_bow, 2, batch_size)
+                )
+            )
+
+        distances[glove + "_cosine"] = glove_bow_cosine
+
+    pos_pairs = batch_combinations(df.pos.explode(), 2, batch_size)
+    chunks_pairs = batch_combinations(
+        df.chunks_with_context.explode(), 2, batch_size
+    )
     for name, pairs in [("pos_wer", pos_pairs), ("wer", chunks_pairs)]:
         with joblib_progress(f"Computing {name}", total=n_batches):
             wers = sum(
-                Parallel(n_jobs=-1)(
-                    delayed(werpy.wers)(
-                        pairs[0][i : i + batch_size],
-                        pairs[1][i : i + batch_size],
-                    )
-                    for i in range(0, n_pairs, batch_size)
+                Parallel(n_jobs=-1, return_as="generator")(
+                    delayed(werpy.wers)(a, b) for a, b in pairs
                 ),
                 [],
             )
             distances[name] = np.array(wers)
 
+    chunks_pairs = return_all_pairs(df.chunks_with_context.explode())
     console.log("Computing BERT F1 Scores")
     bertscore = load("bertscore")
     scores = bertscore.compute(

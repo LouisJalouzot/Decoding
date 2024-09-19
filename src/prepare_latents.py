@@ -55,8 +55,8 @@ def compute_chunks(
     chunks_with_context = transcript.chunks_with_context.tolist()
     transcript["glove_bow"] = get_glove_bows(chunks_with_context)
     tokenized_chunks, pos_tagged_chunks = nltk_pos_tag(chunks_with_context)
-    transcript["POS"] = [" ".join(tags) for tags in pos_tagged_chunks]
-    transcript["POS_restricted"] = [
+    transcript["pos"] = [" ".join(tags) for tags in pos_tagged_chunks]
+    transcript["pos_restricted"] = [
         " ".join(
             tok
             for tok, tag in zip(toks, tags)
@@ -64,8 +64,8 @@ def compute_chunks(
         )
         for toks, tags in zip(tokenized_chunks, pos_tagged_chunks)
     ]
-    transcript["glove_bow_POS_restricted"] = get_glove_bows(
-        transcript.POS_restricted
+    transcript["glove_bow_pos_restricted"] = get_glove_bows(
+        transcript.pos_restricted
     )
 
     return transcript

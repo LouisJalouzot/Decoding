@@ -38,8 +38,7 @@ def wandb_wrapper(
     wandb.init(
         config=config_wandb,
         id=sha1(repr(sorted(config.items())).encode()).hexdigest(),
-        # project="fMRI-Decoding-v5",
-        project="Test",
+        project="fMRI-Decoding-v6",
         save_code=True,
         mode=wandb_mode,
     )

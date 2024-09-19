@@ -141,7 +141,7 @@ def compute_nlp_distances(df, batch_size=4096):
     distances["corresp"] = corresp
 
     console.log("Computing GloVe BOW distances")
-    for glove in ["glove_bow", "glnlp_colsove_bow_POS_restricted"]:
+    for glove in ["glove_bow", "glove_bow_POS_restricted"]:
         glove_bow = df[glove].explode()
         glove_pairs = return_all_pairs(glove_bow)
         glove_bow_cosine = torch.cosine_similarity(
@@ -165,7 +165,7 @@ def compute_nlp_distances(df, batch_size=4096):
                 ),
                 [],
             )
-            distances[name + "wer"] = np.array(wers)
+            distances[name] = np.array(wers)
 
     console.log("Computing BERT F1 Scores")
     bertscore = load("bertscore")

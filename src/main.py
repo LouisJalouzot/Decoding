@@ -268,7 +268,6 @@ def main(
             )
             console.print(f"Fetching NLP distances for {split} split")
             nlp_distances[split] = compute_nlp_distances(df[nlp_cols])
-
     else:
         nlp_distances = {}
 

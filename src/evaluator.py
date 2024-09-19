@@ -7,10 +7,10 @@ import numpy as np
 import pandas as pd
 import torch
 import torchmetrics as tm
+import wandb
 import werpy
 from sklearn.metrics import r2_score
 
-import wandb
 from src.utils import console, corr, device, load_glove_embeddings, nltk_pos_tag
 
 
@@ -81,15 +81,6 @@ class Evaluator:
                 device=device,
             )
             self.glove_embeddings = load_glove_embeddings()
-
-    def get_bow_glove_embedding(self, text):
-        # Remove punctuation
-        text = text.translate(str.maketrans("", "", string.punctuation))
-        words = text.lower().split()
-        glove_bow = np.zeros(50)
-        for word in words:
-            glove_bow += self.glove_embeddings.get(word, np.zeros(50))
-        return words, glove_bow / max(1, len(words))
 
     def evaluate(
         self,
@@ -252,7 +243,6 @@ class Evaluator:
         if log_extra_metrics:
             df_extra_metrics = pd.DataFrame(extra_metrics)
             dfs.append(df_extra_metrics)
-        df_relative_rank["retrieval_size"] = len(negatives)
         if log_tables:
             output["metrics"] = wandb.Table(dataframe=df_metrics)
             output["relative_rank"] = wandb.Table(dataframe=df_relative_rank)
@@ -273,7 +263,10 @@ class Evaluator:
                 ]:
                     if key == "relative_rank":
                         output[key + "_median"] = df[key].median()
+                    elif key == "size":
+                        output[key] = df[key].sum()
                     else:
                         output[key] = df[key].mean()
+        output = {"retrieval_size": len(negatives)}
 
         return output

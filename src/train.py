@@ -3,11 +3,11 @@ from time import time
 
 import numpy as np
 import torch
-import wandb
 from rich.live import Live
 from rich.table import Table
 from sklearn.utils import shuffle
 
+import wandb
 from src.base_decoders import GRU, LSTM, RNN, BrainDecoder, SimpleMLP
 from src.decoder_wrapper import DecoderWrapper
 from src.evaluator import Evaluator
@@ -28,7 +28,6 @@ def train(
     batch_size=1,
     log_tables=False,
     log_extra_metrics=False,
-    log_extra_metrics_loop=False,
     **decoder_params,
 ):
     if decoder.lower() in ["rnn", "gru", "lstm"] and loss == "mixco":
@@ -105,7 +104,7 @@ def train(
 
     # Initialize the Evaluator
     evaluator = Evaluator(
-        log_extra_metrics=log_extra_metrics or log_extra_metrics_loop,
+        log_extra_metrics=log_extra_metrics,
     )
 
     table = Table(
@@ -143,7 +142,7 @@ def train(
                 negatives=Y_valid,
                 negative_chunks=chunks_valid,
                 top_k_accuracies=top_k_accuracies,
-                log_extra_metrics=log_extra_metrics_loop,
+                log_extra_metrics=log_extra_metrics,
             )
 
             # Log metrics
@@ -206,7 +205,7 @@ def train(
             negatives=Y_split,
             negative_chunks=df_split.chunks_with_context.explode().values,
             top_k_accuracies=top_k_accuracies,
-            log_extra_metrics=log_extra_metrics or log_extra_metrics_loop,
+            log_extra_metrics=log_extra_metrics,
             log_tables=log_tables,
         ).items():
             output[split + key] = value

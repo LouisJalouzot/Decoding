@@ -1,3 +1,4 @@
+import string
 from pathlib import Path
 from typing import List, Tuple
 
@@ -6,7 +7,7 @@ import pandas as pd
 from sklearn.preprocessing import StandardScaler
 
 from src.textgrids import TextGrid
-from src.utils import device, memory, progress
+from src.utils import device, get_glove_bows, memory, nltk_pos_tag, progress
 
 DEFAULT_BAD_WORDS = frozenset(
     ["sentence_start", "sentence_end", "br", "lg", "ls", "ns", "sp", ""]
@@ -14,7 +15,10 @@ DEFAULT_BAD_WORDS = frozenset(
 
 
 def compute_chunks(
-    textgrid_path: str, tr: int, context_length: int
+    textgrid_path: str,
+    tr: int,
+    context_length: int,
+    extra_metrics: bool = False,
 ) -> pd.DataFrame:
     """
     Compute the chunks of text from the given textgrid file.
@@ -39,12 +43,33 @@ def compute_chunks(
     transcript = (
         transcript.groupby("chunk_id", observed=False)
         .text.apply(lambda x: " ".join(x))
-        .to_frame(name="chunk")
+        .to_frame(name="chunks")
     )
-    transcript["chunk_with_context"] = [
-        w.str.cat(sep=" ") for w in transcript.chunk.rolling(context_length + 1)
+    transcript["chunks_with_context"] = [
+        w.str.cat(sep=" ")
+        for w in transcript.chunks.rolling(context_length + 1)
     ]
-    return transcript.apply(lambda s: s.str.strip("# ").str.replace(" #", ","))
+    transcript = transcript.apply(
+        lambda s: s.str.strip("# ").str.replace(" #", ",")
+    )
+    if extra_metrics:
+        chunks_with_context = transcript.chunks_with_context.tolist()
+        transcript["glove_bow"] = get_glove_bows(chunks_with_context)
+        tokenized_chunks, pos_tagged_chunks = nltk_pos_tag(chunks_with_context)
+        transcript["POS"] = [" ".join(tags) for tags in pos_tagged_chunks]
+        transcript["POS_restricted"] = [
+            " ".join(
+                tok
+                for tok, tag in zip(toks, tags)
+                if tag in ["NOUN", "VERB", "ADJ"]
+            )
+            for toks, tags in zip(tokenized_chunks, pos_tagged_chunks)
+        ]
+        transcript["glove_bow_POS_restricted"] = get_glove_bows(
+            transcript.POS_restricted
+        )
+
+    return transcript
 
 
 def prepare_wav2vec(audio_path, tr, context_length):
@@ -137,7 +162,7 @@ def prepare_audioclip(
                 audio_chunk = audio_chunk[None]
             ((audio_latent, _, text_latent), _), _ = model(
                 audio=audio_chunk,
-                text=[[text_chunks.chunk_with_context.iloc[i]]],
+                text=[[text_chunks.chunks_with_context.iloc[i]]],
             )
             latent = torch.concat(
                 (text_latent.squeeze(), audio_latent.squeeze()),
@@ -150,7 +175,7 @@ def prepare_audioclip(
 
 
 def prepare_clap(
-    text_chunks, audio_path, tr, context_length, batch_size, verbose
+    text_chunks, audio_path, tr, context_length, verbose, batch_size=32
 ):
     import librosa
     import torch
@@ -180,7 +205,7 @@ def prepare_clap(
         )
         for i in range(0, size, batch_size):
             inputs = processor(
-                text=text_chunks.chunk_with_context.iloc[i : i + batch_size],
+                text=text_chunks.chunks_with_context.iloc[i : i + batch_size],
                 audios=chunked_audio[i : i + batch_size],
                 return_tensors="pt",
                 padding=True,
@@ -196,15 +221,15 @@ def prepare_clap(
     return np.vstack(latents)
 
 
-@memory.cache(ignore=["batch_size", "verbose"])
+@memory.cache(ignore=["verbose"])
 def prepare_latents(
     dataset: str,
     run: str,
     model: str,
     tr: int,
     context_length: int,
+    extra_metrics: bool = False,
     token_aggregation: str = "mean",
-    batch_size: int = 64,
     verbose: bool = True,
 ) -> Tuple[np.ndarray, List[str]]:
     import warnings
@@ -219,7 +244,7 @@ def prepare_latents(
         textgrid_path = f"data/li2022/annotation/EN/lppEN_section{run}.TextGrid"
     else:
         raise ValueError(f"Unsupported dataset {dataset}")
-    chunks = compute_chunks(textgrid_path, tr, context_length)
+    chunks = compute_chunks(textgrid_path, tr, context_length, extra_metrics)
 
     if model.lower() == "wav2vec":
         latents = prepare_wav2vec(audio_path, tr, context_length)
@@ -230,9 +255,7 @@ def prepare_latents(
             chunks, audio_path, tr, context_length, model, verbose
         )
     elif model.lower() == "clap":
-        latents = prepare_clap(
-            chunks, audio_path, tr, context_length, batch_size, verbose
-        )
+        latents = prepare_clap(chunks, audio_path, tr, context_length, verbose)
     else:
         from sentence_transformers import SentenceTransformer
 
@@ -244,8 +267,7 @@ def prepare_latents(
         if model.tokenizer.pad_token is None:
             model.tokenizer.pad_token = model.tokenizer.eos_token
         latents = model.encode(
-            chunks.chunk_with_context,
-            batch_size=batch_size,
+            chunks.chunks_with_context,
             output_value="token_embeddings",
         )
 
@@ -258,7 +280,7 @@ def prepare_latents(
         elif token_aggregation == "max":
             latents = [l.max(axis=0)[0] for l in latents]
         else:
-            n_tokens = model.tokenize(chunks.chunk)["attention_mask"].sum(
+            n_tokens = model.tokenize(chunks.chunks)["attention_mask"].sum(
                 axis=1
             )
             if token_aggregation == "chunk_mean":
@@ -283,4 +305,7 @@ def prepare_latents(
     if "lebel2023" in dataset or "li2022" in dataset:
         latents = latents[5:-5]
         chunks = chunks.iloc[5:-5]
-    return latents.astype(np.float32), chunks
+    data = {"Y": latents.astype(np.float32)}
+    for col in chunks:
+        data[col] = chunks[col].values
+    return pd.Series(data)

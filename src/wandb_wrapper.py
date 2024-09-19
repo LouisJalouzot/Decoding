@@ -19,7 +19,7 @@ def wandb_wrapper(
     smooth: int = 0,
     multi_subject_mode: str = "individual",
     return_data: bool = False,
-    cache_model: bool = True,
+    cache_model: bool = False,
     wandb_mode: str = "online",
     **kwargs,
 ):

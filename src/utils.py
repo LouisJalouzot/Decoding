@@ -1,3 +1,4 @@
+import string
 import subprocess
 import zipfile
 from pathlib import Path
@@ -37,12 +38,16 @@ progress = Progress(
 )
 
 ignore = [
-    "latents_batch_size",
     "return_data",
     "log_extra_metrics",
-    "log_extra_metrics_loop",
 ]
 wandb_ignore = ignore + ["cache_model", "wandb_mode", "n_jobs", "verbose"]
+nlp_cols = [
+    "glove_bow",
+    "POS",
+    "POS_restricted",
+    "glove_bow_POS_restricted",
+]
 
 
 def _get_free_gpu():
@@ -161,10 +166,28 @@ def load_glove_embeddings():
     return embeddings
 
 
+def get_glove_bows(chunks):
+    glove_embeddings = load_glove_embeddings()
+    # Remove punctuation
+    chunks = [
+        chunk.translate(str.maketrans("", "", string.punctuation))
+        for chunk in chunks
+    ]
+    chunks = [chunk.lower().split() for chunk in chunks]
+    glove_bows = []
+    for chunk in chunks:
+        glove_bow = np.zeros(50)
+        for word in chunk:
+            glove_bow += glove_embeddings.get(word, np.zeros(50))
+        glove_bows.append(glove_bow / max(1, len(chunk)))
+
+    return glove_bows
+
+
 def nltk_pos_tag(chunks):
     tokenized_chunks = [nltk.tokenize.word_tokenize(chunk) for chunk in chunks]
     pos_tagged_chunks = [
         [e[1] for e in nltk.tag.pos_tag(tokenized_chunk, tagset="universal")]
         for tokenized_chunk in tokenized_chunks
     ]
-    return pos_tagged_chunks
+    return tokenized_chunks, pos_tagged_chunks

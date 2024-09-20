@@ -182,7 +182,7 @@ def main(
         n_valid = max(1, int(valid_ratio * n_runs))
         n_test = max(1, int(test_ratio * n_runs))
         n_train = n_runs - n_valid - n_test
-        return ["train"] * n_train + ["valid"] * n_valid + ["test"] * n_test
+        return ["test"] * n_test + ["valid"] * n_valid + ["train"] * n_train
 
     run_counts.loc[main_runs, "split"] = (
         run_counts[main_runs]

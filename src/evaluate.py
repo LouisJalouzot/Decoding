@@ -105,7 +105,7 @@ def evaluate(
                     if nlp_distances is not None:
                         nlp[k].extend([v] * row.n_trs * n_candidates)
                 if nlp_distances is not None:
-                    nlp["tr"].extend(list(range(row.n_trs)) * n_candidates)
+                    nlp["tr"].extend(np.repeat(range(row.n_trs), n_candidates))
                 relative_ranks["tr"].extend(range(row.n_trs))
 
             X = row.X.to(device)

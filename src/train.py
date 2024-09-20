@@ -1,4 +1,3 @@
-from collections import defaultdict
 from copy import deepcopy
 from time import time
 
@@ -30,7 +29,7 @@ def train(
     batch_size=1,
     return_tables=False,
     watch_subjects=None,
-    nlp_distances=defaultdict(lambda: None),
+    nlp_distances={},
     **decoder_params,
 ):
     if decoder.lower() in ["rnn", "gru", "lstm"] and loss == "mixco":
@@ -138,7 +137,7 @@ def train(
                 decoder=decoder,
                 negatives=Y_valid,
                 top_k_accuracies=top_k_accuracies,
-                nlp_distances=nlp_distances["valid"],
+                nlp_distances=nlp_distances.get("valid", None),
                 watch_subjects=watch_subjects,
             )
 
@@ -205,7 +204,7 @@ def train(
             decoder=decoder,
             negatives=Y_split,
             top_k_accuracies=top_k_accuracies,
-            nlp_distances=nlp_distances[split],
+            nlp_distances=nlp_distances.get(split, None),
             return_tables=return_tables,
             watch_subjects=watch_subjects,
         ).items():

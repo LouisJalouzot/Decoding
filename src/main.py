@@ -1,5 +1,4 @@
 import os
-from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Union
 
@@ -15,6 +14,18 @@ from src.nlp_metrics import compute_nlp_distances, nlp_cols, nlp_dist_cols
 from src.prepare_latents import prepare_latents
 from src.train import train
 from src.utils import console, device, progress
+
+
+def compute_chunk_index(df):
+    chunks_index = df[["dataset", "run", "n_trs"]].drop_duplicates()
+    chunks_index["chunks_index"] = (
+        chunks_index.n_trs.shift(1).cumsum().fillna(0).astype(int)
+    )
+    chunks_index["chunks_index"] = chunks_index.apply(
+        lambda row: np.arange(row.n_trs) + row.chunks_index, axis=1
+    )
+
+    return chunks_index
 
 
 def read(dataset, subject, run, lag, smooth, stack):
@@ -253,22 +264,22 @@ def main(
     df_train = df[df.split == "train"]
     df_valid = df[df.split == "valid"]
     df_test = df[df.split == "test"]
+    nlp_distances = {}
     if log_nlp_distances:
-        nlp_distances = {}
+        chunks_index = compute_chunk_index(df_train)
+        df_train = df_train.merge(chunks_index)
+        chunks_index = compute_chunk_index(df_valid)
+        df_valid = df_valid.merge(chunks_index)
+        chunks_index = compute_chunk_index(df_test)
+        df_test = df_test.merge(chunks_index)
         for split, df in [
-            ("train", df_train),
-            ("valid", df_valid),
             ("test", df_test),
+            ("valid", df_valid),
+            ("train", df_train),
         ]:
-            df["chunks_index"] = (
-                df.n_trs.shift(1).cumsum().fillna(0).astype(int)
+            nlp_distances[split] = compute_nlp_distances(
+                df.drop_duplicates(["dataset", "run"])[nlp_cols]
             )
-            df["chunks_index"] = df.apply(
-                lambda row: np.arange(row.n_trs) + row.chunks_index, axis=1
-            )
-            nlp_distances[split] = compute_nlp_distances(df[nlp_cols])
-    else:
-        nlp_distances = defaultdict(lambda: None)
 
     run_counts = run_counts.split.value_counts()
     console.log(

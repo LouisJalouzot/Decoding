@@ -150,7 +150,7 @@ def train(
             }
             if epoch == 1:
                 for k, v in output.items():
-                    if isinstance(v, float) and len(k.split("/")) < 2:
+                    if isinstance(v, float) and len(k.split("/")) < 3:
                         table.add_column(k)
                 for col in table.columns:
                     col.overflow = "fold"
@@ -177,7 +177,7 @@ def train(
                 *[
                     f"{v:.3g}"
                     for k, v in output.items()
-                    if isinstance(v, float) and len(k.split("/")) < 2
+                    if isinstance(v, float) and len(k.split("/")) < 3
                 ],
             )
 

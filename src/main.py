@@ -266,7 +266,6 @@ def main(
             df["chunks_index"] = df.apply(
                 lambda row: np.arange(row.n_trs) + row.chunks_index, axis=1
             )
-            console.log(f"Fetching NLP distances for [green]{split}[/] split")
             nlp_distances[split] = compute_nlp_distances(df[nlp_cols])
     else:
         nlp_distances = defaultdict(lambda: None)

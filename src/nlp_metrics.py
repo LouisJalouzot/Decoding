@@ -132,12 +132,10 @@ def cosine_similarity_batch(a, b, axis=-1):
 
 @memory.cache(ignore=["batch_size"])
 def compute_nlp_distances(df, batch_size=4096):
-    import warnings
+    # import warnings
 
-    warnings.filterwarnings("ignore", module="transformers")
-    distances = {}
+    # warnings.filterwarnings("ignore", module="transformers")
     n_chunks = df.n_trs.sum()
-    console.log(f"Computing NLP pairwise distances for {n_chunks} chunks")
 
     # Building correspondance matrix (chunk index i and j -> index k in the flattened array of distances)
     n_pairs = n_chunks * (n_chunks - 1) // 2 + n_chunks
@@ -148,49 +146,55 @@ def compute_nlp_distances(df, batch_size=4096):
     corresp_null_diag = corresp.copy()
     np.fill_diagonal(corresp_null_diag, 0)
     corresp += corresp_null_diag.T
-    distances["corresp"] = corresp
+    distances = {"corresp": corresp}
 
-    for glove in ["glove_bow", "glove_bow_pos_restricted"]:
-        glove_bow = df[glove].explode()
+    generators = [
+        (
+            cosine_similarity_batch if "glove" in col else werpy.wers,
+            batch_combinations(df[col].explode(), 2, batch_size),
+        )
+        for col in [
+            "glove_bow",
+            "glove_bow_pos_restricted",
+            "pos",
+            "chunks_with_context",
+        ]
+    ]
 
-        with joblib_progress(
-            f"Computing {glove} cosine similarity", total=n_batches
-        ):
-            glove_bow_cosine = np.concatenate(
-                Parallel(n_jobs=-1)(
-                    delayed(cosine_similarity_batch)(a, b)
-                    for a, b in batch_combinations(glove_bow, 2, batch_size)
-                )
-            )
+    with joblib_progress(
+        f"Computing NLP distances for {n_chunks} chunks",
+        total=len(generators) * n_batches,
+    ):
+        results = Parallel(n_jobs=-1)(
+            delayed(lambda a, b, f: f(a, b))(a, b, f)
+            for f, generator in generators
+            for a, b in generator
+        )
 
-        distances[glove + "_cosine"] = glove_bow_cosine
+    for i, name in enumerate(
+        [
+            "glove_bow_cosine",
+            "glove_bow_pos_restricted_cosine",
+            "pos_wer",
+            "wer",
+        ]
+    ):
+        distances[name] = np.concatenate(
+            results[i * n_batches : (i + 1) * n_batches]
+        )
 
-    pos_pairs = batch_combinations(df.pos.explode(), 2, batch_size)
-    chunks_pairs = batch_combinations(
-        df.chunks_with_context.explode(), 2, batch_size
-    )
-    for name, pairs in [("pos_wer", pos_pairs), ("wer", chunks_pairs)]:
-        with joblib_progress(f"Computing {name}", total=n_batches):
-            wers = sum(
-                Parallel(n_jobs=-1, return_as="generator")(
-                    delayed(werpy.wers)(a, b) for a, b in pairs
-                ),
-                [],
-            )
-            distances[name] = np.array(wers)
-
-    chunks_pairs = return_all_pairs(df.chunks_with_context.explode())
-    console.log("Computing BERT F1 Scores")
-    bertscore = load("bertscore")
-    scores = bertscore.compute(
-        predictions=chunks_pairs[0],
-        references=chunks_pairs[1],
-        model_type="distilbert-base-uncased-distilled-squad",
-        device=device,
-        use_fast_tokenizer=True,
-        verbose=True,
-        nthreads=-1,
-    )["f1"]
-    distances["bert_f1"] = np.array(scores)
+    # chunks_pairs = return_all_pairs(df.chunks_with_context.explode())
+    # console.log("Computing BERT F1 Scores")
+    # bertscore = load("bertscore")
+    # scores = bertscore.compute(
+    #     predictions=chunks_pairs[0],
+    #     references=chunks_pairs[1],
+    #     model_type="distilbert-base-uncased-distilled-squad",
+    #     device=device,
+    #     use_fast_tokenizer=True,
+    #     verbose=True,
+    #     nthreads=-1,
+    # )["f1"]
+    # distances["bert_f1"] = np.array(scores)
 
     return distances

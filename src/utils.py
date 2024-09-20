@@ -141,7 +141,7 @@ class BatchIncrementalMean:
 
 def batch_combinations(iterable, r, batch_size):
     # Create an iterator for the combinations
-    combinations = itertools.combinations(iterable, r)
+    combinations = itertools.combinations_with_replacement(iterable, r)
     batch = []
 
     # Yield combinations in batches

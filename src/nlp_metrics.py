@@ -7,7 +7,7 @@ import nltk
 import numpy as np
 import requests
 import torch
-import werpy
+from fuzzywuzzy import fuzz
 from joblib import Parallel, delayed
 from joblib_progress import joblib_progress
 
@@ -130,6 +130,10 @@ def cosine_similarity_batch(a, b, axis=-1):
     return ab / (norm_a * norm_b).clip(1e-9)
 
 
+def batch_ratio(a, b):
+    return np.array([fuzz.ratio(a_, b_) / 100 for a_, b_ in zip(a, b)])
+
+
 @memory.cache(ignore=["batch_size"])
 def compute_nlp_distances(df, batch_size=4096):
     # import warnings
@@ -148,24 +152,25 @@ def compute_nlp_distances(df, batch_size=4096):
     corresp += corresp_null_diag.T
     distances = {"corresp": corresp}
 
-    generators = [
-        (
-            cosine_similarity_batch if "glove" in col else werpy.wers,
-            batch_combinations(df[col].explode(), 2, batch_size),
+    generators = []
+    for col in [
+        "glove_bow",
+        "glove_bow_pos_restricted",
+        "pos",
+        "chunks_with_context",
+    ]:
+        generators.append(
+            (
+                cosine_similarity_batch if "glove" in col else batch_ratio,
+                batch_combinations(df[col].explode(), 2, batch_size),
+            )
         )
-        for col in [
-            "glove_bow",
-            "glove_bow_pos_restricted",
-            "pos",
-            "chunks_with_context",
-        ]
-    ]
 
     with joblib_progress(
         f"Computing NLP distances for {n_chunks} chunks",
         total=len(generators) * n_batches,
     ):
-        results = Parallel(n_jobs=-1)(
+        results = Parallel(n_jobs=-1, max_nbytes=None)(
             delayed(lambda a, b, f: f(a, b))(a, b, f)
             for f, generator in generators
             for a, b in generator
@@ -175,8 +180,8 @@ def compute_nlp_distances(df, batch_size=4096):
         [
             "glove_bow_cosine",
             "glove_bow_pos_restricted_cosine",
-            "pos_wer",
-            "wer",
+            "pos_ratio",
+            "ratio",
         ]
     ):
         distances[name] = np.concatenate(

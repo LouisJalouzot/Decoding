@@ -7,7 +7,7 @@ import torch
 import torchmetrics as tm
 from sklearn.metrics import r2_score
 
-import wandb
+from src.base_decoders import MeanDecoder
 from src.utils import BatchIncrementalMean, console, corr, device
 
 
@@ -85,6 +85,9 @@ def evaluate(
         corresp = nlp_distances["corresp"]
 
     negatives = negatives.to(device)
+    if isinstance(decoder.decoder, MeanDecoder):
+        decoder.decoder.set_mean_from_Ys(negatives)
+
     with torch.no_grad():
         for _, row in df.iterrows():
             prefix = ["", f"{row.dataset}_{row.subject}/"]

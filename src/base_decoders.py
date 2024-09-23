@@ -1,6 +1,50 @@
 from functools import partial
 
+import torch
 from torch import nn
+
+from src.utils import BatchIncrementalMean
+
+
+class RandomDecoder(nn.Module):
+    def __init__(self, out_dim):
+        super().__init__()
+        self.out_dim = out_dim
+
+    def forward(self, x):
+        return torch.randn(
+            x.size(0),
+            self.out_dim,
+            dtype=x.dtype,
+            device=x.device,
+            requires_grad=x.requires_grad,
+        )
+
+
+class MeanDecoder(nn.Module):
+    def __init__(self, out_dim):
+        super().__init__()
+        self.out_dim = out_dim
+        self.mean = None
+
+    def set_mean_from_Ys(self, Ys):
+        self.mean = Ys.mean(dim=0)
+
+    def forward(self, x):
+        if self.train:
+            return torch.randn(
+                x.size(0),
+                self.out_dim,
+                dtype=x.dtype,
+                device=x.device,
+                requires_grad=x.requires_grad,
+            )
+        elif self.mean is not None:
+            return self.mean.to(x.device, x.dtype).expand(x.size(0), -1)
+        else:
+            raise ValueError(
+                "MeanDecoder must be trained with set_mean_from_Ys before being used for inference."
+            )
 
 
 class SimpleMLP(nn.Module):

@@ -9,7 +9,15 @@ from rich.table import Table
 from sklearn.utils import shuffle
 
 import wandb
-from src.base_decoders import GRU, LSTM, RNN, BrainDecoder, SimpleMLP
+from src.base_decoders import (
+    GRU,
+    LSTM,
+    RNN,
+    BrainDecoder,
+    MeanDecoder,
+    RandomDecoder,
+    SimpleMLP,
+)
 from src.decoder_wrapper import DecoderWrapper
 from src.evaluate import evaluate
 from src.utils import compute_gradient_norm, console, device
@@ -51,6 +59,10 @@ def train(
         decoder = LSTM(out_dim=out_dim, **decoder_params)
     elif decoder.lower() == "simple_mlp":
         decoder = SimpleMLP(out_dim=out_dim, **decoder_params)
+    elif decoder.lower() == "random_decoder":
+        decoder = RandomDecoder(out_dim=out_dim)
+    elif decoder.lower() == "mean_decoder":
+        decoder = MeanDecoder(out_dim=out_dim)
     else:
         raise ValueError(f"Unsupported decoder {decoder}.")
     in_dims = df_train[["dataset", "subject", "n_voxels"]].drop_duplicates()

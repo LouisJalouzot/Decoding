@@ -125,14 +125,16 @@ def corr(
 
 class BatchIncrementalMean:
     def __init__(self):
-        self.mean = 0
         self.n = 0
 
     def extend(self, new_values):
         batch_size = len(new_values)
-        batch_mean = sum(new_values) / batch_size
+        batch_sum = sum(new_values)
         new_n = self.n + batch_size
-        self.mean = (self.n * self.mean + batch_size * batch_mean) / new_n
+        if self.n == 0:
+            self.mean = batch_sum / batch_size
+        else:
+            self.mean = (self.n * self.mean + batch_sum) / new_n
         self.n = new_n
 
         return self.mean

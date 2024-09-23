@@ -28,7 +28,6 @@ def train(
     max_epochs=200,
     batch_size=1,
     return_tables=False,
-    watch_subjects=None,
     nlp_distances={},
     **decoder_params,
 ):
@@ -138,7 +137,6 @@ def train(
                 negatives=Y_valid,
                 top_k_accuracies=top_k_accuracies,
                 nlp_distances=nlp_distances.get("valid", None),
-                watch_subjects=watch_subjects,
             )
 
             # Log metrics
@@ -206,7 +204,6 @@ def train(
             top_k_accuracies=top_k_accuracies,
             nlp_distances=nlp_distances.get(split, None),
             return_tables=return_tables,
-            watch_subjects=watch_subjects,
         ).items():
             output[split + "/" + key] = value
     wandb.summary.update(

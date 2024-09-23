@@ -66,7 +66,6 @@ def main(
     token_aggregation: str = "mean",
     return_data: bool = False,
     return_tables: bool = False,
-    watch_subjects: Dict[str, List[str]] = None,
     log_nlp_distances: bool = False,
     n_candidates: int = 10,
     **decoder_params,
@@ -299,7 +298,6 @@ def main(
         return_tables=return_tables,
         nlp_distances=nlp_distances,
         n_candidates=n_candidates,
-        watch_subjects=watch_subjects,
         **decoder_params,
     )
 

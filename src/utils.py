@@ -36,7 +36,6 @@ progress = Progress(
 ignore = [
     "return_data",
     "log_nlp_distances",
-    "watch_subjects",
 ]
 
 wandb_ignore = ignore + ["cache", "wandb_mode", "n_jobs", "verbose"]

@@ -7,7 +7,6 @@ from src.wandb_wrapper import wandb_wrapper
 parser = argparse.ArgumentParser()
 parser.add_argument("--datasets", nargs="*", default=["lebel2023"])
 parser.add_argument("--subjects", type=json.loads)
-parser.add_argument("--watch_subjects", type=json.loads)
 parser.add_argument(
     "--multi_subject_mode",
     type=str,

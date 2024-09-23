@@ -65,7 +65,6 @@ def evaluate(
     df,
     decoder,
     negatives,
-    watch_subjects=None,
     top_k_accuracies=[],
     nlp_distances=None,
     n_candidates=10,
@@ -74,7 +73,6 @@ def evaluate(
     decoder.eval()
 
     if return_tables:
-        watch_subjects = None
         metrics = defaultdict(list)
         nlp = defaultdict(list)
     else:
@@ -89,24 +87,18 @@ def evaluate(
     negatives = negatives.to(device)
     with torch.no_grad():
         for _, row in df.iterrows():
-            prefix = [""]
-            if (
-                watch_subjects is not None
-                and row.dataset in watch_subjects
-                and row.subject in watch_subjects[row.dataset]
-            ):
-                prefix.append(f"{row.dataset}_{row.subject}/")
+            prefix = ["", f"{row.dataset}_{row.subject}/"]
 
-            if return_tables:
-                run_id = row[["dataset", "subject", "run"]]
-                for k, v in run_id.items():
+            run_id = row[["dataset", "subject", "run"]]
+            for k, v in run_id.items():
+                relative_ranks[k].extend([v] * row.n_trs)
+                if return_tables:
                     metrics[k].append(v)
-                    relative_ranks[k].extend([v] * row.n_trs)
                     if nlp_distances is not None:
                         nlp[k].extend([v] * row.n_trs * n_candidates)
-                if nlp_distances is not None:
-                    nlp["tr"].extend(np.repeat(range(row.n_trs), n_candidates))
-                relative_ranks["tr"].extend(range(row.n_trs))
+            if nlp_distances is not None:
+                nlp["tr"].extend(np.repeat(range(row.n_trs), n_candidates))
+            relative_ranks["tr"].extend(range(row.n_trs))
 
             X = row.X.to(device)
             Y = row.Y.to(device)
@@ -140,9 +132,7 @@ def evaluate(
                 for key, value in r_metrics.items():
                     if key not in ["negatives_dist", "relative_rank", "size"]:
                         metrics[p + key].extend([value])
-                relative_ranks[p + "relative_rank"].extend(
-                    r_metrics["relative_rank"]
-                )
+            relative_ranks["relative_rank"].extend(r_metrics["relative_rank"])
 
             if nlp_distances is not None:
                 negatives_dist = r_metrics["negatives_dist"]
@@ -167,6 +157,16 @@ def evaluate(
     output = {"retrieval_size": len(negatives)}
     relative_ranks = pd.DataFrame(relative_ranks)
     output["relative_rank_median"] = relative_ranks.relative_rank.median()
+    subject_id = relative_ranks.dataset + "_" + relative_ranks.subject + "/"
+    subjects_relative_ranks = relative_ranks.relative_rank.groupby(
+        subject_id
+    ).median()
+    output.update(
+        {
+            k + "relative_rank_median": v
+            for k, v in subjects_relative_ranks.items()
+        }
+    )
     dfs = [relative_ranks]
     if return_tables:
         metrics = pd.DataFrame(metrics)
@@ -193,5 +193,8 @@ def evaluate(
         output.update({k: v.mean for k, v in metrics.items()})
         if nlp_distances is not None:
             output.update({k: v.mean for k, v in nlp.items()})
+    relative_ranks["subject_id"] = (
+        relative_ranks.dataset + "_" + relative_ranks.subject + "/"
+    )
 
     return output

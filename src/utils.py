@@ -33,14 +33,6 @@ progress = Progress(
     console=console,
 )
 
-ignore = [
-    "return_data",
-    "log_nlp_distances",
-    "tags",
-]
-
-wandb_ignore = ignore + ["cache", "wandb_mode", "n_jobs", "verbose"]
-
 
 def _get_free_gpu():
     rows = (

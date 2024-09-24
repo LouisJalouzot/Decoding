@@ -4,7 +4,11 @@ from typing import Dict, List, Union
 
 import wandb
 from src.main import main
-from src.utils import ignore, memory, wandb_ignore
+from src.utils import memory
+
+cache_ignore = ["return_data", "log_nlp_distances"]
+config_ignore = ["cache", "wandb_mode", "tags", "kwargs"]
+wandb_ignore = config_ignore + ["return_data", "n_jobs", "verbose"]
 
 
 def wandb_wrapper(
@@ -27,7 +31,7 @@ def wandb_wrapper(
     config = {
         key: value
         for key, value in locals().items()
-        if key not in ["cache", "wandb_mode", "kwargs"] and value is not None
+        if key not in config_ignore and value is not None
     }
     config.update(kwargs)
     config_wandb = {
@@ -45,7 +49,7 @@ def wandb_wrapper(
         tags=tags,
     )
     if cache:
-        output = memory.cache(main, ignore=ignore)(**config)
+        output = memory.cache(main, ignore=cache_ignore)(**config)
     else:
         output = main(**config)
     wandb.finish()

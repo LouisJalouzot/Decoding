@@ -21,6 +21,7 @@ def wandb_wrapper(
     return_data: bool = False,
     cache: bool = False,
     wandb_mode: str = "online",
+    tags: List[str] = None,
     **kwargs,
 ):
     config = {
@@ -41,6 +42,7 @@ def wandb_wrapper(
         project="fMRI-Decoding-v6",
         save_code=True,
         mode=wandb_mode,
+        tags=tags,
     )
     if cache:
         output = memory.cache(main, ignore=ignore)(**config)

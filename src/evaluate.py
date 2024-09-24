@@ -61,6 +61,33 @@ def retrieval_metrics(
     return output
 
 
+def aggregate_metrics_df(df):
+    output = {}
+    subject_id = df.dataset + "_" + df.subject + "/"
+    for key in df.columns:
+        if key not in [
+            "dataset",
+            "subject",
+            "run",
+            "tr",
+            "top",
+            "chunk",
+            "candidate",
+        ]:
+            if key == "relative_rank":
+                suffix = "_median"
+                output[key + suffix] = df[key].median()
+                subjects_df = df[key].groupby(subject_id).median()
+            else:
+                suffix = ""
+                output[key + suffix] = df[key].mean()
+                subjects_df = df[key].groupby(subject_id).mean()
+            for k, v in subjects_df.items():
+                output[k + key + suffix] = v
+
+    return output
+
+
 def evaluate(
     df,
     decoder,
@@ -72,12 +99,8 @@ def evaluate(
 ):
     decoder.eval()
 
-    if return_tables:
-        metrics = defaultdict(list)
-        nlp = defaultdict(list)
-    else:
-        metrics = defaultdict(BatchIncrementalMean)
-        nlp = defaultdict(BatchIncrementalMean)
+    metrics = defaultdict(list)
+    nlp = defaultdict(list)
     relative_ranks = defaultdict(list)
 
     if nlp_distances is not None:
@@ -90,15 +113,12 @@ def evaluate(
 
     with torch.no_grad():
         for _, row in df.iterrows():
-            prefix = ["", f"{row.dataset}_{row.subject}/"]
-
             run_id = row[["dataset", "subject", "run"]]
             for k, v in run_id.items():
                 relative_ranks[k].extend([v] * row.n_trs)
-                if return_tables:
-                    metrics[k].append(v)
-                    if nlp_distances is not None:
-                        nlp[k].extend([v] * row.n_trs * n_candidates)
+                metrics[k].append(v)
+                if nlp_distances is not None:
+                    nlp[k].extend([v] * row.n_trs * n_candidates)
             if nlp_distances is not None:
                 nlp["tr"].extend(np.repeat(range(row.n_trs), n_candidates))
             relative_ranks["tr"].extend(range(row.n_trs))
@@ -115,12 +135,11 @@ def evaluate(
                 mean_r2 = r2_score(
                     row.Y, Y_preds.cpu(), multioutput="raw_values"
                 ).mean()
-                for p in prefix:
-                    metrics[p + "mixco"].extend([mixco.item()])
-                    metrics[p + "symm_nce"].extend([symm_nce.item()])
-                    metrics[p + "mse"].extend([mse.item()])
-                    metrics[p + "mean_r"].extend([mean_r])
-                    metrics[p + "mean_r2"].extend([mean_r2])
+                metrics["mixco"].extend([mixco.item()])
+                metrics["symm_nce"].extend([symm_nce.item()])
+                metrics["mse"].extend([mse.item()])
+                metrics["mean_r"].extend([mean_r])
+                metrics["mean_r2"].extend([mean_r2])
 
             # Evaluate retrieval metrics
             r_metrics = retrieval_metrics(
@@ -131,10 +150,9 @@ def evaluate(
                 return_ranks=True,
                 return_negatives_dist=nlp_distances is not None,
             )
-            for p in prefix:
-                for key, value in r_metrics.items():
-                    if key not in ["negatives_dist", "relative_rank", "size"]:
-                        metrics[p + key].extend([value])
+            for key, value in r_metrics.items():
+                if key not in ["negatives_dist", "relative_rank", "size"]:
+                    metrics[key].extend([value])
             relative_ranks["relative_rank"].extend(r_metrics["relative_rank"])
 
             if nlp_distances is not None:
@@ -146,8 +164,7 @@ def evaluate(
                 corresp_idx = corresp[chunk_idx, candidates_idx]
                 for k, v in nlp_distances.items():
                     if k != "corresp":
-                        for p in prefix:
-                            nlp[p + k].extend(v[corresp_idx])
+                        nlp[k].extend(v[corresp_idx])
                 if return_tables:
                     nlp["chunk"].extend(
                         np.tile(row.chunks_with_context, n_candidates)
@@ -158,46 +175,18 @@ def evaluate(
                     nlp["candidate"].extend(all_chunks[candidates_idx])
 
     output = {"retrieval_size": len(negatives)}
+    metrics = pd.DataFrame(metrics)
     relative_ranks = pd.DataFrame(relative_ranks)
-    output["relative_rank_median"] = relative_ranks.relative_rank.median()
-    subject_id = relative_ranks.dataset + "_" + relative_ranks.subject + "/"
-    subjects_relative_ranks = relative_ranks.relative_rank.groupby(
-        subject_id
-    ).median()
-    output.update(
-        {
-            k + "relative_rank_median": v
-            for k, v in subjects_relative_ranks.items()
-        }
-    )
-    dfs = [relative_ranks]
+    dfs = [metrics, relative_ranks]
+    if nlp_distances is not None:
+        nlp = pd.DataFrame(nlp)
+        dfs.append(nlp)
+        if return_tables:
+            output["nlp"] = nlp
+    for df in dfs:
+        output.update(aggregate_metrics_df(df))
     if return_tables:
-        metrics = pd.DataFrame(metrics)
         output["metrics"] = metrics
         output["relative_ranks"] = relative_ranks
-        dfs = [metrics]
-        if nlp_distances is not None:
-            nlp = pd.DataFrame(nlp)
-            output["nlp_distances"] = nlp
-            dfs.append(nlp)
-        for df in dfs:
-            for key in df.columns:
-                if key not in [
-                    "dataset",
-                    "subject",
-                    "run",
-                    "tr",
-                    "top",
-                    "chunk",
-                    "candidate",
-                ]:
-                    output[key] = df[key].mean()
-    else:
-        output.update({k: v.mean for k, v in metrics.items()})
-        if nlp_distances is not None:
-            output.update({k: v.mean for k, v in nlp.items()})
-    relative_ranks["subject_id"] = (
-        relative_ranks.dataset + "_" + relative_ranks.subject + "/"
-    )
 
     return output

@@ -276,9 +276,11 @@ def main(
             ("valid", df_valid),
             ("train", df_train),
         ]:
-            nlp_distances[split] = compute_nlp_distances(
-                df.drop_duplicates(["dataset", "run"])[nlp_cols]
-            )
+            data = df.drop_duplicates(["dataset", "run"])[nlp_cols]
+            data = data.to_dict("series")
+            for k, v in data.items():
+                data[k] = v.explode().values
+            nlp_distances[split] = compute_nlp_distances(**data)
 
     run_counts = run_counts.split.value_counts()
     console.log(

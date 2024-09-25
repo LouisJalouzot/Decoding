@@ -135,36 +135,41 @@ def batch_ratio(a, b):
 
 
 @memory.cache(ignore=["batch_size"])
-def compute_nlp_distances(df, batch_size=4096):
+def compute_nlp_distances(
+    n_trs,
+    chunks_index,
+    chunks_with_context,
+    glove_bow,
+    pos,
+    pos_restricted,
+    glove_bow_pos_restricted,
+    batch_size=4096,
+):
     # import warnings
 
     # warnings.filterwarnings("ignore", module="transformers")
-    n_chunks = df.n_trs.sum()
+    n_chunks = sum(n_trs)
 
     # Building correspondance matrix (chunk index i and j -> index k in the flattened array of distances)
     n_pairs = n_chunks * (n_chunks - 1) // 2 + n_chunks
     n_batches = -(-n_pairs // batch_size)
     corresp = np.zeros((n_chunks, n_chunks), dtype=int)
-    indices = return_all_pairs(df.chunks_index.explode())
+    indices = return_all_pairs(chunks_index)
     corresp[*indices] = np.arange(n_pairs)
     corresp_null_diag = corresp.copy()
     np.fill_diagonal(corresp_null_diag, 0)
     corresp += corresp_null_diag.T
     distances = {"corresp": corresp}
 
-    generators = []
-    for col in [
-        "glove_bow",
-        "glove_bow_pos_restricted",
-        "pos",
-        "chunks_with_context",
-    ]:
-        generators.append(
-            (
-                cosine_similarity_batch if "glove" in col else batch_ratio,
-                batch_combinations(df[col].explode(), 2, batch_size),
-            )
-        )
+    generators = [
+        (cosine_similarity_batch, batch_combinations(glove_bow, 2, batch_size)),
+        (
+            cosine_similarity_batch,
+            batch_combinations(glove_bow_pos_restricted, 2, batch_size),
+        ),
+        (batch_ratio, batch_combinations(pos, 2, batch_size)),
+        (batch_ratio, batch_combinations(chunks_with_context, 2, batch_size)),
+    ]
 
     with joblib_progress(
         f"Computing NLP distances for {n_chunks} chunks",

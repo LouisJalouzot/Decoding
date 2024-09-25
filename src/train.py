@@ -37,6 +37,7 @@ def train(
     batch_size=1,
     return_tables=False,
     nlp_distances={},
+    n_candidates=10,
     **decoder_params,
 ):
     if decoder.lower() in ["rnn", "gru", "lstm"] and loss == "mixco":
@@ -149,6 +150,7 @@ def train(
                 negatives=Y_valid,
                 top_k_accuracies=top_k_accuracies,
                 nlp_distances=nlp_distances.get("valid", None),
+                n_candidates=n_candidates,
             )
 
             # Log metrics
@@ -215,6 +217,7 @@ def train(
             negatives=Y_split,
             top_k_accuracies=top_k_accuracies,
             nlp_distances=nlp_distances.get(split, None),
+            n_candidates=n_candidates,
             return_tables=return_tables,
         ).items():
             output[split + "/" + key] = value

@@ -131,15 +131,15 @@ def evaluate(
                 _, mixco = decoder.mixco_loss(X_proj, Y)
                 Y_preds, symm_nce = decoder.symm_nce_loss(X_proj, Y)
                 _, mse = decoder.mse_loss(X_proj, Y, Y_preds)
-                mean_r = corr(Y, Y_preds).mean().item()
-                mean_r2 = r2_score(
-                    row.Y, Y_preds.cpu(), multioutput="raw_values"
-                ).mean()
-                metrics["mixco"].extend([mixco.item()])
-                metrics["symm_nce"].extend([symm_nce.item()])
-                metrics["mse"].extend([mse.item()])
-                metrics["mean_r"].extend([mean_r])
-                metrics["mean_r2"].extend([mean_r2])
+            mean_r = corr(Y, Y_preds).mean().item()
+            mean_r2 = r2_score(
+                row.Y, Y_preds.cpu(), multioutput="raw_values"
+            ).mean()
+            metrics["mixco"].extend([mixco.item()])
+            metrics["symm_nce"].extend([symm_nce.item()])
+            metrics["mse"].extend([mse.item()])
+            metrics["mean_r"].extend([mean_r])
+            metrics["mean_r2"].extend([mean_r2])
 
             # Evaluate retrieval metrics
             r_metrics = retrieval_metrics(

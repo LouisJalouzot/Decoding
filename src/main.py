@@ -67,7 +67,6 @@ def main(
     return_data: bool = False,
     return_tables: bool = False,
     log_nlp_distances: bool = False,
-    n_candidates: int = 10,
     **decoder_params,
 ):
     console.log("Running on device", device)

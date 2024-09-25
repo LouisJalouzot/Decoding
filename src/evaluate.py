@@ -125,12 +125,11 @@ def evaluate(
 
             X = row.X.to(device)
             Y = row.Y.to(device)
-            with torch.autocast(device_type=device.type):
-                X_proj = decoder.projector[row.dataset][row.subject](X)
-                # Evaluate losses
-                _, mixco = decoder.mixco_loss(X_proj, Y)
-                Y_preds, symm_nce = decoder.symm_nce_loss(X_proj, Y)
-                _, mse = decoder.mse_loss(X_proj, Y, Y_preds)
+            X_proj = decoder.projector[row.dataset][row.subject](X)
+            # Evaluate losses
+            _, mixco = decoder.mixco_loss(X_proj, Y)
+            Y_preds, symm_nce = decoder.symm_nce_loss(X_proj, Y)
+            _, mse = decoder.mse_loss(X_proj, Y, Y_preds)
             mean_r = corr(Y, Y_preds).mean().item()
             mean_r2 = r2_score(
                 row.Y, Y_preds.cpu(), multioutput="raw_values"

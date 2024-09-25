@@ -298,7 +298,6 @@ def main(
         decoder=decoder,
         return_tables=return_tables,
         nlp_distances=nlp_distances,
-        n_candidates=n_candidates,
         **decoder_params,
     )
 

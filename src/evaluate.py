@@ -8,7 +8,7 @@ import torchmetrics as tm
 from sklearn.metrics import r2_score
 
 from src.base_decoders import MeanDecoder
-from src.utils import BatchIncrementalMean, console, corr, device
+from src.utils import console, corr, device
 
 
 def retrieval_metrics(
@@ -104,8 +104,11 @@ def evaluate(
     relative_ranks = defaultdict(list)
 
     if nlp_distances is not None:
-        all_chunks = df.chunks_with_context.explode().values
+        all_chunks = df.drop_duplicates(["dataset", "run"])
+        all_chunks = all_chunks.chunks_with_context.explode().values
         corresp = nlp_distances["corresp"]
+        assert len(all_chunks) == len(corresp)
+        assert len(all_chunks) == len(negatives)
 
     negatives = negatives.to(device)
     if isinstance(decoder.decoder, MeanDecoder):
@@ -126,10 +129,11 @@ def evaluate(
             X = row.X.to(device)
             Y = row.Y.to(device)
             X_proj = decoder.projector[row.dataset][row.subject](X)
+            Y_preds = decoder(X_proj)
             # Evaluate losses
-            _, mixco = decoder.mixco_loss(X_proj, Y)
-            Y_preds, symm_nce = decoder.symm_nce_loss(X_proj, Y)
-            _, mse = decoder.mse_loss(X_proj, Y, Y_preds)
+            mixco = decoder.mixco_loss(X_proj, Y)
+            symm_nce = decoder.symm_nce_loss(X_proj, Y, Y_preds)
+            mse = decoder.mse_loss(X_proj, Y, Y_preds)
             mean_r = corr(Y, Y_preds).mean().item()
             mean_r2 = r2_score(
                 row.Y, Y_preds.cpu(), multioutput="raw_values"
@@ -147,7 +151,7 @@ def evaluate(
                 negatives,
                 top_k_accuracies=top_k_accuracies,
                 return_ranks=True,
-                return_negatives_dist=nlp_distances is not None,
+                return_negatives_dist=(nlp_distances is not None),
             )
             for key, value in r_metrics.items():
                 if key not in ["negatives_dist", "relative_rank", "size"]:
@@ -174,7 +178,7 @@ def evaluate(
                         np.repeat(row.chunks_with_context, n_candidates)
                     )
                     nlp["top"].extend(
-                        np.tile(np.arange(n_candidates), row.n_trs) + 1
+                        np.tile(np.arange(n_candidates) + 1, row.n_trs)
                     )
                     nlp["candidate"].extend(all_chunks[candidates_idx])
 

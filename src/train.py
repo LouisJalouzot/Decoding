@@ -40,13 +40,17 @@ def train(
     n_candidates=10,
     **decoder_params,
 ):
+    torch.autograd.set_detect_anomaly(True)
+    torch.set_float32_matmul_precision("high")
+
     if decoder.lower() in ["rnn", "gru", "lstm"] and loss == "mixco":
         console.log(
             "[red]MixCo augmentation should not be used with time series."
         )
 
-    Y_valid = df_valid.drop_duplicates(["dataset", "run"]).Y
-    Y_valid = torch.cat(tuple(Y_valid)).to(device)
+    negatives = df_valid.drop_duplicates(["dataset", "run"]).Y
+    negatives = torch.cat(tuple(negatives)).to(device)
+    init_train_index = df_train.index
 
     out_dim = df_train.Y.iloc[0].shape[1]
     wandb.config["out_dim"] = out_dim
@@ -113,7 +117,6 @@ def train(
     patience_counter = 0
     best_epoch = -1
     output = {}
-    torch.autograd.set_detect_anomaly(True)
 
     table = Table(
         "Epoch",
@@ -134,7 +137,7 @@ def train(
                     X = row.X.to(device)
                     Y = row.Y.to(device)
                     X_proj = decoder.projector[row.dataset][row.subject](X)
-                    _, train_loss = decoder.loss(X_proj, Y)
+                    train_loss = decoder.loss(X_proj, Y)
                     train_loss /= batch_size
 
                     train_loss.backward()
@@ -147,7 +150,7 @@ def train(
             val_metrics = evaluate(
                 df=df_valid,
                 decoder=decoder,
-                negatives=Y_valid,
+                negatives=negatives,
                 top_k_accuracies=top_k_accuracies,
                 nlp_distances=nlp_distances.get("valid", None),
                 n_candidates=n_candidates,
@@ -203,6 +206,8 @@ def train(
     if best_epoch != -1:
         decoder.load_state_dict(best_decoder_state_dict)
         optimizer.load_state_dict(best_optimizer_state_dict)
+
+    df_train = df_train.loc[init_train_index]
 
     for split, df_split in [
         ("train", df_train),

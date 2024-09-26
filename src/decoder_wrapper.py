@@ -138,9 +138,10 @@ class DecoderWrapper(nn.Module):
             X_proj.device
         )
 
+        X_proj_aug = X_proj.clone()
         # Randomly select samples used for augmentation
         perm = torch.randperm(X_proj.shape[0])
-        samples_shuffle = X_proj[perm].to(X_proj.device, dtype=X_proj.dtype)
+        samples_shuffle = X_proj_aug[perm].to(X_proj.device, dtype=X_proj.dtype)
 
         # Sample MixCo coefficients from a Beta distribution
         betas = (
@@ -152,34 +153,37 @@ class DecoderWrapper(nn.Module):
         betas_shape = [-1] + [1] * (len(X_proj.shape) - 1)
 
         # Augment samples
-        X_proj[select] = X_proj[select] * betas[select].reshape(
+        X_proj_aug[select] = X_proj_aug[select] * betas[select].reshape(
             *betas_shape
         ) + samples_shuffle[select] * (1 - betas[select]).reshape(*betas_shape)
 
-        Y_preds = self(X_proj)
-        Y_preds = F.normalize(Y_preds, dim=-1)
-        Y = F.normalize(Y, dim=-1)
-        logits = Y_preds @ Y.T / self.temperature
+        Y_preds = self(X_proj_aug)
+        Y_preds_norm = F.normalize(Y_preds, dim=-1)
+        Y_norm = F.normalize(Y, dim=-1)
+        logits = Y_preds_norm @ Y_norm.T / self.temperature
         probs = torch.diag(betas)
-        probs[torch.arange(Y_preds.shape[0]).to(Y_preds.device), perm] = (
-            1 - betas
-        )
+        probs[
+            torch.arange(Y_preds_norm.shape[0]).to(Y_preds_norm.device), perm
+        ] = (1 - betas)
         loss = -(logits.log_softmax(-1) * probs).sum(-1).mean()
         loss2 = -(logits.T.log_softmax(-1) * probs.T).sum(-1).mean()
-        return Y_preds, (loss + loss2) / 2
+
+        return (loss + loss2) / 2
 
     def symm_nce_loss(self, X_proj, Y, Y_preds=None):
         if Y_preds is None:
             Y_preds = self(X_proj)
-        Y_preds = F.normalize(Y_preds, dim=-1)
-        Y = F.normalize(Y, dim=-1)
-        logits = Y_preds @ Y.T / self.temperature
+        Y_preds_norm = F.normalize(Y_preds, dim=-1)
+        Y_norm = F.normalize(Y, dim=-1)
+        logits = Y_preds_norm @ Y_norm.T / self.temperature
         target = torch.arange(logits.shape[0]).to(logits.device)
         loss = F.cross_entropy(logits, target)
         loss2 = F.cross_entropy(logits.T, target)
-        return Y_preds, (loss + loss2) / 2
+
+        return (loss + loss2) / 2
 
     def mse_loss(self, X_proj, Y, Y_preds=None):
         if Y_preds is None:
             Y_preds = self(X_proj)
-        return Y_preds, F.mse_loss(Y_preds, Y)
+
+        return F.mse_loss(Y_preds, Y)

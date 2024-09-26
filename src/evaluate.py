@@ -158,15 +158,20 @@ def evaluate(
                 negatives_dist = r_metrics["negatives_dist"]
                 candidates_idx = negatives_dist.argsort(axis=1)[
                     :, :n_candidates
-                ].reshape(-1)
-                chunk_idx = np.tile(row.chunks_index, n_candidates)
+                ]
+                candidates_distances = negatives_dist[
+                    np.arange(row.n_trs).reshape(-1, 1), candidates_idx
+                ]
+                nlp["dist"].extend(candidates_distances.reshape(-1))
+                chunk_idx = np.repeat(row.chunks_index, n_candidates)
+                candidates_idx = candidates_idx.reshape(-1)
                 corresp_idx = corresp[chunk_idx, candidates_idx]
                 for k, v in nlp_distances.items():
                     if k != "corresp":
                         nlp[k].extend(v[corresp_idx])
                 if return_tables:
                     nlp["chunk"].extend(
-                        np.tile(row.chunks_with_context, n_candidates)
+                        np.repeat(row.chunks_with_context, n_candidates)
                     )
                     nlp["top"].extend(
                         np.tile(np.arange(n_candidates), row.n_trs) + 1
@@ -181,7 +186,7 @@ def evaluate(
         nlp = pd.DataFrame(nlp)
         dfs.append(nlp)
         if return_tables:
-            output["nlp"] = nlp
+            output["nlp_distances"] = nlp
     for df in dfs:
         output.update(aggregate_metrics_df(df))
     if return_tables:

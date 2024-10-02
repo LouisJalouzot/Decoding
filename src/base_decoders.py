@@ -31,7 +31,7 @@ class MeanDecoder(nn.Module):
         self.mean = Ys.mean(dim=0)
 
     def forward(self, x):
-        if self.train:
+        if self.training:
             return torch.randn(
                 x.size(0),
                 self.out_dim,

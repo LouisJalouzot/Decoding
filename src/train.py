@@ -1,4 +1,5 @@
 from copy import deepcopy
+from numbers import Number
 from time import time
 
 import numpy as np
@@ -164,7 +165,7 @@ def train(
             }
             if epoch == 1:
                 for k, v in output.items():
-                    if isinstance(v, float) and len(k.split("/")) < 3:
+                    if isinstance(v, Number) and len(k.split("/")) < 3:
                         table.add_column(k)
                 for col in table.columns:
                     col.overflow = "fold"
@@ -191,7 +192,7 @@ def train(
                 *[
                     f"{v:.3g}"
                     for k, v in output.items()
-                    if isinstance(v, float) and len(k.split("/")) < 3
+                    if isinstance(v, Number) and len(k.split("/")) < 3
                 ],
             )
 

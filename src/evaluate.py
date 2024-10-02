@@ -49,7 +49,7 @@ def retrieval_metrics(
         raise ValueError(
             "Metric not supported. Supported metrics are cosine and euclidean."
         )
-    ranks = (dist_to_ground_truth > dist_to_negatives).sum(1).float()
+    ranks = (dist_to_ground_truth > dist_to_negatives).sum(1).double()
     for top_k in top_k_accuracies:
         accuracy = ranks < top_k
         accuracy = accuracy.cpu().numpy().mean()

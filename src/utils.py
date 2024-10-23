@@ -19,7 +19,7 @@ from rich.progress import (
 
 console = Console()
 
-memory = memory.Memory(location=".cache", compress=9, verbose=0)
+memory = memory.Memory(location=".cache", verbose=0)
 
 progress = Progress(
     SpinnerColumn(),

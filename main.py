@@ -37,6 +37,7 @@ parser.add_argument("--monitor", type=str)
 parser.add_argument(
     "--top_encoding_voxels",
     type=lambda x: int(x) if x.isdigit() else json.loads(x),
+    default=4500,
 )
 parser.add_argument(
     "--token_aggregation",

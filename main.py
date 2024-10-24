@@ -51,6 +51,7 @@ parser.add_argument(
     ],
 )
 parser.add_argument("--wandb_mode", type=str)
+parser.add_argument("--wandb_project", type=str)
 parser.add_argument("--tags", nargs="*", type=str)
 parser.add_argument("--cache", action="store_true")
 parser.add_argument("--log_nlp_distances", action="store_true")

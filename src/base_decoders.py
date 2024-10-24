@@ -3,8 +3,6 @@ from functools import partial
 import torch
 from torch import nn
 
-from src.utils import BatchIncrementalMean
-
 
 class RandomDecoder(nn.Module):
     def __init__(self, out_dim):
@@ -54,8 +52,6 @@ class SimpleMLP(nn.Module):
         hidden_size=512,
         num_layers=3,
         dropout=0.7,
-        norm_type="ln",
-        activation_layer_first=False,
         **kwargs,
     ):
         super().__init__()
@@ -63,29 +59,13 @@ class SimpleMLP(nn.Module):
         self.hidden_size = hidden_size
         self.num_layers = num_layers
         self.dropout = dropout
-        self.norm_type = norm_type
-        self.activation_layer_first = activation_layer_first
-        norm = (
-            partial(nn.BatchNorm1d, num_features=self.hidden_size)
-            if self.norm_type == "bn"
-            else partial(nn.LayerNorm, normalized_shape=self.hidden_size)
-        )
-        activation = (
-            partial(nn.ReLU, inplace=True)
-            if self.norm_type == "bn"
-            else nn.GELU
-        )
-        self.activation_and_norm = (
-            (activation, norm)
-            if self.activation_layer_first
-            else (norm, activation)
-        )
 
+        self.fc = []
         for _ in range(num_layers - 1):
             self.fc.extend(
                 [
                     nn.Linear(self.hidden_size, self.hidden_size),
-                    *[item() for item in self.activation_and_norm],
+                    nn.ReLU(),
                     nn.Dropout(self.dropout),
                 ]
             )

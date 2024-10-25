@@ -3,6 +3,7 @@ import argparse
 import json
 
 from src.wandb_wrapper import wandb_wrapper
+from src.utils import memory
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--datasets", nargs="*", default=["lebel2023"])
@@ -61,4 +62,10 @@ parser.add_argument("--n_candidates", type=int)
 
 args = parser.parse_args()
 args = {key: value for key, value in vars(args).items() if value is not None}
-wandb_wrapper(**args)
+
+if args.pop("cache"):
+    output = memory.cache(
+        wandb_wrapper, ignore=["return_data", "log_nlp_distances"]
+    )(**args)
+else:
+    wandb_wrapper(**args)

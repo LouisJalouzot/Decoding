@@ -6,7 +6,6 @@ import wandb
 from src.main import main
 from src.utils import memory
 
-cache_ignore = ["return_data", "log_nlp_distances"]
 config_ignore = ["cache", "wandb_mode", "wandb_project", "tags", "kwargs"]
 wandb_ignore = config_ignore + ["return_data", "n_jobs", "verbose"]
 
@@ -23,7 +22,6 @@ def wandb_wrapper(
     smooth: int = 0,
     multi_subject_mode: str = "individual",
     return_data: bool = False,
-    cache: bool = False,
     wandb_mode: str = "online",
     wandb_project: str = "fMRI-Decoding-v6",
     tags: List[str] = None,
@@ -49,10 +47,9 @@ def wandb_wrapper(
         mode=wandb_mode,
         tags=tags,
     )
-    if cache:
-        output = memory.cache(main, ignore=cache_ignore)(**config)
-    else:
-        output = main(**config)
+
+    output = main(**config)
+
     wandb.finish()
 
     return output

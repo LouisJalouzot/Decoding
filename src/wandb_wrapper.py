@@ -21,6 +21,7 @@ def wandb_wrapper(
     lag: int = 0,
     smooth: int = 0,
     multi_subject_mode: str = "individual",
+    log_nlp_distances: bool = False,
     return_data: bool = False,
     wandb_mode: str = "online",
     wandb_project: str = "fMRI-Decoding-v6",

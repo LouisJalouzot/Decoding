@@ -148,3 +148,117 @@ def batch_combinations(iterable, r, batch_size):
     # Yield any remaining combinations if they don't fill the last batch
     if batch:
         yield np.array(batch).swapaxes(0, 1)
+
+
+def custom_run_sort(df):
+    """
+    Sorts runs by alphabetical order.
+    For the LeBel dataset, makes the runs of the subject with less data (4-8) appear first for the splitting to be consistent for every choice of subject.
+
+    Parameters:
+    df (pandas.DataFrame): DataFrame with 'dataset' and 'run' columns
+
+    Returns:
+    pandas.DataFrame: Sorted DataFrame
+    """
+    df["sort_key"] = df.apply(
+        lambda row: (
+            (
+                lebel2023_run_order.index(row.run)
+                if row.dataset == "lebel2023"
+                else row.run
+            ),
+        ),
+        axis=1,
+    )
+    df = df.sort_values(["dataset", "sort_key"])
+
+    return df.drop("sort_key", axis=1)
+
+
+lebel2023_run_order = [
+    "wheretheressmoke",
+    "alternateithicatom",
+    "itsabox",
+    "adventuresinsayingyes",
+    "eyespy",
+    "exorcism",
+    "legacy",
+    "howtodraw",
+    "fromboyhoodtofatherhood",
+    "naked",
+    "adollshouse",
+    "stagefright",
+    "tildeath",
+    "inamoment",
+    "odetostepfather",
+    "buck",
+    "haveyoumethimyet",
+    "thatthingonmyarm",
+    "avatar",
+    "swimmingwithastronauts",
+    "myfirstdaywiththeyankees",
+    "hangtime",
+    "undertheinfluence",
+    "sloth",
+    "theclosetthatateeverything",
+    "souls",
+    "catfishingstrangerstofindmyself",
+    "quietfire",
+    "vixenandtheussr",
+    "listo",
+    "backsideofthestorm",
+    "mybackseatviewofagreatromance",
+    "comingofageondeathrow",
+    "firetestforlove",
+    "lifereimagined",
+    "thepostmanalwayscalls",
+    "beneaththemushroomcloud",
+    "notontheusualtour",
+    "metsmagic",
+    "thefreedomridersandme",
+    "ifthishaircouldtalk",
+    "christmas1940",
+    "sweetaspie",
+    "golfclubbing",
+    "gangstersandcookies",
+    "birthofanation",
+    "lifeanddeathontheoregontrail",
+    "mayorofthefreaks",
+    "thetiniestbouquet",
+    "wildwomenanddancingqueens",
+    "treasureisland",
+    "againstthewind",
+    "goldiethegoldfish",
+    "life",
+    "onlyonewaytofindout",
+    "cocoonoflove",
+    "leavingbaghdad",
+    "kiksuya",
+    "becomingindian",
+    "goingthelibertyway",
+    "jugglingandjesus",
+    "shoppinginchina",
+    "food",
+    "waitingtogo",
+    "theadvancedbeginner",
+    "thumbsup",
+    "gpsformylostidentity",
+    "afatherscover",
+    "breakingupintheageofgoogle",
+    "myfathershands",
+    "superheroesjustforeachother",
+    "bluehope",
+    "theinterview",
+    "whenmothersbullyback",
+    "reachingoutbetweenthebars",
+    "cautioneating",
+    "singlewomanseekingmanwich",
+    "stumblinginthedark",
+    "thecurse",
+    "theshower",
+    "thetriangleshirtwaistconnection",
+    "penpal",
+    "forgettingfear",
+    "threemonths",
+]

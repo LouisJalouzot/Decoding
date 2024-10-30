@@ -13,7 +13,7 @@ import wandb
 from src.nlp_metrics import compute_nlp_distances, nlp_cols, nlp_dist_cols
 from src.prepare_latents import prepare_latents
 from src.train import train
-from src.utils import console, device, progress
+from src.utils import console, custom_run_sort, device, progress
 
 
 def compute_chunk_index(df):
@@ -179,6 +179,7 @@ def main(
         .reset_index()
     )
     run_counts = run_counts.merge(n_subjects)
+    run_counts = custom_run_sort(run_counts)
     # By default put all runs in the train split
     run_counts["split"] = "train"
 
@@ -194,9 +195,7 @@ def main(
         return ["test"] * n_test + ["valid"] * n_valid + ["train"] * n_train
 
     run_counts.loc[main_runs, "split"] = (
-        run_counts[main_runs]
-        .groupby("dataset")
-        .split.transform(return_split_sizes)
+        run_counts[main_runs].groupby("dataset").transform(return_split_sizes)
     )
     df = df.merge(run_counts[["dataset", "run", "split"]])
     assert np.isin(

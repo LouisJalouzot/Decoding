@@ -135,7 +135,7 @@ def main(
         latents = []
         for _, (dataset, run, n_trs) in n_trs_by_run.iterrows():
             data = prepare_latents(
-                dataset=dataset,
+                dataset=dataset.split("_")[0], # lebel2023_balanced -> lebel2023
                 run=run,
                 model=model,
                 tr=tr,

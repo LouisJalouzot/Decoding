@@ -60,3 +60,32 @@ def create_lebel2023_dataset():
                 )
                 progress.update(task, advance=1)
             progress.update(task, completed=True)
+
+
+def create_lebel2023_balanced_dataset():
+    source_path = Path("datasets/lebel2023")
+    target_path = Path("datasets/lebel2023_balanced")
+
+    # Get all subjects
+    subjects = sorted([d for d in source_path.iterdir() if d.is_dir()])
+
+    # Get runs for each subject
+    subject_runs = {}
+    for subject in subjects:
+        subject_runs[subject.name] = {f.stem for f in subject.glob("*.npy")}
+
+    # Find common runs across all subjects
+    common_runs = set.intersection(*subject_runs.values())
+    console.log(f"Found {len(common_runs)} runs common to all subjects")
+
+    # Create symbolic links for common runs
+    for subject in subjects:
+        subject_target = target_path / subject.name
+        subject_target.mkdir(parents=True, exist_ok=True)
+        for run in common_runs:
+            source_file = source_path / subject.name / f"{run}.npy"
+            target_file = subject_target / f"{run}.npy"
+            relative_source = os.path.relpath(source_file, target_file.parent)
+            target_file.unlink(missing_ok=True)
+            target_file.symlink_to(relative_source)
+    console.log(f"Created balanced dataset at {target_path}")

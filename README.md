@@ -1,4 +1,21 @@
 # Decoding
+
+## Installation
+
+This project has been tested with Python 3.11 on Ubuntu 22.04.
+
+1. Set up a virtual environment:
+   ```
+   python -m venv .env
+   source .env/bin/activate
+   ```
+
+2. Install dependencies:
+   ```
+   pip install -r requirements.txt
+   ```
+
+## Data
 To fetch datasets
 ```bash
 #Lebel2023

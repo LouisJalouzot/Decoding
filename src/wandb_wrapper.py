@@ -6,7 +6,7 @@ import wandb
 from src.main import main
 from src.utils import memory
 
-wandb.Table.MAX_ARTIFACT_ROWS = 1e9
+wandb.Table.MAX_ARTIFACT_ROWS = 1000000000
 
 config_ignore = ["cache", "wandb_mode", "wandb_project", "tags", "kwargs"]
 wandb_ignore = config_ignore + ["return_data", "n_jobs", "verbose"]

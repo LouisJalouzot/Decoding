@@ -1,4 +1,5 @@
 import itertools
+import os
 import subprocess
 from typing import Union
 
@@ -17,7 +18,7 @@ from rich.progress import (
     TimeRemainingColumn,
 )
 
-console = Console()
+console = Console(width=None if os.isatty(1) else 500)
 
 memory = memory.Memory(location=".cache", verbose=0)
 

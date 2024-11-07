@@ -14,6 +14,20 @@ DEFAULT_BAD_WORDS = frozenset(
     ["sentence_start", "sentence_end", "br", "lg", "ls", "ns", "sp", ""]
 )
 
+tag_map = {
+    "NOUN": "N",
+    "VERB": "V",
+    "ADJ": "J",
+    "ADV": "R",
+    "PRON": "P",
+    "DET": "D",
+    "ADP": "A",
+    "CONJ": "C",
+    "PRT": "T",
+    "NUM": "M",
+    "X": "X",
+}
+
 
 def compute_chunks(
     textgrid_path: str,
@@ -55,7 +69,11 @@ def compute_chunks(
     chunks_with_context = transcript.chunks_with_context.tolist()
     transcript["glove_bow"] = get_glove_bows(chunks_with_context)
     tokenized_chunks, pos_tagged_chunks = nltk_pos_tag(chunks_with_context)
-    transcript["pos"] = [" ".join(tags) for tags in pos_tagged_chunks]
+    encoded_pos = []
+    for tags in pos_tagged_chunks:
+        encoded_pos_chunk = [tag_map.get(tag, "?") for tag in tags]
+        encoded_pos.append(" ".join(encoded_pos_chunk))
+    transcript["pos"] = encoded_pos
     transcript["pos_restricted"] = [
         " ".join(
             tok

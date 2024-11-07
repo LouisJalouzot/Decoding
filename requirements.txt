@@ -21,7 +21,7 @@ soundfile>=0.12.1
 nibabel>=5.2.1
 chardet>=5.2.0
 nilearn>=0.10.4
-joblib-progress>=1.0.5
+git+https://github.com/jonghwanhyeon/joblib-progress
 h5py>=3.11.0
 nltk>=3.9.1
 evaluate>=0.4.3

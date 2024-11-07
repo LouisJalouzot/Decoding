@@ -104,7 +104,9 @@ def main(
             f"No runs found in datasets {datasets}, have you run preprocess.py?"
         )
     with joblib_progress(
-        f"Loading brain scans for datasets {datasets}", total=n_runs
+        f"Loading brain scans for datasets {datasets}",
+        total=n_runs,
+        console=console,
     ):
         df = Parallel(n_jobs=-1)(
             delayed(read)(dataset, subject, run, lag, smooth, stack)
@@ -135,7 +137,9 @@ def main(
         latents = []
         for _, (dataset, run, n_trs) in n_trs_by_run.iterrows():
             data = prepare_latents(
-                dataset=dataset.split("_")[0], # lebel2023_balanced -> lebel2023
+                dataset=dataset.split("_")[
+                    0
+                ],  # lebel2023_balanced -> lebel2023
                 run=run,
                 model=model,
                 tr=tr,

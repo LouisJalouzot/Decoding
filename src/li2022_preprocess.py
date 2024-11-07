@@ -9,6 +9,8 @@ from joblib_progress import joblib_progress
 from nilearn import image
 from sklearn.preprocessing import StandardScaler
 
+from src.utils import console
+
 SUBJECTS_TO_TRIM = [
     "EN061",
     "EN064",
@@ -62,7 +64,9 @@ def create_li2022_datasets(lang="EN"):
         path.exists()
     ), f"{path} does not exist, either the working directory {Path(os.getcwd())} is not the root of the repo or the data has not been downloaded."
     mask_path = path / "colin27_t1_tal_lin_mask.nii"
-    assert mask_path.exists(), "You need to download the mask first (c.f. README.md)"
+    assert (
+        mask_path.exists()
+    ), "You need to download the mask first (c.f. README.md)"
     input_path = path / "derivatives"
     target_path = Path("datasets") / f"li2022_{lang}"
     target_path_SS = Path("datasets") / f"li2022_{lang}_SS"
@@ -97,6 +101,7 @@ def create_li2022_datasets(lang="EN"):
     with joblib_progress(
         f"Loading and slicing brain scans for {len(subjects)} subjects",
         total=2 * len(subjects),
+        console=console,
     ):
         Parallel(n_jobs=-1)(
             delayed(slice_subject)(
@@ -137,7 +142,9 @@ def build_mean_subject(lang="EN", SS=True, trimmed=False):
         subjects = [s for s in subjects if s not in SUBJECTS_TO_TRIM]
     for run in range(1, 10):
         with joblib_progress(
-            f"Building mean subject for run {run}/9", total=len(subjects)
+            f"Building mean subject for run {run}/9",
+            total=len(subjects),
+            console=console,
         ):
             mean = sum(
                 Parallel(n_jobs=-1, return_as="generator_unordered")(
@@ -159,7 +166,9 @@ def build_SRM_dataset(
 
     input_path = Path("datasets/li2022_EN_SS")
     if n_components >= 1000:
-        ext = f"_SRM_{n_components//1000}k_valid_{valid_ratio}_test_{test_ratio}"
+        ext = (
+            f"_SRM_{n_components//1000}k_valid_{valid_ratio}_test_{test_ratio}"
+        )
     else:
         ext = f"_SRM_{n_components}_valid_{valid_ratio}_test_{test_ratio}"
     target_path = input_path.with_name(input_path.name + ext)
@@ -182,6 +191,7 @@ def build_SRM_dataset(
     with joblib_progress(
         f"Loading brain scans for {n_subjects} subjects with {n_runs} runs each",
         total=n_subjects * n_runs,
+        console=console,
     ):
         out = Parallel(n_jobs=-1)(
             delayed(read)(i, j, input_path)
@@ -195,7 +205,9 @@ def build_SRM_dataset(
     n_valid = max(1, int(valid_ratio * n_runs))
     n_test = max(1, int(test_ratio * n_runs))
 
-    srm = IdentifiableFastSRM(n_components=n_components, n_jobs=-1, verbose=True)
+    srm = IdentifiableFastSRM(
+        n_components=n_components, n_jobs=-1, verbose=True
+    )
     srm.fit(X[:, n_test + n_valid :])
 
     def write(target_path, subject, run, X, W):
@@ -203,7 +215,9 @@ def build_SRM_dataset(
         np.save(target_path / subject / f"{run}.npy", X.T @ W)
 
     with joblib_progress(
-        "Projecting and saving brain scans", total=n_subjects * n_runs
+        "Projecting and saving brain scans",
+        total=n_subjects * n_runs,
+        console=console,
     ):
         Parallel(n_jobs=-1)(
             delayed(write)(

@@ -174,6 +174,7 @@ def compute_nlp_distances(
     with joblib_progress(
         f"Computing NLP distances for {n_chunks} chunks",
         total=len(generators) * n_batches,
+        console=console,
     ):
         results = Parallel(n_jobs=-1, max_nbytes=None)(
             delayed(lambda a, b, f: f(a, b))(a, b, f)

@@ -40,7 +40,9 @@ def create_lebel2023_dataset():
                 shutil.rmtree(target_path_subject)
         run_files = list((source_path_subjects / subject).iterdir())
         with joblib_progress(
-            f"Reading brain scans for subject {subject}", total=len(run_files)
+            f"Reading brain scans for subject {subject}",
+            total=len(run_files),
+            console=console,
         ):
             runs = Parallel(n_jobs=-1)(delayed(read)(f) for f in run_files)
         scaler = StandardScaler()

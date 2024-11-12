@@ -25,7 +25,7 @@ def wandb_wrapper(
     multi_subject_mode: str = "individual",
     log_nlp_distances: bool = False,
     return_data: bool = False,
-    wandb_mode: str = "online",
+    no_wandb: bool = False,
     wandb_project: str = "fMRI-Decoding-v6",
     tags: List[str] = None,
     **kwargs,
@@ -36,23 +36,27 @@ def wandb_wrapper(
         if key not in config_ignore and value is not None
     }
     config.update(kwargs)
-    config_wandb = {
-        key: value for key, value in config.items() if key not in wandb_ignore
-    }
-    for key, value in config.items():
-        if isinstance(value, dict):
-            config_wandb[key + "_id"] = json.dumps(value, sort_keys=True)
-    wandb.init(
-        config=config_wandb,
-        id=sha1(repr(sorted(config.items())).encode()).hexdigest(),
-        project=wandb_project,
-        save_code=True,
-        mode=wandb_mode,
-        tags=tags,
-    )
+    if not no_wandb:
+        config_wandb = {
+            key: value
+            for key, value in config.items()
+            if key not in wandb_ignore
+        }
+        for key, value in config.items():
+            if isinstance(value, dict):
+                config_wandb[key + "_id"] = json.dumps(value, sort_keys=True)
+
+        wandb.init(
+            config=config_wandb,
+            id=sha1(repr(sorted(config.items())).encode()).hexdigest(),
+            project=wandb_project,
+            save_code=True,
+            tags=tags,
+        )
 
     output = main(**config)
 
-    wandb.finish()
+    if not no_wandb:
+        wandb.finish()
 
     return output

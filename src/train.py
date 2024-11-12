@@ -54,7 +54,6 @@ def train(
     init_train_index = df_train.index
 
     out_dim = df_train.Y.iloc[0].shape[1]
-    wandb.config["out_dim"] = out_dim
     if decoder.lower() == "brain_decoder":
         decoder = BrainDecoder(out_dim=out_dim, **decoder_params)
     elif decoder.lower() == "rnn":
@@ -76,7 +75,6 @@ def train(
     in_dims = {
         level: in_dims.xs(level).to_dict() for level in in_dims.index.levels[0]
     }
-    wandb.config["in_dims"] = in_dims
     decoder = DecoderWrapper(
         decoder=decoder,
         in_dims=in_dims,
@@ -87,7 +85,10 @@ def train(
 
     n_params = sum([p.numel() for p in decoder.parameters()])
     console.log(f"Decoder has {n_params:.3g} parameters.")
-    wandb.config["n_params"] = n_params
+    if wandb.run is not None:
+        wandb.config["in_dims"] = in_dims
+        wandb.config["out_dim"] = out_dim
+        wandb.config["n_params"] = n_params
 
     no_decay = ["bias", "LayerNorm.weight"]
     opt_grouped_parameters = [
@@ -169,7 +170,8 @@ def train(
                         table.add_column(k)
                 for col in table.columns:
                     col.overflow = "fold"
-            wandb.log(output)
+            if wandb.run is not None:
+                wandb.log(output)
 
             # Early stopping
             monitor_metric = np.mean(output[monitor])
@@ -227,12 +229,17 @@ def train(
             return_tables=return_tables,
         ).items():
             output[split + "/" + key] = value
-    wandb.summary.update(
-        {
-            k: wandb.Table(dataframe=v) if isinstance(v, pd.DataFrame) else v
-            for k, v in output.items()
-        }
-    )
+    if wandb.run is not None:
+        wandb.summary.update(
+            {
+                k: (
+                    wandb.Table(dataframe=v)
+                    if isinstance(v, pd.DataFrame)
+                    else v
+                )
+                for k, v in output.items()
+            }
+        )
 
     for split in ["Train", "Valid", "Test"]:
         split_key = f"{split.lower()}/relative_rank_median"

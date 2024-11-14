@@ -28,6 +28,7 @@ def train(
     df_train,
     df_valid,
     df_test,
+    in_dims,
     decoder="brain_decoder",
     patience=20,
     monitor="valid/relative_rank_median",
@@ -39,7 +40,7 @@ def train(
     return_tables=False,
     nlp_distances={},
     n_candidates=10,
-    fold=None,
+    metrics_prefix="",
     **decoder_params,
 ):
     torch.autograd.set_detect_anomaly(True)
@@ -53,8 +54,6 @@ def train(
     negatives = df_valid.drop_duplicates(["dataset", "run"]).Y
     negatives = torch.cat(tuple(negatives)).to(device)
     init_train_index = df_train.index
-
-    fold_prefix = f"fold_{fold}/" if fold is not None else ""
 
     out_dim = df_train.Y.iloc[0].shape[1]
     if decoder.lower() == "brain_decoder":
@@ -73,11 +72,7 @@ def train(
         decoder = MeanDecoder(out_dim=out_dim)
     else:
         raise ValueError(f"Unsupported decoder {decoder}.")
-    in_dims = df_train[["dataset", "subject", "n_voxels"]].drop_duplicates()
-    in_dims = in_dims.set_index(["dataset", "subject"]).n_voxels
-    in_dims = {
-        level: in_dims.xs(level).to_dict() for level in in_dims.index.levels[0]
-    }
+
     decoder = DecoderWrapper(
         decoder=decoder,
         in_dims=in_dims,
@@ -174,7 +169,7 @@ def train(
                 for col in table.columns:
                     col.overflow = "fold"
             if wandb.run is not None:
-                wandb.log({fold_prefix + k: v for k, v in output.items()})
+                wandb.log({metrics_prefix + k: v for k, v in output.items()})
 
             # Early stopping
             monitor_metric = np.mean(output[monitor])
@@ -235,7 +230,7 @@ def train(
     if wandb.run is not None:
         wandb.summary.update(
             {
-                fold_prefix
+                metrics_prefix
                 + k: (
                     wandb.Table(dataframe=v)
                     if isinstance(v, pd.DataFrame)

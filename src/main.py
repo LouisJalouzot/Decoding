@@ -1,6 +1,5 @@
 import os
 from pathlib import Path
-from typing import Dict, List, Union
 
 import numpy as np
 import pandas as pd
@@ -15,7 +14,8 @@ from src.prepare_data import (
     compute_chunk_index,
     find_best_encoding_voxels,
     generate_splits,
-    read,
+    read_brain_volume,
+    split_dataframe,
 )
 from src.prepare_latents import prepare_latents
 from src.train import train
@@ -23,9 +23,9 @@ from src.utils import console, device, progress
 
 
 def main(
-    datasets: Union[str, List[str]] = "lebel2023/all_subjects",
-    subjects: Dict[str, List[str]] = None,
-    runs: Dict[str, Dict[str, List[str]]] = None,
+    datasets: str | list[str] = "lebel2023/all_subjects",
+    subjects: dict[str, list[str]] = None,
+    runs: dict[str, dict[str, list[str]]] = None,
     decoder: str = "brain_decoder",
     model: str = "bert-base-uncased",
     context_length: int = 6,
@@ -33,6 +33,7 @@ def main(
     lag: int = 3,
     smooth: int = 0,
     stack: int = 0,
+    train_ratio: float = None,
     valid_ratio: float = 0.1,
     test_ratio: float = 0.1,
     seed: int = 0,
@@ -43,6 +44,9 @@ def main(
     log_nlp_distances: bool = False,
     n_folds: int = None,
     fold: int = None,
+    leave_out: dict[str, list[str]] = None,
+    fine_tune: dict[str, dict[str, str]] = None,
+    fine_tune_disjoint: bool = True,
     **decoder_params,
 ):
     console.log("Running on device", device)
@@ -89,7 +93,9 @@ def main(
         console=console,
     ):
         df = Parallel(n_jobs=-1)(
-            delayed(read)(dataset, subject, run, lag, smooth, stack)
+            delayed(read_brain_volume)(
+                dataset, subject, run, lag, smooth, stack
+            )
             for dataset in runs
             for subject in runs[dataset]
             for run in runs[dataset][subject]
@@ -109,9 +115,8 @@ def main(
         latents = []
         for _, (dataset, run, n_trs) in runs.iterrows():
             data = prepare_latents(
-                dataset=dataset.split("_")[
-                    0
-                ],  # lebel2023_balanced -> lebel2023
+                # lebel2023_balanced -> lebel2023
+                dataset=dataset.split("_")[0],
                 run=run,
                 model=model,
                 tr=tr,
@@ -143,31 +148,40 @@ def main(
     df = df.merge(latents, on=["dataset", "run"])
 
     # Compute (CV) splits
-    df_splits = generate_splits(
-        df=df,
-        n_folds=n_folds,
-        fold=fold,
-        valid_ratio=valid_ratio,
-        test_ratio=test_ratio,
-        seed=seed,
+    df = split_dataframe(
+        df,
+        n_folds,
+        fold,
+        train_ratio,
+        valid_ratio,
+        test_ratio,
+        seed,
+        leave_out,
+        fine_tune,
+        fine_tune_disjoint,
     )
-    if wandb.run is not None:
-        wandb.log({"splits": wandb.Table(data=df_splits)})
-    df["orig_X"] = (
-        df.X
-    )  # Save original X for multiple encoding voxels selections
-    df = df.merge(df_splits)
 
     outputs = {}
     for fold, df_fold in df.groupby("fold"):
         if top_encoding_voxels is not None:
             df_fold = find_best_encoding_voxels(df_fold, top_encoding_voxels)
 
+        in_dims = df_fold[["dataset", "subject", "n_voxels"]].drop_duplicates()
+        in_dims = in_dims.set_index(["dataset", "subject"]).n_voxels
+        in_dims = {
+            level: in_dims.xs(level).to_dict()
+            for level in in_dims.index.levels[0]
+        }
+
         df_train = df_fold[df_fold.split == "train"]
         df_valid = df_fold[df_fold.split == "valid"]
         df_test = df_fold[df_fold.split == "test"]
+        # TODO: use
+        df_ft_train = df_fold[df_fold.split == "ft_train"]
+        df_ft_valid = df_fold[df_fold.split == "ft_valid"]
         nlp_distances = {}
         if log_nlp_distances:
+            # TODO: also log nlp_distances for leave_out splits
             chunks_index = compute_chunk_index(df_train)
             df_train = df_train.merge(chunks_index)
             chunks_index = compute_chunk_index(df_valid)
@@ -187,9 +201,11 @@ def main(
 
         console.log(
             f"\n[bold]Fold {fold}/{n_folds}[/]\n"
-            f"Train split: {df_train.run.nunique()} runs with {len(df_train)} occurrences and {df_train.n_trs.sum()} scans\n"
-            f"Valid split: {df_valid.run.nunique()} runs with {len(df_valid)} occurrences and {df_valid.n_trs.sum()} scans\n"
-            f"Test split: {df_test.run.nunique()} runs with {len(df_test)} occurrences and {df_test.n_trs.sum()} scans"
+            if n_folds is not None
+            else ""
+            + f"Train split: {df_train.run.nunique()} runs with {len(df_train)} occurrences and {df_train.n_trs.sum()} scans\n"
+            + f"Valid split: {df_valid.run.nunique()} runs with {len(df_valid)} occurrences and {df_valid.n_trs.sum()} scans\n"
+            + f"Test split: {df_test.run.nunique()} runs with {len(df_test)} occurrences and {df_test.n_trs.sum()} scans"
         )
 
         if return_data:
@@ -199,10 +215,11 @@ def main(
                 df_train,
                 df_valid,
                 df_test,
+                in_dims,
                 decoder=decoder,
                 return_tables=return_tables,
                 nlp_distances=nlp_distances,
-                fold=fold,
+                metrics_prefix=f"fold_{fold}/" if n_folds is not None else "",
                 **decoder_params,
             )
 

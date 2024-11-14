@@ -8,6 +8,9 @@ from src.wandb_wrapper import wandb_wrapper
 parser = argparse.ArgumentParser()
 parser.add_argument("--datasets", nargs="*", default=["lebel2023"])
 parser.add_argument("--subjects", type=json.loads)
+parser.add_argument("--leave_out", type=json.loads)
+parser.add_argument("--fine_tune", type=json.loads)
+parser.add_argument("--fine_tune_disjoint", action="store_true")
 parser.add_argument(
     "--multi_subject_mode",
     type=str,
@@ -16,6 +19,7 @@ parser.add_argument(
 parser.add_argument("--model", type=str, default="bert-base-uncased")
 parser.add_argument("--decoder", type=str, default="brain_decoder")
 parser.add_argument("--loss", type=str, default="mixco")
+parser.add_argument("--train_ratio", type=float)
 parser.add_argument("--valid_ratio", type=float, default=0.1)
 parser.add_argument("--test_ratio", type=float, default=0.2)
 parser.add_argument("--n_folds", type=int)

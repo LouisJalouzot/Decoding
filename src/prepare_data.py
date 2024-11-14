@@ -7,10 +7,11 @@ from sklearn.linear_model import Ridge
 from sklearn.metrics import r2_score
 from sklearn.model_selection import KFold, train_test_split
 
+import wandb
 from src.utils import progress
 
 
-def read(dataset, subject, run, lag, smooth, stack):
+def read_brain_volume(dataset, subject, run, lag, smooth, stack):
     path = Path("datasets") / dataset / subject / run
     path = path.with_suffix(".npy")
     X = torch.from_numpy(np.load(path))
@@ -46,11 +47,14 @@ def generate_splits(
     df,
     n_folds=None,
     fold=None,
+    train_ratio=None,
     valid_ratio=0.1,
     test_ratio=0.1,
     seed=0,
 ):
     """Generate train/valid/test splits for each dataset"""
+    if train_ratio is None:
+        train_ratio = 1 - valid_ratio - test_ratio
     df = df[["dataset", "run", "subject"]].copy()
     df["n_subjects"] = df.groupby("dataset").subject.transform("nunique")
     df = (
@@ -77,6 +81,7 @@ def generate_splits(
 
                 _, valid_indices = train_test_split(
                     train_indices,
+                    train_size=train_ratio / (1 - test_ratio),
                     test_size=valid_ratio / (1 - test_ratio),
                     random_state=seed,
                 )
@@ -100,6 +105,7 @@ def generate_splits(
             )  # Unlike KFold, train_test_split returns the elements of the original array, not the indices
             _, valid_indices = train_test_split(
                 train_indices,
+                train_size=train_ratio / (1 - test_ratio),
                 test_size=valid_ratio / (1 - test_ratio),
                 random_state=seed,
             )
@@ -110,6 +116,83 @@ def generate_splits(
     return pd.concat(df_splits).drop(
         columns=["n_subjects", "subjects", "occurrences"]
     )
+
+
+def split_dataframe(
+    df,
+    n_folds,
+    fold,
+    train_ratio,
+    valid_ratio,
+    test_ratio,
+    seed,
+    leave_out: dict[str, list[str]] = None,
+    fine_tune: dict[str, list[str]] = None,
+    fine_tune_disjoint: bool = True,
+):
+    subjects_runs = df[["dataset", "subject", "run"]].drop_duplicates()
+    subjects = df[["dataset", "subject"]].drop_duplicates()
+
+    if fine_tune is not None:
+        # Make fine_tune a dataframe for merging
+        fine_tune = [(k, v) for k, vals in fine_tune.items() for v in vals]
+        fine_tune = pd.DataFrame(fine_tune, columns=["dataset", "subject"])
+        df_fine_tune = subjects_runs.merge(fine_tune)
+        df_fine_tune = generate_splits(
+            df=df_fine_tune,
+            train_ratio=train_ratio,
+            valid_ratio=valid_ratio,
+            test_ratio=test_ratio,
+            seed=seed,
+        ).merge(fine_tune)
+        df_fine_tune = df_fine_tune.replace(
+            {"split": {"train": "ft_train", "valid": "ft_valid"}}
+        )
+        if fine_tune_disjoint:
+            tmp = df_fine_tune[df_fine_tune.split != "test"]
+            # Remove fine tuning subjects and fine-tuning train and valid runs from the main splits
+            for to_drop in ["subject", "run"]:
+                subjects_runs = subjects_runs.merge(
+                    tmp[["dataset", to_drop]],
+                    how="left",
+                    indicator=True,
+                )
+                subjects_runs = subjects_runs[subjects_runs._merge != "both"]
+                subjects_runs = subjects_runs.drop(columns="_merge")
+
+    df_splits = generate_splits(
+        df=subjects_runs,
+        n_folds=n_folds,
+        fold=fold,
+        train_ratio=train_ratio,
+        valid_ratio=valid_ratio,
+        test_ratio=test_ratio,
+        seed=seed,
+    )
+
+    if fine_tune is not None:
+        df_splits = df_splits.merge(subjects_runs)
+        df_splits = pd.concat([df_splits, df_fine_tune]).drop_duplicates()
+
+    if leave_out is not None:
+        leave_out = [(k, v) for k, vals in leave_out.items() for v in vals]
+        leave_out = pd.DataFrame(leave_out, columns=["dataset", "subject"])
+        # Add subject distinction to splits
+        df_splits = df_splits.merge(subjects)
+        # Put leave_out subjects in the test split
+        df_splits = df_splits.merge(leave_out, how="left", indicator=True)
+        df_splits.loc[df_splits._merge == "both", "split"] = "test"
+        df_splits = df_splits.drop(columns="_merge")
+
+    df = df.merge(df_splits)
+
+    if wandb.run is not None:
+        wandb.log({"splits": wandb.Table(data=df_splits)})
+
+    # Save original X for multiple encoding voxels selections
+    df["orig_X"] = df.X
+
+    return df
 
 
 def find_best_encoding_voxels(df, top_encoding_voxels):

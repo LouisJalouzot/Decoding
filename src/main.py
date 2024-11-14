@@ -202,6 +202,7 @@ def main(
                 decoder=decoder,
                 return_tables=return_tables,
                 nlp_distances=nlp_distances,
+                fold=fold,
                 **decoder_params,
             )
 

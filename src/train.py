@@ -39,6 +39,7 @@ def train(
     return_tables=False,
     nlp_distances={},
     n_candidates=10,
+    fold=None,
     **decoder_params,
 ):
     torch.autograd.set_detect_anomaly(True)
@@ -52,6 +53,8 @@ def train(
     negatives = df_valid.drop_duplicates(["dataset", "run"]).Y
     negatives = torch.cat(tuple(negatives)).to(device)
     init_train_index = df_train.index
+
+    fold_prefix = f"fold_{fold}/" if fold is not None else ""
 
     out_dim = df_train.Y.iloc[0].shape[1]
     if decoder.lower() == "brain_decoder":
@@ -171,7 +174,7 @@ def train(
                 for col in table.columns:
                     col.overflow = "fold"
             if wandb.run is not None:
-                wandb.log(output)
+                wandb.log({fold_prefix + k: v for k, v in output.items()})
 
             # Early stopping
             monitor_metric = np.mean(output[monitor])
@@ -232,7 +235,8 @@ def train(
     if wandb.run is not None:
         wandb.summary.update(
             {
-                k: (
+                fold_prefix
+                + k: (
                     wandb.Table(dataframe=v)
                     if isinstance(v, pd.DataFrame)
                     else v

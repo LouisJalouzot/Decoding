@@ -81,6 +81,11 @@ def main(
     if device.type == "cuda":
         torch.cuda.manual_seed(seed)
 
+    if leave_out is not None:
+        # Make leave_out a dataframe for merging
+        leave_out = [(k, v) for k, vals in leave_out.items() for v in vals]
+        leave_out = pd.DataFrame(leave_out, columns=["dataset", "subject"])
+
     # Fetch brain scans
     n_runs = sum([len(r) for s in runs.values() for r in s.values()])
     if n_runs == 0:
@@ -156,7 +161,6 @@ def main(
         valid_ratio,
         test_ratio,
         seed,
-        leave_out,
         fine_tune,
         fine_tune_disjoint,
     )
@@ -173,25 +177,35 @@ def main(
             for level in in_dims.index.levels[0]
         }
 
+        if leave_out is not None:
+            # Put leave_out subjects in the test split
+            df_fold = df_fold.merge(leave_out, how="left", indicator=True)
+            df_fold.loc[df_fold._merge == "both", "split"] = "test"
+            df_fold = df_fold.drop(columns="_merge")
+
         df_train = df_fold[df_fold.split == "train"]
         df_valid = df_fold[df_fold.split == "valid"]
         df_test = df_fold[df_fold.split == "test"]
-        # TODO: use
         df_ft_train = df_fold[df_fold.split == "ft_train"]
         df_ft_valid = df_fold[df_fold.split == "ft_valid"]
         nlp_distances = {}
         if log_nlp_distances:
-            # TODO: also log nlp_distances for leave_out splits
             chunks_index = compute_chunk_index(df_train)
             df_train = df_train.merge(chunks_index)
             chunks_index = compute_chunk_index(df_valid)
             df_valid = df_valid.merge(chunks_index)
             chunks_index = compute_chunk_index(df_test)
             df_test = df_test.merge(chunks_index)
+            chunks_index = compute_chunk_index(df_ft_train)
+            df_ft_train = df_ft_train.merge(chunks_index)
+            chunks_index = compute_chunk_index(df_ft_valid)
+            df_ft_valid = df_ft_valid.merge(chunks_index)
             for split, df_split in [
                 ("test", df_test),
                 ("valid", df_valid),
                 ("train", df_train),
+                ("ft_train", df_ft_train),
+                ("ft_valid", df_ft_valid),
             ]:
                 data = df_split.drop_duplicates(["dataset", "run"])[nlp_cols]
                 data = data.to_dict("series")
@@ -207,6 +221,11 @@ def main(
             + f"Valid split: {df_valid.run.nunique()} runs with {len(df_valid)} occurrences and {df_valid.n_trs.sum()} scans\n"
             + f"Test split: {df_test.run.nunique()} runs with {len(df_test)} occurrences and {df_test.n_trs.sum()} scans"
         )
+        if fine_tune is not None:
+            console.log(
+                f"Fine-tune train split: {df_ft_train.run.nunique()} runs with {len(df_ft_train)} occurrences and {df_ft_train.n_trs.sum()} scans\n"
+                + f"Fine-tune valid split: {df_ft_valid.run.nunique()} runs with {len(df_ft_valid)} occurrences and {df_ft_valid.n_trs.sum()} scans"
+            )
 
         if return_data:
             outputs[fold] = df_train, df_valid, df_test, nlp_distances

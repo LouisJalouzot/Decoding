@@ -126,7 +126,6 @@ def split_dataframe(
     valid_ratio,
     test_ratio,
     seed,
-    leave_out: dict[str, list[str]] = None,
     fine_tune: dict[str, list[str]] = None,
     fine_tune_disjoint: bool = True,
 ):
@@ -173,16 +172,6 @@ def split_dataframe(
     if fine_tune is not None:
         df_splits = df_splits.merge(subjects_runs)
         df_splits = pd.concat([df_splits, df_fine_tune]).drop_duplicates()
-
-    if leave_out is not None:
-        leave_out = [(k, v) for k, vals in leave_out.items() for v in vals]
-        leave_out = pd.DataFrame(leave_out, columns=["dataset", "subject"])
-        # Add subject distinction to splits
-        df_splits = df_splits.merge(subjects)
-        # Put leave_out subjects in the test split
-        df_splits = df_splits.merge(leave_out, how="left", indicator=True)
-        df_splits.loc[df_splits._merge == "both", "split"] = "test"
-        df_splits = df_splits.drop(columns="_merge")
 
     df = df.merge(df_splits)
 

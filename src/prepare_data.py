@@ -171,7 +171,8 @@ def split_dataframe(
     )
 
     if fine_tune is not None:
-        df_splits = df_splits.merge(subjects_runs)
+        if fine_tune_disjoint:
+            df_splits = df_splits.merge(subjects_runs)
         df_splits = pd.concat([df_splits, df_fine_tune]).drop_duplicates()
 
     df = df.merge(df_splits)

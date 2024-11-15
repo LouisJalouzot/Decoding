@@ -5,7 +5,6 @@ import numpy as np
 import pandas as pd
 import torch
 from joblib import Parallel, delayed
-from joblib_progress import joblib_progress
 from sklearn.preprocessing import StandardScaler
 
 import wandb
@@ -13,7 +12,6 @@ from src.nlp_metrics import compute_nlp_distances, nlp_cols, nlp_dist_cols
 from src.prepare_data import (
     compute_chunk_index,
     find_best_encoding_voxels,
-    generate_splits,
     read_brain_volume,
     split_dataframe,
 )
@@ -93,19 +91,21 @@ def main(
         raise ValueError(
             f"No runs found in datasets {datasets}, have you run preprocess.py?"
         )
-    with joblib_progress(
-        f"Loading brain scans for datasets {datasets}",
-        total=n_runs,
-        console=console,
-    ):
-        df = Parallel(n_jobs=-1)(
-            delayed(read_brain_volume)(
-                dataset, subject, run, lag, smooth, stack
-            )
-            for dataset in runs
-            for subject in runs[dataset]
-            for run in runs[dataset][subject]
+    with progress:
+        task = progress.add_task(
+            f"Loading brain scans for datasets {datasets}",
+            total=n_runs,
         )
+        df = []
+        for dataset in runs:
+            for subject in runs[dataset]:
+                for run in runs[dataset][subject]:
+                    df.append(
+                        read_brain_volume(
+                            dataset, subject, run, lag, smooth, stack
+                        )
+                    )
+                    progress.update(task, advance=1)
     df = pd.DataFrame(
         sorted(df),
         columns=["dataset", "subject", "run", "n_trs", "n_voxels", "X"],

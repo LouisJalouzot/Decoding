@@ -130,7 +130,6 @@ def split_dataframe(
     fine_tune_disjoint: bool = True,
 ):
     subjects_runs = df[["dataset", "subject", "run"]].drop_duplicates()
-    subjects = df[["dataset", "subject"]].drop_duplicates()
 
     if fine_tune is not None:
         # Make fine_tune a dataframe for merging
@@ -139,6 +138,8 @@ def split_dataframe(
         df_fine_tune = subjects_runs.merge(fine_tune)
         df_fine_tune = generate_splits(
             df=df_fine_tune,
+            n_folds=n_folds,
+            fold=fold,
             train_ratio=train_ratio,
             valid_ratio=valid_ratio,
             test_ratio=test_ratio,

@@ -46,7 +46,8 @@ def main(
     fold: int = None,
     leave_out: dict[str, list[str]] = None,
     fine_tune: dict[str, dict[str, str]] = None,
-    fine_tune_disjoint: bool = True,
+    fine_tune_disjoint: bool = False,
+    fine_tune_whole: bool = False,
     **decoder_params,
 ):
     console.log("Running on device", device)
@@ -234,11 +235,14 @@ def main(
                 df_train,
                 df_valid,
                 df_test,
+                df_ft_train,
+                df_ft_valid,
                 in_dims,
                 decoder=decoder,
                 return_tables=return_tables,
                 nlp_distances=nlp_distances,
                 metrics_prefix=f"fold_{fold}/" if n_folds is not None else "",
+                fine_tune_whole=fine_tune_whole,
                 **decoder_params,
             )
 

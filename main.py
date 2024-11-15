@@ -11,6 +11,7 @@ parser.add_argument("--subjects", type=json.loads)
 parser.add_argument("--leave_out", type=json.loads)
 parser.add_argument("--fine_tune", type=json.loads)
 parser.add_argument("--fine_tune_disjoint", action="store_true")
+parser.add_argument("--fine_tune_whole", action="store_true")
 parser.add_argument(
     "--multi_subject_mode",
     type=str,

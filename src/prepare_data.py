@@ -171,8 +171,7 @@ def split_dataframe(
     )
 
     if fine_tune is not None:
-        if fine_tune_disjoint:
-            df_splits = df_splits.merge(subjects_runs)
+        df_splits = df_splits.merge(subjects_runs)
         df_splits = pd.concat([df_splits, df_fine_tune]).drop_duplicates()
 
     df = df.merge(df_splits)
@@ -195,7 +194,7 @@ def find_best_encoding_voxels(df, top_encoding_voxels):
         )
         for _, (dataset, subject) in dataset_subject.iterrows():
             subject_sel = (df.dataset == dataset) & (df.subject == subject)
-            df_train_sel = df[subject_sel & (df.split == "train")]
+            df_train_sel = df[subject_sel & (df.split.str.endswith("train"))]
             if isinstance(top_encoding_voxels, dict):
                 n_voxels = top_encoding_voxels[dataset]
             else:
@@ -206,7 +205,7 @@ def find_best_encoding_voxels(df, top_encoding_voxels):
             X = np.concatenate(tuple(df_train_sel.orig_X))
             Y = np.concatenate(tuple(df_train_sel.Y))
             ridge = Ridge().fit(Y, X)
-            df_valid_sel = df[subject_sel & (df.split == "valid")]
+            df_valid_sel = df[subject_sel & (df.split.str.endswith("valid"))]
             X = np.concatenate(tuple(df_valid_sel.orig_X))
             Y = np.concatenate(tuple(df_valid_sel.Y))
             X_preds = ridge.predict(Y)

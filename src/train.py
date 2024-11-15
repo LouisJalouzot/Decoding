@@ -257,16 +257,19 @@ def train(
 
         if not fine_tune_whole:
             # Only fine-tune parameters of the projection layer
-            parameters = decoder.projector.parameters()
+            decoder.train_decoder = False
             n_params_ft = sum(
-                [p.numel() for p in parameters if p.requires_grad]
+                [
+                    p.numel()
+                    for p in decoder.projector.parameters()
+                    if p.requires_grad
+                ]
             )
             console.log(
                 f"Fine-tuning the projection layer: {n_params_ft:.3g} parameters"
             )
             if wandb.run is not None:
                 wandb.config["n_params_ft"] = n_params_ft
-            optimizer = init_optimizer(parameters, lr, weight_decay)
         else:
             console.log(
                 f"Fine-tuning the whole model: {n_params:.3g} parameters"

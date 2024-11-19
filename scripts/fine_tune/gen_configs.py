@@ -63,7 +63,11 @@ with config_path.open("w") as config_file:
                     )
                     config_file.write(
                         write_config(
-                            subjects, tags, default_config, n_folds=n_folds
+                            subjects,
+                            tags,
+                            default_config,
+                            n_folds=n_folds,
+                            top_encoding_voxels=top_encoding_voxels,
                         )
                     )
                     n_configs += 1
@@ -83,18 +87,22 @@ with config_path.open("w") as config_file:
                         tags,
                         default_config,
                         multi_subject_mode=multi_subject_mode,
+                        top_encoding_voxels=top_encoding_voxels,
                     )
                 )
                 n_configs += 1
 
     # Multi subject CV for top 10 accuracy
-    for multi_subject_mode in ["individual", "shared"]:
+    for multi_subject_mode, top_encoding_voxels in [
+        ("individual", 3000),
+        ("shared", 80000),
+    ]:
         subjects = get_subjects(range(1, 9), dataset)
         tags = get_tags(
             setup="Multi subject CV",
             dataset="lebel2023_balanced",
             multi_subject_mode=multi_subject_mode,
-            top_encoding_voxels=80000,
+            top_encoding_voxels=top_encoding_voxels,
             n_folds=5,
         )
         config_file.write(
@@ -103,6 +111,7 @@ with config_path.open("w") as config_file:
                 tags,
                 default_config,
                 multi_subject_mode=multi_subject_mode,
+                top_encoding_voxels=top_encoding_voxels,
                 n_folds=5,
             )
         )

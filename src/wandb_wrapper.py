@@ -26,7 +26,7 @@ def wandb_wrapper(
     log_nlp_distances: bool = False,
     return_data: bool = False,
     no_wandb: bool = False,
-    wandb_project: str = "fMRI-Decoding-v6",
+    wandb_project: str = "fMRI-Decoding-wrap-up",
     tags: List[str] = None,
     **kwargs,
 ):

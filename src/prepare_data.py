@@ -136,6 +136,11 @@ def split_dataframe(
         fine_tune = [(k, v) for k, vals in fine_tune.items() for v in vals]
         fine_tune = pd.DataFrame(fine_tune, columns=["dataset", "subject"])
         df_fine_tune = subjects_runs.merge(fine_tune)
+
+        if fine_tune_disjoint:
+            # TODO: If the fine-tuning subject has more runs than others, use only the extra runs for fine-tuning
+            pass
+
         df_fine_tune = generate_splits(
             df=df_fine_tune,
             n_folds=n_folds,

@@ -63,6 +63,7 @@ parser.add_argument("--no_wandb", action="store_true")
 parser.add_argument("--wandb_project", type=str)
 parser.add_argument("--tags", nargs="*", type=str)
 parser.add_argument("--cache", action="store_true")
+parser.add_argument("--force_rerun", action="store_true")
 parser.add_argument("--log_nlp_distances", action="store_true")
 parser.add_argument("--return_tables", action="store_true")
 parser.add_argument("--n_candidates", type=int)
@@ -72,7 +73,9 @@ args = {key: value for key, value in vars(args).items() if value is not None}
 
 if args.pop("cache"):
     output = memory.cache(
-        wandb_wrapper, ignore=["return_data", "log_nlp_distances"]
+        wandb_wrapper,
+        ignore=["return_data", "log_nlp_distances"],
+        cache_validation_callback=lambda *args: args.pop("force_rerun", False),
     )(**args)
 else:
     wandb_wrapper(**args)

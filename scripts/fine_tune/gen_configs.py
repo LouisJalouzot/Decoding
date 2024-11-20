@@ -47,7 +47,7 @@ def write_config(*args, **kwargs):
 
 
 n_configs = 0
-default_config = "--return_tables --cache"
+default_config = "--return_tables --cache --force_rerun"
 with config_path.open("w") as config_file:
     for top_encoding_voxels in [3000, 80000]:
         for dataset in ["lebel2023", "lebel2023_balanced"]:

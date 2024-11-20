@@ -188,7 +188,6 @@ def main(
         df_valid = df_fold[df_fold.split == "valid"]
         df_test = df_fold[df_fold.split == "test"]
         df_ft_train = df_fold[df_fold.split == "ft_train"]
-        df_ft_valid = df_fold[df_fold.split == "ft_valid"]
         nlp_distances = {}
         if log_nlp_distances:
             chunks_index = compute_chunk_index(df_train)
@@ -199,14 +198,11 @@ def main(
             df_test = df_test.merge(chunks_index)
             chunks_index = compute_chunk_index(df_ft_train)
             df_ft_train = df_ft_train.merge(chunks_index)
-            chunks_index = compute_chunk_index(df_ft_valid)
-            df_ft_valid = df_ft_valid.merge(chunks_index)
             for split, df_split in [
                 ("test", df_test),
                 ("valid", df_valid),
                 ("train", df_train),
                 ("ft_train", df_ft_train),
-                ("ft_valid", df_ft_valid),
             ]:
                 data = df_split.drop_duplicates(["dataset", "run"])[nlp_cols]
                 data = data.to_dict("series")
@@ -225,7 +221,6 @@ def main(
         if fine_tune is not None:
             console.log(
                 f"Fine-tune train split: {df_ft_train.run.nunique()} runs with {len(df_ft_train)} occurrences and {df_ft_train.n_trs.sum()} scans\n"
-                + f"Fine-tune valid split: {df_ft_valid.run.nunique()} runs with {len(df_ft_valid)} occurrences and {df_ft_valid.n_trs.sum()} scans"
             )
 
         if return_data:
@@ -236,7 +231,6 @@ def main(
                 df_valid,
                 df_test,
                 df_ft_train,
-                df_ft_valid,
                 in_dims,
                 decoder=decoder,
                 return_tables=return_tables,

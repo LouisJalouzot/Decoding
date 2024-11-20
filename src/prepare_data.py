@@ -58,14 +58,14 @@ def split_dataframe(
     if train_ratio is None:
         train_ratio = 1 - valid_ratio - test_ratio
 
-    df = df[["dataset", "subject", "run"]].drop_duplicates()
+    subjects_runs = df[["dataset", "subject", "run"]].drop_duplicates()
     n_subjects = (
-        df.groupby("dataset")
+        subjects_runs.groupby("dataset")
         .subject.apply("nunique")
         .reset_index(name="n_subjects")
     )
     occurrences = (
-        df.groupby(["dataset", "run"])
+        subjects_runs.groupby(["dataset", "run"])
         .subject.apply(list)
         .apply(len)
         .reset_index(name="occurrences")
@@ -75,9 +75,8 @@ def split_dataframe(
     main_runs = occurrences[occurrences.occurrences == occurrences.n_subjects]
     main_runs = main_runs[["dataset", "run"]].drop_duplicates()
     main_runs = main_runs.reset_index(drop=True)
-    subjects_runs = df[["dataset", "subject", "run"]].drop_duplicates()
     # Runs which are not main go into the train split
-    extra_runs = df[["dataset", "run"]].drop_duplicates()
+    extra_runs = subjects_runs[["dataset", "run"]].drop_duplicates()
     extra_runs = merge_drop(extra_runs, main_runs)
     extra_runs["split"] = "train"
 

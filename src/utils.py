@@ -35,6 +35,14 @@ progress = Progress(
 )
 
 
+def merge_drop(df, merge_to_drop):
+    df = df.merge(merge_to_drop, how="left", indicator=True)
+    df = df[df._merge != "both"]
+    df = df.drop(columns="_merge")
+
+    return df
+
+
 def _get_free_gpu():
     rows = (
         subprocess.check_output(

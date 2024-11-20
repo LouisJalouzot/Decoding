@@ -8,7 +8,7 @@ from sklearn.metrics import r2_score
 from sklearn.model_selection import KFold, train_test_split
 
 import wandb
-from src.utils import progress
+from src.utils import merge_drop, progress
 
 
 def read_brain_volume(dataset, subject, run, lag, smooth, stack):
@@ -43,81 +43,6 @@ def compute_chunk_index(df):
     return chunks_index
 
 
-def generate_splits(
-    df,
-    n_folds=None,
-    fold=None,
-    train_ratio=None,
-    valid_ratio=0.1,
-    test_ratio=0.1,
-    seed=0,
-):
-    """Generate train/valid/test splits for each dataset"""
-    if train_ratio is None:
-        train_ratio = 1 - valid_ratio - test_ratio
-    df = df[["dataset", "run", "subject"]].copy()
-    df["n_subjects"] = df.groupby("dataset").subject.transform("nunique")
-    df = (
-        df.groupby(["dataset", "run", "n_subjects"])
-        .subject.apply(list)
-        .reset_index(name="subjects")
-    )
-    df["occurrences"] = df.subjects.apply(len)
-    df["fold"] = 1
-    df["split"] = "train"
-
-    df_splits = []
-    for _, df_dataset in df.groupby("dataset"):
-        # Main runs are runs that have all subjects
-        main_runs_indices = df_dataset.query("occurrences == n_subjects").index
-
-        if n_folds is not None:
-            # Use K-fold cross validation
-            kf = KFold(n_splits=n_folds, shuffle=True, random_state=seed)
-            kf = kf.split(main_runs_indices)
-            for i, (train_indices, test_indices) in enumerate(kf, 1):
-                if fold is not None and i != fold:
-                    continue
-
-                _, valid_indices = train_test_split(
-                    train_indices,
-                    train_size=train_ratio / (1 - test_ratio),
-                    test_size=valid_ratio / (1 - test_ratio),
-                    random_state=seed,
-                )
-
-                # Going back to the df_dataset indices
-                train_indices = main_runs_indices[train_indices]
-                valid_indices = main_runs_indices[valid_indices]
-                test_indices = main_runs_indices[test_indices]
-
-                df_fold = df_dataset.copy()
-                df_fold["fold"] = i
-                df_fold.loc[test_indices, "split"] = "test"
-                df_fold.loc[valid_indices, "split"] = "valid"
-                df_splits.append(df_fold)
-        else:
-            # Use a single split
-            train_indices, test_indices = train_test_split(
-                main_runs_indices,
-                test_size=test_ratio,
-                random_state=seed,
-            )  # Unlike KFold, train_test_split returns the elements of the original array, not the indices
-            _, valid_indices = train_test_split(
-                train_indices,
-                train_size=train_ratio / (1 - test_ratio),
-                test_size=valid_ratio / (1 - test_ratio),
-                random_state=seed,
-            )
-            df_dataset.loc[test_indices, "split"] = "test"
-            df_dataset.loc[valid_indices, "split"] = "valid"
-            df_splits.append(df_dataset)
-
-    return pd.concat(df_splits).drop(
-        columns=["n_subjects", "subjects", "occurrences"]
-    )
-
-
 def split_dataframe(
     df,
     n_folds,
@@ -129,63 +54,106 @@ def split_dataframe(
     fine_tune: dict[str, list[str]] = None,
     fine_tune_disjoint: bool = True,
 ):
-    subjects_runs = df[["dataset", "subject", "run"]].drop_duplicates()
+    # TODO implement leave out
+    if train_ratio is None:
+        train_ratio = 1 - valid_ratio - test_ratio
 
-    if fine_tune is not None:
-        # Make fine_tune a dataframe for merging
-        fine_tune = [(k, v) for k, vals in fine_tune.items() for v in vals]
-        fine_tune = pd.DataFrame(fine_tune, columns=["dataset", "subject"])
-        df_fine_tune = subjects_runs.merge(fine_tune)
-
-        if fine_tune_disjoint:
-            # TODO: If the fine-tuning subject has more runs than others, use only the extra runs for fine-tuning
-            pass
-
-        df_fine_tune = generate_splits(
-            df=df_fine_tune,
-            n_folds=n_folds,
-            fold=fold,
-            train_ratio=train_ratio,
-            valid_ratio=valid_ratio,
-            test_ratio=test_ratio,
-            seed=seed,
-        ).merge(fine_tune)
-        df_fine_tune = df_fine_tune.replace(
-            {"split": {"train": "ft_train", "valid": "ft_valid"}}
-        )
-        if fine_tune_disjoint:
-            tmp = df_fine_tune[df_fine_tune.split != "test"]
-            # Remove fine tuning subjects and fine-tuning train and valid runs from the main splits
-            for to_drop in ["subject", "run"]:
-                subjects_runs = subjects_runs.merge(
-                    tmp[["dataset", to_drop]],
-                    how="left",
-                    indicator=True,
-                )
-                subjects_runs = subjects_runs[subjects_runs._merge != "both"]
-                subjects_runs = subjects_runs.drop(columns="_merge")
-
-    df_splits = generate_splits(
-        df=subjects_runs,
-        n_folds=n_folds,
-        fold=fold,
-        train_ratio=train_ratio,
-        valid_ratio=valid_ratio,
-        test_ratio=test_ratio,
-        seed=seed,
+    df = df[["dataset", "subject", "run"]].drop_duplicates()
+    n_subjects = (
+        df.groupby("dataset")
+        .subject.apply("nunique")
+        .reset_index(name="n_subjects")
     )
+    occurrences = (
+        df.groupby(["dataset", "run"])
+        .subject.apply(list)
+        .apply(len)
+        .reset_index(name="occurrences")
+    )
+    occurrences = occurrences.merge(n_subjects)
+    # Main runs are runs that are present for all subjects
+    main_runs = occurrences[occurrences.occurrences == occurrences.n_subjects]
+    main_runs = main_runs[["dataset", "run"]].drop_duplicates()
+    main_runs = main_runs.reset_index(drop=True)
+    subjects_runs = df[["dataset", "subject", "run"]].drop_duplicates()
+    # Runs which are not main go into the train split
+    extra_runs = df[["dataset", "run"]].drop_duplicates()
+    extra_runs = merge_drop(extra_runs, main_runs)
+    extra_runs["split"] = "train"
 
-    if fine_tune is not None:
-        df_splits = df_splits.merge(subjects_runs)
-        df_splits = pd.concat([df_splits, df_fine_tune]).drop_duplicates()
+    # Select test runs
+    if n_folds is not None:
+        # Use K-fold cross validation
+        kf = KFold(n_splits=n_folds, shuffle=True, random_state=seed)
+        train_test_indices = kf.split(main_runs.index)
+    else:
+        # Use a single split
+        train_indices, test_indices = train_test_split(
+            main_runs.index,
+            test_size=max(test_ratio, 1 - train_ratio - valid_ratio),
+            random_state=seed,
+        )
+        if test_ratio == 0:
+            test_indices = []
+        train_test_indices = [(train_indices, test_indices)]
 
-    df = df.merge(df_splits)
+    splits = []
+    for i, (train_indices, test_indices) in enumerate(train_test_indices, 1):
+        if fold is not None and fold != i:
+            continue
+
+        if valid_ratio > 0:
+            train_indices, valid_indices = train_test_split(
+                train_indices,
+                train_size=train_ratio / (1 - test_ratio),
+                test_size=valid_ratio / (1 - test_ratio),
+                random_state=seed,
+            )
+        else:
+            valid_indices = []
+
+        train_runs = main_runs.iloc[train_indices].copy()
+        train_runs["split"] = "train"
+        valid_runs = main_runs.iloc[valid_indices].copy()
+        valid_runs["split"] = "valid"
+        test_runs = main_runs.iloc[test_indices].copy()
+        test_runs["split"] = "test"
+
+        df_split = pd.concat([train_runs, valid_runs, test_runs, extra_runs])
+        if fine_tune is not None:
+            # Make fine_tune a dataframe for merging
+            fine_tune = [(k, v) for k, vals in fine_tune.items() for v in vals]
+            fine_tune = pd.DataFrame(fine_tune, columns=["dataset", "subject"])
+            subjects_runs_ft = subjects_runs.merge(fine_tune)
+
+            if fine_tune_disjoint:
+                # Remove the fine-tuning runs from the main splits
+                # If the fine-tuning subject has extra runs, fine-tune on them
+                subjects_runs_ft_extra = subjects_runs_ft.merge(extra_runs)
+                if len(subjects_runs_ft_extra) > 1:
+                    subjects_runs_ft = subjects_runs_ft_extra
+
+                runs_ft = subjects_runs_ft[["dataset", "run"]].drop_duplicates()
+                df_split = merge_drop(df_split, runs_ft)
+
+            subjects_runs_ft["split"] = "ft_train"
+            df_split = pd.concat([df_split, subjects_runs_ft])
+
+        df_split["fold"] = i
+        splits.append(df_split)
+        print(splits)
+
+    splits = pd.concat(splits)
 
     if wandb.run is not None:
-        wandb.log({"splits": wandb.Table(data=df_splits)})
+        wandb.log({"splits": wandb.Table(data=splits)})
+
+    # Fix for NaN subjects
+    df = df.merge(splits)
 
     # Save original X for multiple encoding voxels selections
-    df["orig_X"] = df.X
+    if "X" in df:
+        df["orig_X"] = df.X
 
     return df
 

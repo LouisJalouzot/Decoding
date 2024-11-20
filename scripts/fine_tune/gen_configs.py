@@ -93,29 +93,27 @@ with config_path.open("w") as config_file:
                 n_configs += 1
 
     # Multi subject CV for top 10 accuracy
-    for multi_subject_mode, top_encoding_voxels in [
-        ("individual", 3000),
-        ("shared", 80000),
-    ]:
-        subjects = get_subjects(range(1, 9), dataset)
-        tags = get_tags(
-            setup="Multi subject CV",
-            dataset="lebel2023_balanced",
-            multi_subject_mode=multi_subject_mode,
-            top_encoding_voxels=top_encoding_voxels,
-            n_folds=5,
-        )
-        config_file.write(
-            write_config(
-                subjects,
-                tags,
-                default_config,
+    for multi_subject_mode in ["individual", "shared"]:
+        for top_encoding_voxels in [3000, 80000]:
+            subjects = get_subjects(range(1, 9), dataset)
+            tags = get_tags(
+                setup="Multi subject CV",
+                dataset="lebel2023_balanced",
                 multi_subject_mode=multi_subject_mode,
                 top_encoding_voxels=top_encoding_voxels,
                 n_folds=5,
             )
-        )
-        n_configs += 1
+            config_file.write(
+                write_config(
+                    subjects,
+                    tags,
+                    default_config,
+                    multi_subject_mode=multi_subject_mode,
+                    top_encoding_voxels=top_encoding_voxels,
+                    n_folds=5,
+                )
+            )
+            n_configs += 1
 
     # Fine tune
     for subject in range(1, 9):
@@ -126,6 +124,8 @@ with config_path.open("w") as config_file:
                     ("shared", 80000),
                 ]:
                     if len(train_subjects) == 8 and fine_tune_disjoint:
+                        continue
+                    if fine_tune_disjoint and subject < 4:
                         continue
                     for fine_tune_whole in [True, False]:
                         subjects = get_subjects(

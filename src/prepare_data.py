@@ -141,15 +141,20 @@ def split_dataframe(
 
         df_split["fold"] = i
         splits.append(df_split)
-        print(splits)
 
     splits = pd.concat(splits)
 
     if wandb.run is not None:
         wandb.log({"splits": wandb.Table(data=splits)})
 
-    # Fix for NaN subjects
-    df = df.merge(splits)
+    # Treat NaNs and non NaNs for subjects separately
+    if "subject" in splits:
+        sub = splits[~splits.subject.isna()]
+        no_sub = splits[splits.subject.isna()]
+        no_sub = no_sub.drop("subject", axis=1)
+        df = pd.concat([df.merge(sub), df.merge(no_sub)])
+    else:
+        df = df.merge(splits)
 
     # Save original X for multiple encoding voxels selections
     if "X" in df:

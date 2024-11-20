@@ -7,7 +7,7 @@ config_path.unlink(missing_ok=True)
 def get_fine_tune(subject_index, dataset):
     fine_tune = f'--fine_tune \'{{"{dataset}": ["'
     fine_tune += f"UTS0{subject_index}"
-    fine_tune += "']}'"
+    fine_tune += "\"]}'"
 
     return fine_tune
 
@@ -37,7 +37,11 @@ def write_config(*args, **kwargs):
     args = list(args)
     for k, v in kwargs.items():
         if v is not None:
-            args.append(f"--{k} {v}")
+            if isinstance(v, bool):
+                if v:
+                    args.append(f"--{k}")
+            else:
+                args.append(f"--{k} {v}")
 
     return " ".join(args) + "\n"
 
@@ -59,6 +63,7 @@ with config_path.open("w") as config_file:
                         dataset=dataset,
                         subject=i,
                         top_encoding_voxels=top_encoding_voxels,
+                        multi_subject_mode="single",
                         n_folds=n_folds,
                     )
                     config_file.write(
@@ -119,6 +124,8 @@ with config_path.open("w") as config_file:
     for subject in range(1, 9):
         for fine_tune_disjoint in [True, False]:
             for train_subjects in [set(range(1, 4)), set(range(1, 9))]:
+                if len(train_subjects) == 8 and fine_tune_disjoint:
+                    continue
                 for multi_subject_mode, top_encoding_voxels in [
                     ("individual", 3000),
                     ("shared", 80000),

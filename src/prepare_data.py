@@ -120,10 +120,17 @@ def split_dataframe(
 
         df_split = pd.concat([train_runs, valid_runs, test_runs, extra_runs])
         if fine_tune is not None:
-            # Make fine_tune a dataframe for merging
-            fine_tune = [(k, v) for k, vals in fine_tune.items() for v in vals]
-            fine_tune = pd.DataFrame(fine_tune, columns=["dataset", "subject"])
-            subjects_runs_ft = subjects_runs.merge(fine_tune)
+            # Make a dataframe out of fine_tune for merging
+            fine_tune_df = [
+                (k, v) for k, vals in fine_tune.items() for v in vals
+            ]
+            fine_tune_df = pd.DataFrame(
+                fine_tune_df, columns=["dataset", "subject"]
+            )
+            # Get the runs for the fine-tuning subjects and remove the valid and test ones
+            subjects_runs_ft = subjects_runs.merge(fine_tune_df)
+            subjects_runs_ft = merge_drop(subjects_runs_ft, test_runs)
+            subjects_runs_ft = merge_drop(subjects_runs_ft, valid_runs)
 
             if fine_tune_disjoint:
                 # Remove the fine-tuning runs from the main splits
@@ -131,7 +138,6 @@ def split_dataframe(
                 subjects_runs_ft_extra = subjects_runs_ft.merge(extra_runs)
                 if len(subjects_runs_ft_extra) > 1:
                     subjects_runs_ft = subjects_runs_ft_extra
-
                 runs_ft = subjects_runs_ft[["dataset", "run"]].drop_duplicates()
                 df_split = merge_drop(df_split, runs_ft)
 

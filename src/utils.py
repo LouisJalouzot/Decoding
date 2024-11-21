@@ -36,11 +36,10 @@ progress = Progress(
 
 
 def merge_drop(df, merge_to_drop):
-    df = df.merge(merge_to_drop, how="left", indicator=True)
-    df = df[df._merge != "both"]
-    df = df.drop(columns="_merge")
+    indicator = df.merge(merge_to_drop, how="left", indicator=True)._merge
+    indicator = (indicator != "both").values
 
-    return df
+    return df[indicator]
 
 
 def _get_free_gpu():

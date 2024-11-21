@@ -171,6 +171,7 @@ def train(
     df_valid,
     df_test,
     df_ft_train,
+    df_ft_valid,
     in_dims,
     decoder="brain_decoder",
     patience=20,
@@ -251,8 +252,8 @@ def train(
     )
     output = {"best_epoch": best_epoch}
 
-    # Fine-tune if df_ft_train is not empty
-    if not df_ft_train.empty:
+    # Fine-tune if df_ft_train and df_ft_valid are not empty
+    if not df_ft_train.empty and not df_ft_valid.empty:
 
         if not fine_tune_whole:
             # Only fine-tune parameters of the projection layer
@@ -278,7 +279,7 @@ def train(
             decoder=decoder,
             optimizer=optimizer,
             df_train=df_ft_train,
-            df_valid=df_valid,
+            df_valid=df_ft_valid,
             max_epochs=max_epochs,
             batch_size=batch_size,
             monitor=monitor,
@@ -295,6 +296,7 @@ def train(
         ("train", df_train),
         ("valid", df_valid),
         ("ft_train", df_ft_train),
+        ("ft_valid", df_ft_valid),
         ("test", df_test),
     ]:
         if df_split.empty:

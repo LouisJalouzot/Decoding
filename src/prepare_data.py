@@ -127,6 +127,8 @@ def split_dataframe(
             fine_tune_df = pd.DataFrame(
                 fine_tune_df, columns=["dataset", "subject"]
             )
+            subjects_runs_ft_valid = valid_runs.merge(fine_tune_df)
+            subjects_runs_ft_valid["split"] = "ft_valid"
             # Get the runs for the fine-tuning subjects and remove the valid and test ones
             subjects_runs_ft = subjects_runs.merge(fine_tune_df)
             subjects_runs_ft = merge_drop(subjects_runs_ft, test_runs)
@@ -142,7 +144,9 @@ def split_dataframe(
                 df_split = merge_drop(df_split, runs_ft)
 
             subjects_runs_ft["split"] = "ft_train"
-            df_split = pd.concat([df_split, subjects_runs_ft])
+            df_split = pd.concat(
+                [df_split, subjects_runs_ft, subjects_runs_ft_valid]
+            )
 
         df_split["fold"] = i
         splits.append(df_split)
@@ -155,8 +159,7 @@ def split_dataframe(
     # Treat NaNs and non NaNs for subjects separately
     if "subject" in splits:
         sub = splits[~splits.subject.isna()]
-        no_sub = splits[splits.subject.isna()]
-        no_sub = no_sub.drop("subject", axis=1)
+        no_sub = splits[splits.subject.isna()].drop("subject", axis=1)
         df = pd.concat([df.merge(sub), df.merge(no_sub)])
     else:
         df = df.merge(splits)

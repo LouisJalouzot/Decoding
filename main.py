@@ -71,11 +71,12 @@ parser.add_argument("--n_candidates", type=int)
 args = parser.parse_args()
 args = {key: value for key, value in vars(args).items() if value is not None}
 
+force_rerun = args.pop("force_rerun", False)
 if args.pop("cache"):
     output = memory.cache(
         wandb_wrapper,
         ignore=["return_data", "log_nlp_distances"],
-        cache_validation_callback=lambda *args: args.pop("force_rerun", False),
+        cache_validation_callback=lambda *args: not force_rerun,
     )(**args)
 else:
     wandb_wrapper(**args)

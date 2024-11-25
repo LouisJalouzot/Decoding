@@ -34,7 +34,6 @@ class DecoderWrapper(nn.Module):
         self.temperature = temperature
         self.beta = beta
         self.s_thresh = s_thresh
-        self.train_decoder = True
 
         if self.loss == "mixco":
             self.loss = self.mixco_loss
@@ -188,8 +187,3 @@ class DecoderWrapper(nn.Module):
             Y_preds = self(X_proj)
 
         return F.mse_loss(Y_preds, Y)
-
-    def train(self, mode=True):
-        super().train(mode)
-        if not self.train_decoder:
-            self.decoder.eval()

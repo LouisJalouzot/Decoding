@@ -8,6 +8,7 @@ import torch
 from rich.live import Live
 from rich.table import Table
 from sklearn.utils import shuffle
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 import wandb
 from src.base_decoders import (
@@ -56,6 +57,9 @@ def train_loop(
         "Duration",
         title="Training loop",
     )
+    scheduler = ReduceLROnPlateau(
+        optimizer, mode="min", patience=patience // 4, factor=0.5
+    )
     with Live(table, console=console, vertical_overflow="visible"):
         for epoch in range(1, max_epochs + 1):
             df_train = shuffle(df_train)
@@ -91,6 +95,7 @@ def train_loop(
             output = {
                 "train/" + loss: np.mean(train_losses),
                 "grad_norm": np.mean(grad_norms),
+                "lr": scheduler.get_last_lr()[0],
                 **{"valid/" + key: value for key, value in val_metrics.items()},
             }
             if epoch == 1:
@@ -104,6 +109,7 @@ def train_loop(
 
             # Early stopping
             monitor_metric = np.mean(output[monitor])
+            scheduler.step(monitor_metric)
             if monitor_metric < best_monitor_metric:
                 best_epoch = epoch
                 best_monitor_metric = monitor_metric
@@ -144,26 +150,53 @@ def train_loop(
     return decoder, optimizer, best_epoch
 
 
-def init_optimizer(parameters, lr, weight_decay):
-    opt_grouped_parameters = [
-        {
-            "params": [
-                p for p in parameters if p.requires_grad and len(p.shape) > 1
-            ],
-            "weight_decay": weight_decay,
-        },
-        {
-            "params": [
-                p for p in parameters if p.requires_grad and len(p.shape) == 1
-            ],
-            "weight_decay": 0.0,
-        },
-    ]
-    optimizer = torch.optim.AdamW(
-        opt_grouped_parameters,
-        lr=lr,
-    )
-    return optimizer
+def init_optimizer(
+    decoder,
+    lr,
+    weight_decay,
+    lr_decoder=None,
+    weight_decay_decoder=None,
+    prefix="Training",
+):
+    if lr_decoder is None:
+        lr_decoder = lr
+    if weight_decay_decoder is None:
+        weight_decay_decoder = weight_decay
+
+    opt_grouped_parameters = []
+
+    n_params = 0
+
+    for params, lr, weight_decay in [
+        (list(decoder.projector.parameters()), lr, weight_decay),
+        (list(decoder.decoder.parameters()), lr_decoder, weight_decay_decoder),
+    ]:
+        opt_grouped_parameters.append(
+            {
+                "params": [p for p in params if len(p.shape) > 1],
+                "weight_decay": weight_decay,
+                "lr": lr,
+            }
+        )
+        opt_grouped_parameters.append(
+            {
+                "params": [p for p in params if len(p.shape) == 1],
+                "weight_decay": 0.0,
+                "lr": lr,
+            }
+        )
+        if lr > 0:
+            for p in params:
+                n_params += p.numel()
+
+    console.log(f"{prefix} {n_params:.3g} parameters")
+    if wandb.run is not None:
+        if prefix == "Training":
+            wandb.config["n_params"] = n_params
+        else:
+            wandb.config["n_params_ft"] = n_params
+
+    return torch.optim.AdamW(opt_grouped_parameters)
 
 
 def train(
@@ -178,14 +211,18 @@ def train(
     monitor="valid/relative_rank_median",
     loss="mixco",
     weight_decay=1e-6,
+    weight_decay_ft=None,
+    weight_decay_ft_decoder=None,
     lr=1e-4,
+    lr_ft=None,
+    lr_ft_decoder=None,
+    temperature_ft=None,
     max_epochs=200,
     batch_size=1,
     return_tables=False,
     nlp_distances={},
     n_candidates=10,
     metrics_prefix="",
-    fine_tune_whole=False,
     **decoder_params,
 ):
     torch.autograd.set_detect_anomaly(True)
@@ -223,14 +260,13 @@ def train(
     decoder = torch.compile(decoder)
 
     n_params = sum([p.numel() for p in decoder.parameters()])
-    console.log(f"Decoder has {n_params:.3g} parameters.")
+
     if wandb.run is not None:
         wandb.config["in_dims"] = in_dims
         wandb.config["out_dim"] = out_dim
-        wandb.config["n_params"] = n_params
 
     # Initialize optimizer
-    optimizer = init_optimizer(decoder.parameters(), lr, weight_decay)
+    optimizer = init_optimizer(decoder, lr, weight_decay)
 
     top_k_accuracies = [1, 5, 10]
 
@@ -255,25 +291,22 @@ def train(
     # Fine-tune if df_ft_train and df_ft_valid are not empty
     if not df_ft_train.empty and not df_ft_valid.empty:
 
-        if not fine_tune_whole:
-            # Only fine-tune parameters of the projection layer
-            decoder.train_decoder = False
-            n_params_ft = sum(
-                [
-                    p.numel()
-                    for p in decoder.projector.parameters()
-                    if p.requires_grad
-                ]
-            )
-            console.log(
-                f"Fine-tuning the projection layer: {n_params_ft:.3g} parameters"
-            )
-            if wandb.run is not None:
-                wandb.config["n_params_ft"] = n_params_ft
-        else:
-            console.log(
-                f"Fine-tuning the whole model: {n_params:.3g} parameters"
-            )
+        # Reinitialize optimizer
+        if lr_ft is None:
+            lr_ft = lr
+        if weight_decay_ft is None:
+            weight_decay_ft = weight_decay
+        optimizer = init_optimizer(
+            decoder,
+            lr_ft,
+            weight_decay_ft,
+            lr_ft_decoder,
+            weight_decay_ft_decoder,
+            prefix="Fine-tuning",
+        )
+
+        if temperature_ft is not None:
+            decoder.temperature = temperature_ft
 
         decoder, optimizer, best_epoch_ft = train_loop(
             decoder=decoder,

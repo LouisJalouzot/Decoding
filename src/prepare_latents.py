@@ -291,7 +291,7 @@ def prepare_latents(
         if token_aggregation == "first":
             latents = [l[0] for l in latents]
         elif token_aggregation == "last":
-            latents = [l[1] for l in latents]
+            latents = [l[-1] for l in latents]
         elif token_aggregation == "mean":
             latents = [l.mean(axis=0) for l in latents]
         elif token_aggregation == "max":

@@ -2,17 +2,36 @@
 
 ## Installation
 
-This project has been tested with Python 3.11 on Ubuntu 22.04.
+This project has been tested on Ubuntu 22.04.
 
-1. Set up a virtual environment:
-   ```
-   python -m venv .env
-   source .env/bin/activate
+1. Get the [UV Python package manager](https://github.com/astral-sh/uv)
+   ```bash
+   curl -LsSf https://astral.sh/uv/install.sh | sh
    ```
 
-2. Install dependencies:
+2. Create virtual environment and install dependencies
+   ```bash
+   uv sync
    ```
-   pip install -r requirements.txt
+
+3. Activate environment
+   ```bash
+   source .venv/bin/activate
+   ```
+
+4. Install optional dependencies
+
+   For jupyter notebooks
+   ```bash
+   uv sync --extra notebook
+   ```
+   For fetching datasets
+   ```bash
+   uv sync --extra aws
+   ```
+   Or both
+   ```bash
+   uv sync --extra notebook --extra aws
    ```
 
 ## Data
@@ -24,15 +43,6 @@ aws s3 sync --no-sign-request s3://openneuro.org/ds003020 data/lebel2023/
 aws s3 sync --no-sign-request s3://openneuro.org/ds003643 data/li2022/
 ```
 For Li2022, brain mask available [here](https://nist.mni.mcgill.ca/colin-27-average-brain/).
-
-Requires
-```bash
-sudo apt install awscli
-```
-or
-```bash
-pip install awscli
-```
 
 To use AudioCLIP
 ```bash

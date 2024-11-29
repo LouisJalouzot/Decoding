@@ -1,0 +1,52 @@
+[project]
+name = "decoding"
+version = "0.1.0"
+description = "fMRI pipeline to decode language representations"
+readme = "README.md"
+requires-python = ">=3.11.10"
+dependencies = [
+    "bert-score>=0.3.13",
+    "chardet>=5.2.0",
+    "evaluate>=0.4.3",
+    "ftfy>=6.2.0",
+    "fuzzywuzzy>=0.18.0",
+    "h5py>=3.11.0",
+    "joblib-progress",
+    "joblib>=1.4.2",
+    "librosa>=0.10.2.post1",
+    "llvmlite>=0.43.0",
+    "nibabel>=5.2.1",
+    "nilearn>=0.10.4",
+    "nltk>=3.9.1",
+    "numpy>=1.26.4",
+    "pandas>=2.2.2",
+    "python-levenshtein>=0.26.0",
+    "pytorch-ignite>=0.5.0.post2",
+    "regex>=2024.4.28",
+    "rich>=13.7.1",
+    "scikit-learn>=1.4.2",
+    "sentence-transformers[train]>=3.0.1",
+    "setuptools>=69.5.1",
+    "soundfile>=0.12.1",
+    "termcolor>=2.4.0",
+    "torch>=2.2.0",
+    "torchaudio>=2.3.0",
+    "torchmetrics>=1.4.0.post0",
+    "torchvision>=0.18.1",
+    "transformers>=4.41.2",
+    "visdom>=0.2.4",
+    "wandb>=0.17.0",
+]
+
+[project.optional-dependencies]
+notebook = [
+    "ipykernel>=6.29.5",
+    "ipywidgets>=8.1.5",
+    "tqdm>=4.67.1",
+]
+aws = [
+    "awscli>=1.36.12",
+]
+
+[tool.uv.sources]
+joblib-progress = { git = "https://github.com/jonghwanhyeon/joblib-progress" }

@@ -1,0 +1,4 @@
+defaults:
+  - base
+
+n_folds: 5

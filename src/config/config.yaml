@@ -1,0 +1,48 @@
+defaults:
+  - _self_
+  - splitting: train_test
+  - fine_tune_cfg: none
+  - decoder_cfg: brain_decoder
+  - override hydra/job_logging: colorlog
+  - override hydra/hydra_logging: colorlog
+
+meta: # Ignored for caching and wandb id
+  cache: false
+  log_wandb: false
+  wandb_project: fMRI-Decoding-wrap-up
+  wandb_mode: online
+  tags: []
+  return_data: false
+
+seed: 0
+return_tables: false
+log_nlp_distance: false
+
+datasets:
+  - lebel2023
+subjects: null
+runs: null
+
+tr: 2
+alignment_cfg:
+  lag: 3
+  smooth: 0
+  stack: 0
+
+top_encoding_voxels: 3000
+
+latents_cfg:
+  context_length: 3
+  model: bert_base_uncased
+  token_aggregation: mean
+
+train_cfg:
+  monitor: valid/relative_rank_median
+  patience: 20
+  scheduler_patience: 5
+  batch_size: 1
+  max_epochs: 200
+  lr: 0.0001
+  lr_decoder: ${train_cfg.lr}
+  weight_decay: 0.0001
+  weight_decay_decoder: ${train_cfg.weight_decay}

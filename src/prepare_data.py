@@ -45,14 +45,15 @@ def compute_chunk_index(df):
 
 def split_dataframe(
     df,
+    seed,
     n_folds,
     fold,
     train_ratio,
     valid_ratio,
     test_ratio,
-    seed,
-    fine_tune: dict[str, list[str]] = None,
-    fine_tune_disjoint: bool = True,
+    fine_tune_subjects: dict | None,
+    fine_tune_disjoint: bool | None,
+    **kwargs,
 ):
     # TODO implement leave out
     if train_ratio is None:
@@ -101,6 +102,8 @@ def split_dataframe(
         if fold is not None and fold != i:
             continue
 
+        test_ratio = len(test_indices) / len(main_runs)
+
         if valid_ratio > 0:
             train_indices, valid_indices = train_test_split(
                 train_indices,
@@ -119,10 +122,10 @@ def split_dataframe(
         test_runs["split"] = "test"
 
         df_split = pd.concat([train_runs, valid_runs, test_runs, extra_runs])
-        if fine_tune is not None:
+        if fine_tune_subjects is not None:
             # Make a dataframe out of fine_tune for merging
             fine_tune_df = [
-                (k, v) for k, vals in fine_tune.items() for v in vals
+                (k, v) for k, vals in fine_tune_subjects.items() for v in vals
             ]
             fine_tune_df = pd.DataFrame(
                 fine_tune_df, columns=["dataset", "subject"]

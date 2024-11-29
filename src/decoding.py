@@ -4,11 +4,10 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import torch
-from joblib import Parallel, delayed
 from sklearn.preprocessing import StandardScaler
 
 import wandb
-from src.nlp_metrics import compute_nlp_distances, nlp_cols, nlp_dist_cols
+from src.nlp_metrics import compute_nlp_distances, nlp_cols
 from src.prepare_data import (
     compute_chunk_index,
     find_best_encoding_voxels,
@@ -17,38 +16,39 @@ from src.prepare_data import (
 )
 from src.prepare_latents import prepare_latents
 from src.train import train
-from src.utils import console, device, progress
+from src.utils import console, progress, set_seeds
 
 
-def main(
-    datasets: str | list[str] = "lebel2023/all_subjects",
-    subjects: dict[str, list[str]] = None,
-    runs: dict[str, dict[str, list[str]]] = None,
-    decoder: str = "brain_decoder",
-    model: str = "bert-base-uncased",
-    context_length: int = 6,
-    tr: int = 2,
-    lag: int = 3,
-    smooth: int = 0,
-    stack: int = 0,
-    train_ratio: float = None,
-    valid_ratio: float = 0.1,
-    test_ratio: float = 0.1,
-    seed: int = 0,
-    top_encoding_voxels: int = None,
-    token_aggregation: str = "mean",
-    return_data: bool = False,
-    return_tables: bool = False,
-    log_nlp_distances: bool = False,
-    n_folds: int = None,
-    fold: int = None,
-    leave_out: dict[str, list[str]] = None,
-    fine_tune: dict[str, dict[str, str]] = None,
-    fine_tune_disjoint: bool = False,
-    fine_tune_whole: bool = False,
-    **decoder_params,
+def align_latents(data, lag, smooth, stack):
+    if stack > 0:
+        data = data.apply(lambda x: x[stack:])
+    if lag > 0:
+        data = data.apply(lambda x: x[:-lag])
+    elif lag < 0:
+        data = data.apply(lambda x: x[-lag:])
+
+    return data
+
+
+def decoding(
+    meta: dict,
+    seed: int,
+    return_tables: bool,
+    log_nlp_distances: bool,
+    datasets: list[str],
+    subjects: dict[str, list[str]] | None,
+    runs: dict[str, dict[str, list[str]]] | None,
+    tr: int,
+    splitting: dict,
+    fine_tuning_cfg: dict,
+    alignment_cfg: dict,
+    top_encoding_voxels: int | None,
+    latents_cfg: dict,
+    decoder_cfg: dict,
+    train_cfg: dict,
 ):
-    console.log("Running on device", device)
+    set_seeds(seed)
+
     # Find subject and run names in data if not provided
     if runs is None:
         if subjects is None:
@@ -75,16 +75,6 @@ def main(
         wandb.config["subjects"] = subjects
         wandb.config["runs"] = runs
 
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if device.type == "cuda":
-        torch.cuda.manual_seed(seed)
-
-    if leave_out is not None:
-        # Make leave_out a dataframe for merging
-        leave_out = [(k, v) for k, vals in leave_out.items() for v in vals]
-        leave_out = pd.DataFrame(leave_out, columns=["dataset", "subject"])
-
     # Fetch brain scans
     n_runs = sum([len(r) for s in runs.values() for r in s.values()])
     if n_runs == 0:
@@ -102,7 +92,7 @@ def main(
                 for run in runs[dataset][subject]:
                     df.append(
                         read_brain_volume(
-                            dataset, subject, run, lag, smooth, stack
+                            dataset, subject, run, **alignment_cfg
                         )
                     )
                     progress.update(task, advance=1)
@@ -124,18 +114,11 @@ def main(
                 # lebel2023_balanced -> lebel2023
                 dataset=dataset.split("_")[0],
                 run=run,
-                model=model,
                 tr=tr,
-                context_length=context_length,
-                token_aggregation=token_aggregation,
+                **latents_cfg,
             )
             scaler.partial_fit(data.Y)
-            if stack > 0:
-                data = data.apply(lambda x: x[stack:])
-            if lag > 0:
-                data = data.apply(lambda x: x[:-lag])
-            elif lag < 0:
-                data = data.apply(lambda x: x[-lag:])
+            data = align_latents(data, **alignment_cfg)
             if data.Y.shape[0] > n_trs + 1:
                 console.log(
                     f"[red]{data.Y.shape[0] - n_trs} > 1 latents trimmed for run {run} in dataset {dataset}"
@@ -154,19 +137,10 @@ def main(
     df = df.merge(latents, on=["dataset", "run"])
 
     # Compute (CV) splits
-    df = split_dataframe(
-        df,
-        n_folds,
-        fold,
-        train_ratio,
-        valid_ratio,
-        test_ratio,
-        seed,
-        fine_tune,
-        fine_tune_disjoint,
-    )
+    df = split_dataframe(df, seed, **splitting, **fine_tuning_cfg)
 
     outputs = {}
+    n_folds = splitting["n_folds"]
     for fold, df_fold in df.groupby("fold"):
         if top_encoding_voxels is not None:
             df_fold = find_best_encoding_voxels(df_fold, top_encoding_voxels)
@@ -177,12 +151,6 @@ def main(
             level: in_dims.xs(level).to_dict()
             for level in in_dims.index.levels[0]
         }
-
-        if leave_out is not None:
-            # Put leave_out subjects in the test split
-            df_fold = df_fold.merge(leave_out, how="left", indicator=True)
-            df_fold.loc[df_fold._merge == "both", "split"] = "test"
-            df_fold = df_fold.drop(columns="_merge")
 
         df_train = df_fold[df_fold.split == "train"]
         df_valid = df_fold[df_fold.split == "valid"]
@@ -222,13 +190,13 @@ def main(
             + f"Valid split: {df_valid.run.nunique()} runs with {len(df_valid)} occurrences and {df_valid.n_trs.sum()} scans\n"
             + f"Test split: {df_test.run.nunique()} runs with {len(df_test)} occurrences and {df_test.n_trs.sum()} scans"
         )
-        if fine_tune is not None:
+        if not df_ft_train.empty:
             console.log(
                 f"Fine-tune train split: {df_ft_train.run.nunique()} runs with {len(df_ft_train)} occurrences and {df_ft_train.n_trs.sum()} scans\n"
                 f"Fine-tune valid split: {df_ft_valid.run.nunique()} runs with {len(df_ft_valid)} occurrences and {df_ft_valid.n_trs.sum()} scans"
             )
 
-        if return_data:
+        if meta["return_data"]:
             outputs[fold] = df_train, df_valid, df_test, nlp_distances
         else:
             outputs[fold] = train(
@@ -238,12 +206,12 @@ def main(
                 df_ft_train,
                 df_ft_valid,
                 in_dims,
-                decoder=decoder,
+                decoder_cfg=decoder_cfg,
                 return_tables=return_tables,
                 nlp_distances=nlp_distances,
                 metrics_prefix=f"fold_{fold}/" if n_folds is not None else "",
-                fine_tune_whole=fine_tune_whole,
-                **decoder_params,
+                ft_params=fine_tuning_cfg["train_cfg"],
+                **train_cfg,
             )
 
     return outputs

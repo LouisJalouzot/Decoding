@@ -64,6 +64,15 @@ else:
     device = torch.device("cpu")
 
 
+def set_seeds(seed: int):
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+
 def compute_gradient_norm(model, norm_type=2):
     """
     Computes the norm of gradients of all parameters in the model.

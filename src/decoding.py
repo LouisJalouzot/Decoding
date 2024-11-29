@@ -1,4 +1,6 @@
 import os
+from collections import defaultdict
+from numbers import Number
 from pathlib import Path
 
 import numpy as np
@@ -139,8 +141,8 @@ def decoding(
     # Compute (CV) splits
     df = split_dataframe(df, seed, **splitting, **fine_tuning_cfg)
 
-    outputs = {}
     n_folds = splitting["n_folds"]
+    outputs = defaultdict(list)
     for fold, df_fold in df.groupby("fold"):
         if top_encoding_voxels is not None:
             df_fold = find_best_encoding_voxels(df_fold, top_encoding_voxels)
@@ -199,7 +201,8 @@ def decoding(
         if meta["return_data"]:
             outputs[fold] = df_train, df_valid, df_test, nlp_distances
         else:
-            outputs[fold] = train(
+            prefix = f"fold_{fold}/" if n_folds is not None else ""
+            metrics, _decoder = train(
                 df_train,
                 df_valid,
                 df_test,
@@ -209,9 +212,25 @@ def decoding(
                 decoder_cfg=decoder_cfg,
                 return_tables=return_tables,
                 nlp_distances=nlp_distances,
-                metrics_prefix=f"fold_{fold}/" if n_folds is not None else "",
+                metrics_prefix=prefix,
                 ft_params=fine_tuning_cfg["train_cfg"],
+                metrics_prefix=prefix,
                 **train_cfg,
             )
+            outputs.update({prefix + k: v for k, v in metrics.items()})
+            # outputs[prefix + "decoder"] = _decoder # Not saving decoder for now
+            if n_folds is not None:
+                for k, v in metrics.items():
+                    if isinstance(v, Number):
+                        outputs[k].append(v)
+
+    # If CV has been used, average metrics over folds
+    if not n_folds is None:
+        for k, v in outputs.items():
+            if not "fold" in k and isinstance(v[0], Number):
+                mean_v = np.mean(v)
+                outputs[k] = mean_v
+                if wandb.run is not None:
+                    wandb.summary[k] = mean_v
 
     return outputs

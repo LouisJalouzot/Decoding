@@ -1,9 +1,9 @@
-import string
 from pathlib import Path
 from typing import List, Tuple
 
 import numpy as np
 import pandas as pd
+import torch
 from sklearn.preprocessing import StandardScaler
 
 from src.nlp_metrics import get_glove_bows, nltk_pos_tag
@@ -272,6 +272,25 @@ def prepare_latents(
         )
     elif model.lower() == "clap":
         latents = prepare_clap(chunks, audio_path, tr, context_length, verbose)
+    elif model.lower() == "llm2vec":
+        # TIP: Because of annoying multiprocess with CUDA, use on CPU or with only 1 viisble GPU
+        from llm2vec import LLM2Vec
+
+        model = "McGill-NLP/LLM2Vec-Meta-Llama-31-8B-Instruct-mntp"
+        perf_model = "unsup-simcse"
+        l2v = LLM2Vec.from_pretrained(
+            model,
+            peft_model_name_or_path=model + "-" + perf_model,
+            merge_peft=True,
+            device_map=device.type,
+            max_length=None,
+            torch_dtype=(
+                torch.bfloat16 if device.type == "cuda" else torch.float32
+            ),
+        )
+        latents = l2v.encode(
+            chunks.chunks_with_context.tolist(), show_progress_bar=True
+        )
     else:
         from sentence_transformers import SentenceTransformer
 

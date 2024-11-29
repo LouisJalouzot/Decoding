@@ -1,4 +1,3 @@
-import argparse
 from hashlib import sha1
 
 import hydra

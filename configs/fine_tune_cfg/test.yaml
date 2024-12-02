@@ -1,0 +1,5 @@
+fine_tune_subjects:
+  li2022_EN_SS_trimmed_mean:
+    - mean_EN
+
+fine_tune_disjoint: false

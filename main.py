@@ -39,13 +39,11 @@ def wandb_wrapper(cfg: dict, id_config: dict):
     return output
 
 
-@hydra.main(version_base=None, config_path="src/config", config_name="config")
+@hydra.main(version_base=None, config_path="configs", config_name="config")
 def main(
     cfg: DictConfig,
 ) -> None:
     cfg = OmegaConf.to_container(cfg, resolve=True)
-    print(cfg)
-    return
     # meta parameters have no impact on the results so they should be ignored for caching and for the wandb id
     id_config = {k: v for k, v in cfg.items() if k != "meta"}
     if cfg["meta"]["cache"]:

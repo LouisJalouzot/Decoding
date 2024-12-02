@@ -56,8 +56,6 @@ def split_dataframe(
     **kwargs,
 ):
     # TODO implement leave out
-    if train_ratio is None:
-        train_ratio = 1 - valid_ratio - test_ratio
 
     subjects_runs = df[["dataset", "subject", "run"]].drop_duplicates()
     n_subjects = (
@@ -87,10 +85,12 @@ def split_dataframe(
         kf = KFold(n_splits=n_folds, shuffle=True, random_state=seed)
         train_test_indices = kf.split(main_runs.index)
     else:
+        if train_ratio is None:
+            train_ratio = 1 - valid_ratio - test_ratio
         # Use a single split
         train_indices, test_indices = train_test_split(
             main_runs.index,
-            test_size=max(test_ratio, 1 - train_ratio - valid_ratio),
+            test_size=test_ratio,
             random_state=seed,
         )
         if test_ratio == 0:
@@ -102,13 +102,14 @@ def split_dataframe(
         if fold is not None and fold != i:
             continue
 
-        test_ratio = len(test_indices) / len(main_runs)
+        test_ratio_split = len(test_indices) / len(main_runs)
+        valid_ratio_split = valid_ratio / (1 - test_ratio_split)
 
         if valid_ratio > 0:
             train_indices, valid_indices = train_test_split(
                 train_indices,
-                train_size=train_ratio / (1 - test_ratio),
-                test_size=valid_ratio / (1 - test_ratio),
+                train_size=1 - valid_ratio_split,
+                test_size=valid_ratio_split,
                 random_state=seed,
             )
         else:

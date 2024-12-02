@@ -11,18 +11,55 @@ from sklearn.utils import shuffle
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 import wandb
-from src.base_decoders import (
-    GRU,
-    LSTM,
-    RNN,
-    BrainDecoder,
-    MeanDecoder,
-    RandomDecoder,
-    SimpleMLP,
-)
+from src import base_decoders
 from src.decoder_wrapper import DecoderWrapper
 from src.evaluate import evaluate
 from src.utils import compute_gradient_norm, console, device
+
+
+def init_optimizer(
+    decoder,
+    prefix="Training",
+):
+    opt_grouped_parameters = []
+
+    n_params = 0
+
+    for module in [decoder.projector, decoder.decoder]:
+        wd_params, no_wd_params = [], []
+        for p in module.parameters():
+            if p.requires_grad:
+                if len(p.shape) > 1:
+                    wd_params.append(p)
+                if len(p.shape) == 1:
+                    no_wd_params.append(p)
+                if module.lr > 0:
+                    n_params += p.numel()
+        for params, wd in [wd_params, module.weight_decay], [no_wd_params, 0]:
+            params = {
+                "params": params,
+                "weight_decay": wd,
+                "lr": module.lr,
+            }
+            opt_grouped_parameters.append(params)
+
+    if wandb.run is not None:
+        if prefix == "Training":
+            wandb.config["n_params"] = n_params
+        else:
+            wandb.config["n_params_ft"] = n_params
+    console.log(f"{prefix} {n_params:.3g} parameters")
+
+    return torch.optim.AdamW(opt_grouped_parameters)
+
+
+def switch_to_finetune_mode(module):
+    # Updates parameters with their "_ft" counterpart
+    for attr_name in dir(module):
+        if attr_name.endswith("_ft"):
+            base_attr = attr_name.replace("_ft", "")
+            if hasattr(module, base_attr):
+                setattr(module, attr_name, getattr(module, base_attr))
 
 
 def train_loop(
@@ -33,8 +70,8 @@ def train_loop(
     max_epochs,
     batch_size,
     monitor,
-    loss,
     patience,
+    scheduler_patience,
     top_k_accuracies,
     nlp_distances,
     n_candidates,
@@ -58,7 +95,7 @@ def train_loop(
         title="Training loop",
     )
     scheduler = ReduceLROnPlateau(
-        optimizer, mode="min", patience=patience // 4, factor=0.5
+        optimizer, mode="min", patience=scheduler_patience, factor=0.5
     )
     with Live(table, console=console, vertical_overflow="visible"):
         for epoch in range(1, max_epochs + 1):
@@ -72,7 +109,7 @@ def train_loop(
                     X = row.X.to(device)
                     Y = row.Y.to(device)
                     X_proj = decoder.projector[row.dataset][row.subject](X)
-                    train_loss = decoder.loss(X_proj, Y)
+                    train_loss = decoder(X_proj, Y)
                     train_loss /= batch_size
 
                     train_loss.backward()
@@ -93,7 +130,7 @@ def train_loop(
 
             # Log metrics
             output = {
-                "train/" + loss: np.mean(train_losses),
+                "train/" + decoder.loss: np.mean(train_losses),
                 "grad_norm": np.mean(grad_norms),
                 "lr": scheduler.get_last_lr()[0],
                 **{"valid/" + key: value for key, value in val_metrics.items()},
@@ -150,55 +187,6 @@ def train_loop(
     return decoder, optimizer, best_epoch
 
 
-def init_optimizer(
-    decoder,
-    lr,
-    weight_decay,
-    lr_decoder=None,
-    weight_decay_decoder=None,
-    prefix="Training",
-):
-    if lr_decoder is None:
-        lr_decoder = lr
-    if weight_decay_decoder is None:
-        weight_decay_decoder = weight_decay
-
-    opt_grouped_parameters = []
-
-    n_params = 0
-
-    for params, lr, weight_decay in [
-        (list(decoder.projector.parameters()), lr, weight_decay),
-        (list(decoder.decoder.parameters()), lr_decoder, weight_decay_decoder),
-    ]:
-        opt_grouped_parameters.append(
-            {
-                "params": [p for p in params if len(p.shape) > 1],
-                "weight_decay": weight_decay,
-                "lr": lr,
-            }
-        )
-        opt_grouped_parameters.append(
-            {
-                "params": [p for p in params if len(p.shape) == 1],
-                "weight_decay": 0.0,
-                "lr": lr,
-            }
-        )
-        if lr > 0:
-            for p in params:
-                n_params += p.numel()
-
-    console.log(f"{prefix} {n_params:.3g} parameters")
-    if wandb.run is not None:
-        if prefix == "Training":
-            wandb.config["n_params"] = n_params
-        else:
-            wandb.config["n_params_ft"] = n_params
-
-    return torch.optim.AdamW(opt_grouped_parameters)
-
-
 def train(
     df_train,
     df_valid,
@@ -206,67 +194,38 @@ def train(
     df_ft_train,
     df_ft_valid,
     in_dims,
-    decoder="brain_decoder",
-    patience=20,
-    monitor="valid/relative_rank_median",
-    loss="mixco",
-    weight_decay=1e-6,
-    weight_decay_ft=None,
-    weight_decay_ft_decoder=None,
-    lr=1e-4,
-    lr_ft=None,
-    lr_ft_decoder=None,
-    temperature_ft=None,
-    max_epochs=200,
-    batch_size=1,
-    return_tables=False,
-    nlp_distances={},
-    n_candidates=10,
-    metrics_prefix="",
-    **decoder_params,
+    decoder_cfg,
+    wrapper_cfg,
+    training_cfg,
+    return_tables,
+    nlp_distances,
+    n_candidates,
+    metrics_prefix,
 ):
     torch.autograd.set_detect_anomaly(True)
     torch.set_float32_matmul_precision("high")
 
-    if decoder.lower() in ["rnn", "gru", "lstm"] and loss == "mixco":
-        console.log(
-            "[red]MixCo augmentation should not be used with time series."
-        )
-
     out_dim = df_train.Y.iloc[0].shape[1]
-    if decoder.lower() == "brain_decoder":
-        decoder = BrainDecoder(out_dim=out_dim, **decoder_params)
-    elif decoder.lower() == "rnn":
-        decoder = RNN(out_dim=out_dim, **decoder_params)
-    elif decoder.lower() == "gru":
-        decoder = GRU(out_dim=out_dim, **decoder_params)
-    elif decoder.lower() == "lstm":
-        decoder = LSTM(out_dim=out_dim, **decoder_params)
-    elif decoder.lower() == "simple_mlp":
-        decoder = SimpleMLP(out_dim=out_dim, **decoder_params)
-    elif decoder.lower() == "random_decoder":
-        decoder = RandomDecoder(out_dim=out_dim)
-    elif decoder.lower() == "mean_decoder":
-        decoder = MeanDecoder(out_dim=out_dim)
+    decoder = decoder_cfg.pop("class")
+    if hasattr(base_decoders, decoder):
+        decoder = getattr(base_decoders, decoder)(
+            out_dim=out_dim, **decoder_cfg
+        )
     else:
         raise ValueError(f"Unsupported decoder {decoder}.")
-
     decoder = DecoderWrapper(
         decoder=decoder,
         in_dims=in_dims,
-        loss=loss,
-        **decoder_params,
+        **wrapper_cfg,
     ).to(device)
     decoder = torch.compile(decoder)
-
-    n_params = sum([p.numel() for p in decoder.parameters()])
 
     if wandb.run is not None:
         wandb.config["in_dims"] = in_dims
         wandb.config["out_dim"] = out_dim
 
     # Initialize optimizer
-    optimizer = init_optimizer(decoder, lr, weight_decay)
+    optimizer = init_optimizer(decoder)
 
     top_k_accuracies = [1, 5, 10]
 
@@ -276,52 +235,32 @@ def train(
         optimizer=optimizer,
         df_train=df_train,
         df_valid=df_valid,
-        max_epochs=max_epochs,
-        batch_size=batch_size,
-        monitor=monitor,
-        loss=loss,
-        patience=patience,
         top_k_accuracies=top_k_accuracies,
         nlp_distances=nlp_distances,
         n_candidates=n_candidates,
         metrics_prefix=metrics_prefix,
+        **training_cfg,
     )
     output = {"best_epoch": best_epoch}
 
     # Fine-tune if df_ft_train and df_ft_valid are not empty
     if not df_ft_train.empty and not df_ft_valid.empty:
+        switch_to_finetune_mode(decoder.projector)
+        switch_to_finetune_mode(decoder.decoder)
 
         # Reinitialize optimizer
-        if lr_ft is None:
-            lr_ft = lr
-        if weight_decay_ft is None:
-            weight_decay_ft = weight_decay
-        optimizer = init_optimizer(
-            decoder,
-            lr_ft,
-            weight_decay_ft,
-            lr_ft_decoder,
-            weight_decay_ft_decoder,
-            prefix="Fine-tuning",
-        )
-
-        if temperature_ft is not None:
-            decoder.temperature = temperature_ft
+        optimizer = init_optimizer(decoder, prefix="Fine-tuning")
 
         decoder, optimizer, best_epoch_ft = train_loop(
             decoder=decoder,
             optimizer=optimizer,
             df_train=df_ft_train,
             df_valid=df_ft_valid,
-            max_epochs=max_epochs,
-            batch_size=batch_size,
-            monitor=monitor,
-            loss=loss,
-            patience=patience,
             top_k_accuracies=top_k_accuracies,
             nlp_distances=nlp_distances,
             n_candidates=n_candidates,
             metrics_prefix="ft_" + metrics_prefix,
+            **training_cfg,
         )
         output["best_epoch_ft"] = best_epoch_ft
 

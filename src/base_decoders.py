@@ -49,14 +49,13 @@ class SimpleMLP(nn.Module):
     def __init__(
         self,
         out_dim,
-        hidden_size=512,
+        hidden_dim=512,
         num_layers=3,
         dropout=0.7,
-        **kwargs,
     ):
         super().__init__()
         self.out_dim = out_dim
-        self.hidden_size = hidden_size
+        self.hidden_dim = hidden_dim
         self.num_layers = num_layers
         self.dropout = dropout
 
@@ -64,12 +63,12 @@ class SimpleMLP(nn.Module):
         for _ in range(num_layers - 1):
             self.fc.extend(
                 [
-                    nn.Linear(self.hidden_size, self.hidden_size),
+                    nn.Linear(self.hidden_dim, self.hidden_dim),
                     nn.ReLU(),
                     nn.Dropout(self.dropout),
                 ]
             )
-        self.fc.append(nn.Linear(in_features=hidden_size, out_features=out_dim))
+        self.fc.append(nn.Linear(in_features=hidden_dim, out_features=out_dim))
         self.fc = nn.ModuleList(self.fc)
 
     def forward(self, x):
@@ -82,17 +81,16 @@ class RNN(nn.Module):
     def __init__(
         self,
         out_dim,
-        hidden_size=512,
+        hidden_dim=512,
         num_layers=1,
         nonlinearity="tanh",
         bias=True,
         dropout=0.7,
-        **kwargs,
     ):
         super().__init__()
         self.rnn = nn.RNN(
-            input_size=hidden_size,
-            hidden_size=out_dim,
+            input_size=hidden_dim,
+            hidden_dim=out_dim,
             num_layers=num_layers,
             nonlinearity=nonlinearity,
             bias=bias,
@@ -108,16 +106,15 @@ class GRU(nn.Module):
     def __init__(
         self,
         out_dim,
-        hidden_size=512,
+        hidden_dim=512,
         num_layers=1,
         bias=True,
         dropout=0.7,
-        **kwargs,
     ):
         super().__init__()
         self.gru = nn.GRU(
-            input_size=hidden_size,
-            hidden_size=out_dim,
+            input_size=hidden_dim,
+            hidden_dim=out_dim,
             num_layers=num_layers,
             bias=bias,
             batch_first=True,
@@ -132,23 +129,22 @@ class LSTM(nn.Module):
     def __init__(
         self,
         out_dim,
-        hidden_size=512,
+        hidden_dim=512,
         num_layers=1,
         bias=True,
         proj_size=0,
         dropout=0.7,
-        **kwargs,
     ):
         super().__init__()
-        input_size = hidden_size
+        input_size = hidden_dim
         if proj_size > 0:
-            assert proj_size < hidden_size
+            assert proj_size < hidden_dim
             assert proj_size == out_dim
         else:
-            assert hidden_size == out_dim
+            assert hidden_dim == out_dim
         self.lstm = nn.LSTM(
             input_size=input_size,
-            hidden_size=hidden_size,
+            hidden_dim=hidden_dim,
             num_layers=num_layers,
             bias=bias,
             batch_first=True,
@@ -164,30 +160,32 @@ class BrainDecoder(nn.Module):
     def __init__(
         self,
         out_dim,
-        hidden_size=512,
-        hidden_size_projector=512,
-        dropout=0.7,
-        n_res_blocks=2,
-        n_proj_blocks=1,
-        norm_type="ln",
-        activation_layer_first=False,
+        hidden_dim,
+        hidden_dim_projector,
+        dropout,
+        n_res_blocks,
+        n_proj_blocks,
+        norm_type,
+        activation_layer_first,
         **kwargs,
     ):
         super().__init__()
 
         self.out_dim = out_dim
-        self.hidden_size = hidden_size
-        self.hidden_size_projector = hidden_size_projector
+        self.hidden_dim = hidden_dim
+        self.hidden_dim_projector = hidden_dim_projector
         self.dropout = dropout
         self.n_res_blocks = n_res_blocks
         self.n_proj_blocks = n_proj_blocks
         self.norm_type = norm_type
         self.activation_layer_first = activation_layer_first
+        for k, v in kwargs.items():
+            setattr(self, k, v)
 
         norm_backbone = (
-            partial(nn.BatchNorm1d, num_features=self.hidden_size)
+            partial(nn.BatchNorm1d, num_features=self.hidden_dim)
             if self.norm_type == "bn"
-            else partial(nn.LayerNorm, normalized_shape=self.hidden_size)
+            else partial(nn.LayerNorm, normalized_shape=self.hidden_dim)
         )
         activation_backbone = (
             partial(nn.ReLU, inplace=True)
@@ -204,7 +202,7 @@ class BrainDecoder(nn.Module):
         self.mlp = nn.ModuleList(
             [
                 nn.Sequential(
-                    nn.Linear(self.hidden_size, self.hidden_size),
+                    nn.Linear(self.hidden_dim, self.hidden_dim),
                     *[item() for item in self.activation_and_norm],
                     nn.Dropout(self.dropout),
                 )
@@ -214,7 +212,7 @@ class BrainDecoder(nn.Module):
 
         # Second linear
         self.lin1 = nn.Linear(
-            self.hidden_size, self.hidden_size_projector, bias=True
+            self.hidden_dim, self.hidden_dim_projector, bias=True
         )
 
         # Projector
@@ -223,18 +221,18 @@ class BrainDecoder(nn.Module):
         for _ in range(self.n_proj_blocks):
             projector_layers.extend(
                 [
-                    nn.LayerNorm(self.hidden_size_projector),
+                    nn.LayerNorm(self.hidden_dim_projector),
                     nn.GELU(),
                     nn.Linear(
-                        self.hidden_size_projector, self.hidden_size_projector
+                        self.hidden_dim_projector, self.hidden_dim_projector
                     ),
                 ]
             )
         projector_layers.extend(
             [
-                nn.LayerNorm(self.hidden_size_projector),
+                nn.LayerNorm(self.hidden_dim_projector),
                 nn.GELU(),
-                nn.Linear(self.hidden_size_projector, self.out_dim),
+                nn.Linear(self.hidden_dim_projector, self.out_dim),
             ]
         )
         self.projector = nn.Sequential(*projector_layers)

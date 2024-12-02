@@ -1,6 +1,5 @@
 from functools import partial
 
-import numpy as np
 import torch
 import torch.nn.functional as F
 from torch import nn
@@ -11,15 +10,15 @@ class DecoderWrapper(nn.Module):
         self,
         decoder,
         in_dims,
-        loss="mixco",
-        multi_subject_mode="individual",
-        hidden_size=512,
-        dropout=0.7,
-        norm_type="ln",
-        activation_layer_first=False,
-        temperature=0.05,
-        beta=0.15,
-        s_thresh=0.5,
+        loss,
+        multi_subject_mode,
+        hidden_dim,
+        dropout,
+        norm_type,
+        activation_layer_first,
+        temperature,
+        beta,
+        s_thresh,
         **kwargs,
     ):
         super().__init__()
@@ -27,7 +26,7 @@ class DecoderWrapper(nn.Module):
         self.in_dims = in_dims
         self.loss = loss
         self.multi_subject_mode = multi_subject_mode
-        self.hidden_size = hidden_size
+        self.hidden_dim = hidden_dim
         self.dropout = dropout
         self.norm_type = norm_type
         self.activation_layer_first = activation_layer_first
@@ -36,20 +35,20 @@ class DecoderWrapper(nn.Module):
         self.s_thresh = s_thresh
 
         if self.loss == "mixco":
-            self.loss = self.mixco_loss
+            self.compute_loss = self.mixco_loss
         elif self.loss == "symm_nce":
-            self.loss = self.symm_nce_loss
+            self.compute_loss = self.symm_nce_loss
         elif self.loss == "mse":
-            self.loss = self.mse_loss
+            self.compute_loss = self.mse_loss
         else:
             raise ValueError(
                 f"loss must be one of ['mixco', 'symm_nce', 'mse'] but got {self.loss}"
             )
 
         norm_backbone = (
-            partial(nn.BatchNorm1d, num_features=self.hidden_size)
+            partial(nn.BatchNorm1d, num_features=self.hidden_dim)
             if self.norm_type == "bn"
-            else partial(nn.LayerNorm, normalized_shape=self.hidden_size)
+            else partial(nn.LayerNorm, normalized_shape=self.hidden_dim)
         )
         activation_backbone = (
             partial(nn.ReLU, inplace=True)
@@ -62,6 +61,8 @@ class DecoderWrapper(nn.Module):
             else (norm_backbone, activation_backbone)
         )
         self.projector = self.init_projector()
+        for k, v in kwargs.items():
+            setattr(self.projector, k, v)
 
     def init_projector(self):
         if self.multi_subject_mode == "shared":
@@ -73,7 +74,7 @@ class DecoderWrapper(nn.Module):
             ), f"In multi_subject_mode 'shared', all subjects must have the same input dimension but got {self.in_dims}"
             in_dim = all_dims[0]
             projector = nn.Sequential(
-                nn.Linear(in_dim, self.hidden_size),
+                nn.Linear(in_dim, self.hidden_dim),
                 *[item() for item in self.activation_and_norm],
                 nn.Dropout(self.dropout),
             )
@@ -95,7 +96,7 @@ class DecoderWrapper(nn.Module):
                 ), f"In multi_subject_mode 'dataset', all subjects in a dataset must have the same input dimension but got {in_dims[dataset]} for {dataset}"
                 in_dim = dims[0]
                 dataset_projector = nn.Sequential(
-                    nn.Linear(in_dim, self.hidden_size),
+                    nn.Linear(in_dim, self.hidden_dim),
                     *[item() for item in self.activation_and_norm],
                     nn.Dropout(self.dropout),
                 )
@@ -114,7 +115,7 @@ class DecoderWrapper(nn.Module):
                     dataset: nn.ModuleDict(
                         {
                             subject: nn.Sequential(
-                                nn.Linear(in_dim, self.hidden_size),
+                                nn.Linear(in_dim, self.hidden_dim),
                                 *[item() for item in self.activation_and_norm],
                                 nn.Dropout(self.dropout),
                             )
@@ -129,8 +130,11 @@ class DecoderWrapper(nn.Module):
                 f"multi_subject_mode must be one of ['shared', 'dataset', 'individual'] but got {self.multi_subject_mode}"
             )
 
-    def forward(self, X):
-        return self.decoder(X)
+    def forward(self, X, Y=None):
+        if Y is None:
+            return self.decoder(X)
+        else:
+            return self.compute_loss(X, Y)
 
     def mixco_loss(self, X_proj, Y):
         # Randomly select samples to augment

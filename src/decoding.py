@@ -37,19 +37,24 @@ def decoding(
     seed: int,
     return_tables: bool,
     log_nlp_distances: bool,
-    datasets: list[str],
+    n_candidates: int,
+    datasets: list[str] | str,
     subjects: dict[str, list[str]] | None,
     runs: dict[str, dict[str, list[str]]] | None,
     tr: int,
     splitting: dict,
-    fine_tuning_cfg: dict,
+    fine_tune_cfg: dict,
     alignment_cfg: dict,
     top_encoding_voxels: int | None,
     latents_cfg: dict,
+    wrapper_cfg: dict,
     decoder_cfg: dict,
     train_cfg: dict,
 ):
     set_seeds(seed)
+
+    if isinstance(datasets, str):
+        datasets = [datasets]
 
     # Find subject and run names in data if not provided
     if runs is None:
@@ -138,8 +143,8 @@ def decoding(
     )
     df = df.merge(latents, on=["dataset", "run"])
 
-    # Compute (CV) splits
-    df = split_dataframe(df, seed, **splitting, **fine_tuning_cfg)
+    # Compute (CV) train/valid/test splits
+    df = split_dataframe(df, seed, **splitting, **fine_tune_cfg)
 
     n_folds = splitting["n_folds"]
     outputs = defaultdict(list)
@@ -210,12 +215,12 @@ def decoding(
                 df_ft_valid,
                 in_dims,
                 decoder_cfg=decoder_cfg,
+                wrapper_cfg=wrapper_cfg,
+                training_cfg=train_cfg,
                 return_tables=return_tables,
                 nlp_distances=nlp_distances,
+                n_candidates=n_candidates,
                 metrics_prefix=prefix,
-                ft_params=fine_tuning_cfg["train_cfg"],
-                metrics_prefix=prefix,
-                **train_cfg,
             )
             outputs.update({prefix + k: v for k, v in metrics.items()})
             # outputs[prefix + "decoder"] = _decoder # Not saving decoder for now

@@ -1,0 +1,10 @@
+defaults:
+  - config
+  - _self_
+  - override fine_tune_cfg: test
+
+datasets:
+  - li2022_EN_SS_trimmed_mean
+
+train_cfg:
+  max_epochs: 10

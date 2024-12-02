@@ -289,7 +289,7 @@ def prepare_latents(
             ),
         )
         latents = l2v.encode(
-            chunks.chunks_with_context.tolist(), show_progress_bar=True
+            chunks.chunks_with_context.tolist(), show_progress_bar=False
         )
     else:
         from sentence_transformers import SentenceTransformer
@@ -305,6 +305,7 @@ def prepare_latents(
         latents = model.encode(
             chunks.chunks_with_context,
             output_value="token_embeddings",
+            show_progress_bar=False,
         )
 
         if token_aggregation == "first":

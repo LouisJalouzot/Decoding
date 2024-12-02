@@ -1,8 +1,8 @@
 defaults:
   - _self_
   - splitting: train_test
-  - fine_tune_cfg: none
   - decoder_cfg: brain_decoder
+  - fine_tune_cfg: none
   - override hydra/job_logging: colorlog
   - override hydra/hydra_logging: colorlog
 
@@ -16,7 +16,8 @@ meta: # Ignored for caching and wandb id
 
 seed: 0
 return_tables: false
-log_nlp_distance: false
+log_nlp_distances: false
+n_candidates: 10
 
 datasets:
   - lebel2023
@@ -33,7 +34,7 @@ top_encoding_voxels: 3000
 
 latents_cfg:
   context_length: 3
-  model: bert_base_uncased
+  model: bert-base-uncased
   token_aggregation: mean
 
 train_cfg:
@@ -42,7 +43,19 @@ train_cfg:
   scheduler_patience: 5
   batch_size: 1
   max_epochs: 200
-  lr: 0.0001
-  lr_decoder: ${train_cfg.lr}
-  weight_decay: 0.0001
-  weight_decay_decoder: ${train_cfg.weight_decay}
+
+wrapper_cfg:
+  loss: mixco
+  multi_subject_mode: individual
+  temperature: 0.05
+  temperature_ft: 0.5
+  beta: 0.15
+  s_thresh: 0.5
+  lr: ${decoder_cfg.lr}
+  lr_ft: ${decoder_cfg.lr_ft}
+  weight_decay: ${decoder_cfg.weight_decay}
+  weight_decay_ft: ${decoder_cfg.weight_decay_ft}
+  hidden_dim: ${decoder_cfg.hidden_dim}
+  dropout: ${decoder_cfg.dropout}
+  norm_type: ${decoder_cfg.norm_type}
+  activation_layer_first: ${decoder_cfg.activation_layer_first}

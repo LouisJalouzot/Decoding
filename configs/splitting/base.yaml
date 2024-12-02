@@ -1,0 +1,7 @@
+n_folds: null
+fold: null
+train_ratio: null
+valid_ratio: 0.05
+test_ratio: null
+
+# Valid ratio is always required and test ratio only without CV

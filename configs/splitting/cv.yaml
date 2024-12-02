@@ -1,4 +1,4 @@
 defaults:
   - base
 
-n_folds: 5
+n_folds: 3

@@ -276,6 +276,7 @@ def prepare_latents(
         # TIP: Because of annoying multiprocess with CUDA, use on CPU or with only 1 viisble GPU
         from llm2vec import LLM2Vec
 
+        assert token_aggregation == "mean", "Only mean aggregation is supported"
         model = "McGill-NLP/LLM2Vec-Meta-Llama-31-8B-Instruct-mntp"
         perf_model = "unsup-simcse"
         l2v = LLM2Vec.from_pretrained(

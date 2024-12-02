@@ -1,0 +1,44 @@
+defaults:
+  - _self_
+  - config
+  - subjects: balanced_123
+  - override splitting: cv
+  - override hydra/sweeper: optuna
+  - override hydra/sweeper/sampler: tpe
+
+datasets: lebel2023_balanced
+
+# Cache top encoding voxels
+hydra:
+  mode: MULTIRUN
+  sweep:
+    dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    subdir: ${hydra.job.id}
+  sweeper:
+    storage: sqlite:///results/grid_search.db
+    sampler:
+      seed: 0
+    direction: minimize
+    study_name: grid_search
+    n_trials: 20
+    n_jobs: 2
+    params:
+      latents_cfg.model: choice('bert-base-uncased','llm2vec','microsoft/deberta-xlarge-mnli')
+      latents_cfg.context_length: range(0,8)
+      latents_cfg.token_aggregation: choice('mean','chunk_mean','max')
+      alignment_cfg.lag: range(0,5)
+      alignment_cfg.smooth: range(0,5)
+      alignment_cfg.stack: range(0,3)
+      top_encoding_voxels: range(500,80000,step=500)
+      wrapper_cfg.multi_subject_mode: choice('individual','shared')
+      decoder_cfg.hidden_dim: choice(128,256,512,1024,2048)
+      decoder_cfg.hidden_dim_projector: choice(128,256,512,1024,2048)
+      decoder_cfg.dropout: interval(0.05,0.95)
+      decoder_cfg.n_res_blocks: range(1,4)
+      decoder_cfg.n_proj_blocks: range(1,3)
+      decoder_cfg.lr: tag(log,interval(1e-5,1))
+      wrapper_cfg.lr: tag(log,interval(1e-5,1))
+      decoder_cfg.weight_decay: tag(log,interval(1e-5,1))
+      wrapper_cfg.weight_decay: tag(log,interval(1e-5,1))
+      wrapper_cfg.temperature: tag(log,interval(0.001,1))
+      wrapper_cfg.beta: tag(log,interval(0.001,1))

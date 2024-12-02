@@ -40,6 +40,8 @@ dependencies = [
     "hydra-colorlog>=1.2.0",
     "omegaconf>=2.3.0",
     "hydra-optuna-sweeper>=1.2.0",
+    "sqlalchemy==1.4.46",
+    "llm2vec",
 ]
 
 [project.optional-dependencies]
@@ -51,6 +53,10 @@ notebook = [
 aws = [
     "awscli>=1.36.12",
 ]
+grid-search = [
+    "optuna-dashboard>=0.14.0",
+]
 
 [tool.uv.sources]
 joblib-progress = { git = "https://github.com/jonghwanhyeon/joblib-progress" }
+llm2vec = { git = "https://github.com/McGill-NLP/llm2vec" }

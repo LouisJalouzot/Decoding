@@ -1,0 +1,22 @@
+name: optuna
+best_params:
+  alignment_cfg.lag: 5
+  alignment_cfg.smooth: 5
+  alignment_cfg.stack: 1
+  decoder_cfg.dropout: 0.7524762586578099
+  decoder_cfg.hidden_dim: 128
+  decoder_cfg.hidden_dim_projector: 512
+  decoder_cfg.lr: 5.2091448868898925e-05
+  decoder_cfg.n_proj_blocks: 2
+  decoder_cfg.n_res_blocks: 1
+  decoder_cfg.weight_decay: 0.0040666950653938435
+  latents_cfg.context_length: 4
+  latents_cfg.model: llm2vec
+  latents_cfg.token_aggregation: chunk_mean
+  top_encoding_voxels: 63500
+  wrapper_cfg.beta: 0.21023308743480115
+  wrapper_cfg.lr: 0.5288647060971087
+  wrapper_cfg.multi_subject_mode: shared
+  wrapper_cfg.temperature: 0.006218230782016854
+  wrapper_cfg.weight_decay: 0.0011838854959491769
+best_value: .inf

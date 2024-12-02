@@ -206,7 +206,7 @@ def train(
     torch.set_float32_matmul_precision("high")
 
     out_dim = df_train.Y.iloc[0].shape[1]
-    decoder = decoder_cfg.pop("class")
+    decoder = decoder_cfg["class"]
     if hasattr(base_decoders, decoder):
         decoder = getattr(base_decoders, decoder)(
             out_dim=out_dim, **decoder_cfg

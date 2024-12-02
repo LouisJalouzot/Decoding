@@ -9,13 +9,14 @@ defaults:
 datasets: lebel2023_balanced
 
 # Cache top encoding voxels
+grid_search_version: 0
 hydra:
   mode: MULTIRUN
   sweep:
     dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
     subdir: ${hydra.job.id}
   sweeper:
-    storage: sqlite:///results/grid_search.db
+    storage: sqlite:///results/grid_search_v${grid_search_version}.db
     sampler:
       seed: 0
     direction: minimize

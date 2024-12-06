@@ -19,8 +19,7 @@ return_tables: false
 log_nlp_distances: false
 n_candidates: 10
 
-datasets:
-  - lebel2023
+datasets: lebel2023
 subjects: null
 runs: null
 

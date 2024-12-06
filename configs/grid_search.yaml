@@ -1,27 +1,40 @@
 defaults:
-  - _self_
   - config
   - subjects: balanced_123
   - override splitting: cv
+  # - override hydra/launcher: joblib
+  - override hydra/launcher: submitit_slurm
   - override hydra/sweeper: optuna
   - override hydra/sweeper/sampler: tpe
+  - _self_
 
 datasets: lebel2023_balanced
 
+meta:
+  grid_search_version: 0
+
 # Cache top encoding voxels
-grid_search_version: 0
 hydra:
+  launcher:
+    submitit_folder: ${hydra.sweep.dir}/%j
+    timeout_min: 60
+    cpus_per_task: 5
+    gpus_per_node: 1
+    mem_gb: 100
+    name: ${hydra.job.name}
+    partition: gpu
+    stderr_to_stdout: true
   mode: MULTIRUN
   sweep:
     dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
     subdir: ${hydra.job.id}
   sweeper:
-    storage: sqlite:///results/grid_search_v${grid_search_version}.db
+    storage: sqlite:///results/grid_search_v${meta.grid_search_version}.db
     sampler:
       seed: 0
     direction: minimize
     study_name: grid_search
-    n_trials: 20
+    n_trials: 1000
     n_jobs: 2
     params:
       latents_cfg.model: choice('bert-base-uncased','llm2vec','microsoft/deberta-xlarge-mnli')
@@ -29,7 +42,7 @@ hydra:
       latents_cfg.token_aggregation: choice('mean','chunk_mean','max')
       alignment_cfg.lag: range(0,5)
       alignment_cfg.smooth: range(0,5)
-      alignment_cfg.stack: range(0,3)
+      alignment_cfg.stack: range(0,2)
       top_encoding_voxels: range(500,80000,step=500)
       wrapper_cfg.multi_subject_mode: choice('individual','shared')
       decoder_cfg.hidden_dim: choice(128,256,512,1024,2048)

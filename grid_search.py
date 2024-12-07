@@ -11,7 +11,7 @@ def main(cfg: DictConfig) -> None:
 
     if cfg["latents_cfg"]["model"] == "llm2vec":
         if not cfg["latents_cfg"]["token_aggregation"] == "mean":
-            return np.inf
+            return 1
 
     output = decoding(**cfg)
 

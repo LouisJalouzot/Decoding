@@ -79,8 +79,9 @@ def decoding(
         subjects = {dataset: list(runs[dataset].keys()) for dataset in runs}
 
     if wandb.run is not None:
-        wandb.config["subjects"] = subjects
-        wandb.config["runs"] = runs
+        wandb.config.update(
+            {"subjects": subjects, "runs": runs}, allow_val_change=True
+        )
 
     # Fetch brain scans
     n_runs = sum([len(r) for s in runs.values() for r in s.values()])

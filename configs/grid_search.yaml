@@ -11,13 +11,13 @@ defaults:
 datasets: lebel2023_balanced
 
 meta:
-  grid_search_version: 0
+  grid_search_version: 1
 
 # Cache top encoding voxels
 hydra:
   launcher:
     submitit_folder: ${hydra.sweep.dir}/%j
-    timeout_min: 60
+    timeout_min: 960
     cpus_per_task: 5
     gpus_per_node: 1
     mem_gb: 100
@@ -35,7 +35,7 @@ hydra:
     direction: minimize
     study_name: grid_search
     n_trials: 1000
-    n_jobs: 2
+    n_jobs: 1
     params:
       latents_cfg.model: choice('bert-base-uncased','llm2vec','microsoft/deberta-xlarge-mnli')
       latents_cfg.context_length: range(0,8)
@@ -44,15 +44,17 @@ hydra:
       alignment_cfg.smooth: range(0,5)
       alignment_cfg.stack: range(0,2)
       top_encoding_voxels: range(500,80000,step=500)
+      wrapper_cfg.loss: choice('mixco','symm_nce','mse')
       wrapper_cfg.multi_subject_mode: choice('individual','shared')
+      wrapper_cfg.lr: tag(log,interval(1e-5,1))
+      wrapper_cfg.weight_decay: tag(log,interval(1e-5,1))
+      wrapper_cfg.temperature: tag(log,interval(0.001,1))
+      wrapper_cfg.beta: tag(log,interval(0.001,1))
+      wrapper_cfg.s_thresh: tag(log,interval(0.001,1))
       decoder_cfg.hidden_dim: choice(128,256,512,1024,2048)
       decoder_cfg.hidden_dim_projector: choice(128,256,512,1024,2048)
       decoder_cfg.dropout: interval(0.05,0.95)
       decoder_cfg.n_res_blocks: range(1,4)
       decoder_cfg.n_proj_blocks: range(1,3)
       decoder_cfg.lr: tag(log,interval(1e-5,1))
-      wrapper_cfg.lr: tag(log,interval(1e-5,1))
       decoder_cfg.weight_decay: tag(log,interval(1e-5,1))
-      wrapper_cfg.weight_decay: tag(log,interval(1e-5,1))
-      wrapper_cfg.temperature: tag(log,interval(0.001,1))
-      wrapper_cfg.beta: tag(log,interval(0.001,1))

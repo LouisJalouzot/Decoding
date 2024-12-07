@@ -8,7 +8,7 @@ from sklearn.metrics import r2_score
 from sklearn.model_selection import KFold, train_test_split
 
 import wandb
-from src.utils import merge_drop, progress
+from src.utils import memory, merge_drop, progress
 
 
 def read_brain_volume(dataset, subject, run, lag, smooth, stack):
@@ -175,8 +175,13 @@ def split_dataframe(
     return df
 
 
-def find_best_encoding_voxels(df, top_encoding_voxels):
+# Ignore `df` for hashing efficiency, identification is provided in `values_for_hash`
+@memory.cache(ignore=["df"])
+def find_best_encoding_voxels(
+    df, top_encoding_voxels, values_for_hash
+) -> pd.DataFrame:
     dataset_subject = df[["dataset", "subject"]].drop_duplicates()
+    voxels_to_keep = []
     with progress:
         task = progress.add_task(
             f"Fitting a Ridge encoder for each subject and keeping the best {top_encoding_voxels} voxels.",
@@ -200,11 +205,10 @@ def find_best_encoding_voxels(df, top_encoding_voxels):
             Y = np.concatenate(tuple(df_valid_sel.Y))
             X_preds = ridge.predict(Y)
             r2 = r2_score(X, X_preds, multioutput="raw_values")
-            voxels_to_keep = r2.argsort()[-n_voxels:]  # type: ignore
-            df.loc[subject_sel, "X"] = df[subject_sel].orig_X.apply(
-                lambda X: X[:, voxels_to_keep]
-            )
-            df.loc[subject_sel, "n_voxels"] = n_voxels
-            progress.update(task, advance=1)
+            voxels = r2.argsort()[-n_voxels:]  # type: ignore
+            voxels_to_keep.append([dataset, subject, voxels, len(voxels), r2])
 
-    return df
+    return pd.DataFrame(
+        voxels_to_keep,
+        columns=["dataset", "subject", "voxels", "n_voxels", "r2"],
+    )

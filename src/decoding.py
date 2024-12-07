@@ -151,7 +151,18 @@ def decoding(
     outputs = defaultdict(list)
     for fold, df_fold in df.groupby("fold"):
         if top_encoding_voxels is not None:
-            df_fold = find_best_encoding_voxels(df_fold, top_encoding_voxels)
+            values_for_hash = (
+                df_fold[["dataset", "subject", "run", "split", "fold"]].values,
+                alignment_cfg,
+            )
+            voxels_to_keep = find_best_encoding_voxels(
+                df_fold, top_encoding_voxels, values_for_hash
+            )
+            df_fold = df_fold.drop(columns=["n_voxels"]).merge(voxels_to_keep)
+            df_fold["X"] = df_fold.apply(
+                lambda r: r.orig_X[:, r.voxels], axis=1
+            )
+            progress.update(task, advance=1)
 
         in_dims = df_fold[["dataset", "subject", "n_voxels"]].drop_duplicates()
         in_dims = in_dims.set_index(["dataset", "subject"]).n_voxels

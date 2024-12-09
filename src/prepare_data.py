@@ -195,7 +195,7 @@ def find_best_encoding_voxels(
             else:
                 n_voxels = top_encoding_voxels
             if df_train_sel.n_voxels.iloc[0] <= n_voxels:
-                progress.update(task, advance=1)
+                progress.update(task, advance=1, refresh=True)
                 continue
             X = np.concatenate(tuple(df_train_sel.orig_X))
             Y = np.concatenate(tuple(df_train_sel.Y))
@@ -207,6 +207,7 @@ def find_best_encoding_voxels(
             r2 = r2_score(X, X_preds, multioutput="raw_values")
             voxels = r2.argsort()[-n_voxels:]  # type: ignore
             voxels_to_keep.append([dataset, subject, voxels, len(voxels), r2])
+            progress.update(task, advance=1, refresh=True)
 
     return pd.DataFrame(
         voxels_to_keep,

@@ -103,7 +103,7 @@ def decoding(
                             dataset, subject, run, **alignment_cfg
                         )
                     )
-                    progress.update(task, advance=1)
+                    progress.update(task, advance=1, refresh=True)
     df = pd.DataFrame(
         sorted(df),
         columns=["dataset", "subject", "run", "n_trs", "n_voxels", "X"],
@@ -136,8 +136,7 @@ def decoding(
             data["dataset"] = dataset
             data["run"] = run
             latents.append(data)
-            progress.update(task, advance=1)
-        progress.update(task, completed=True)
+            progress.update(task, advance=1, refresh=True)
     latents = pd.concat(latents, axis=1).T
     latents["Y"] = latents.Y.apply(
         lambda x: torch.from_numpy(scaler.transform(x).astype(np.float32))
@@ -159,10 +158,9 @@ def decoding(
                 df_fold, top_encoding_voxels, values_for_hash
             )
             df_fold = df_fold.drop(columns=["n_voxels"]).merge(voxels_to_keep)
-            df_fold["X"] = df_fold.apply(
-                lambda r: r.orig_X[:, r.voxels], axis=1
-            )
-            progress.update(task, advance=1)
+            for i, r in df_fold.iterrows():
+                df_fold.at[i, "X"] = r.orig_X[:, r.voxels]
+            progress.update(task, advance=1, refresh=True)
 
         in_dims = df_fold[["dataset", "subject", "n_voxels"]].drop_duplicates()
         in_dims = in_dims.set_index(["dataset", "subject"]).n_voxels

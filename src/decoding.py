@@ -241,7 +241,7 @@ def decoding(
                 in_dims,
                 decoder_cfg=decoder_cfg,
                 wrapper_cfg=wrapper_cfg,
-                training_cfg=train_cfg,
+                train_cfg=train_cfg,
                 return_tables=return_tables,
                 nlp_distances=nlp_distances,
                 n_candidates=n_candidates,

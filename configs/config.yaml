@@ -41,6 +41,7 @@ train_cfg:
   patience: 20
   scheduler_patience: 5
   batch_size: 1
+  batch_size_ft: 3
   max_epochs: 200
 
 wrapper_cfg:
@@ -49,7 +50,9 @@ wrapper_cfg:
   temperature: 0.7
   temperature_ft: 1
   beta: 0.005
+  beta_ft: ${wrapper_cfg.beta}
   s_thresh: 0.05
+  s_thresh_ft: ${wrapper_cfg.s_thresh}
   lr: ${decoder_cfg.lr}
   lr_ft: ${decoder_cfg.lr_ft}
   weight_decay: ${decoder_cfg.weight_decay}

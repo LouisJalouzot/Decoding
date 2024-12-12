@@ -79,6 +79,7 @@ def train_loop(
     nlp_distances,
     n_candidates,
     metrics_prefix,
+    **kwargs,
 ):
     init_train_index = df_train.index
 
@@ -199,7 +200,7 @@ def train(
     in_dims,
     decoder_cfg,
     wrapper_cfg,
-    training_cfg,
+    train_cfg,
     return_tables,
     nlp_distances,
     n_candidates,
@@ -242,14 +243,18 @@ def train(
         nlp_distances=nlp_distances,
         n_candidates=n_candidates,
         metrics_prefix=metrics_prefix,
-        **training_cfg,
+        **train_cfg,
     )
     output = {"best_epoch": best_epoch}
 
     # Fine-tune if df_ft_train and df_ft_valid are not empty
     if not df_ft_train.empty and not df_ft_valid.empty:
+        # Switch to fine-tuning parameters
         switch_to_finetune_mode(decoder.projector)
         switch_to_finetune_mode(decoder.decoder)
+        for k, v in train_cfg:
+            if k.endswitch("_ft"):
+                train_cfg[k.replace("_ft", "")] = v
 
         # Reinitialize optimizer
         optimizer = init_optimizer(decoder, prefix="Fine-tuning")
@@ -263,7 +268,7 @@ def train(
             nlp_distances=nlp_distances,
             n_candidates=n_candidates,
             metrics_prefix="ft_" + metrics_prefix,
-            **training_cfg,
+            **train_cfg,
         )
         output["best_epoch_ft"] = best_epoch_ft
 

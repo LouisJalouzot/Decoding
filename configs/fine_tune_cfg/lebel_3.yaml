@@ -1,0 +1,4 @@
+fine_tune_subjects:
+  lebel2023:
+    - UTS03
+fine_tune_disjoint: false

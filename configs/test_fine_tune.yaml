@@ -1,0 +1,11 @@
+defaults:
+  - config
+  - subjects: lebel_123
+  - override fine_tune_cfg: lebel_3
+  - _self_
+
+meta:
+  log_wandb: true
+
+wrapper_cfg:
+  loss: symm_nce

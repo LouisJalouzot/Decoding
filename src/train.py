@@ -252,8 +252,8 @@ def train(
         # Switch to fine-tuning parameters
         switch_to_finetune_mode(decoder.projector)
         switch_to_finetune_mode(decoder.decoder)
-        for k, v in train_cfg:
-            if k.endswitch("_ft"):
+        for k, v in train_cfg.items():
+            if k.endswith("_ft"):
                 train_cfg[k.replace("_ft", "")] = v
 
         # Reinitialize optimizer

@@ -1,0 +1,22 @@
+defaults:
+  - slurm
+  - _self_
+
+meta:
+  log_wandb: true
+  tags: [single_subject]
+
+datasets: lebel2023_balanced
+subjects:
+  lebel2023_balanced: null
+
+splitting:
+  n_folds: 5
+
+hydra:
+  launcher:
+    cpus_per_task: 5
+    mem_gb: 50
+  sweeper:
+    params:
+      ++subjects.lebel2023_balanced: UTS01,UTS02,UTS03,UTS04,UTS05,UTS06,UTS07,UTS08

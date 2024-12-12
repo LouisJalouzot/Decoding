@@ -16,7 +16,7 @@ hydra:
     direction: minimize
     study_name: mixco_best
     n_trials: 1000
-    n_jobs: 2
+    n_jobs: 1
     params:
       top_encoding_voxels: range(500,80000,step=500)
       wrapper_cfg.norm_type: choice(ln,bn)

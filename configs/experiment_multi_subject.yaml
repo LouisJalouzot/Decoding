@@ -1,0 +1,20 @@
+defaults:
+  - slurm
+  - _self_
+
+meta:
+  log_wandb: true
+  tags: [multi_subject]
+
+datasets: lebel2023_balanced
+
+splitting:
+  n_folds: 5
+
+hydra:
+  launcher:
+    cpus_per_task: 10
+    mem_gb: 100
+  sweeper:
+    params:
+      wrapper_cfg.multi_subject_mode: shared,individual

@@ -73,6 +73,10 @@ def decoding(
                 dataset: sorted(os.listdir(f"datasets/{dataset}"))
                 for dataset in datasets
             }
+        else:
+            for dataset, s in subjects.items():
+                if isinstance(s, str):
+                    subjects[dataset] = [s]
         runs = {
             dataset: {
                 subject: sorted(

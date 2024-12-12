@@ -1,5 +1,4 @@
 import hydra
-import numpy as np
 from omegaconf import DictConfig, OmegaConf
 
 from src.decoding import decoding
@@ -7,6 +6,9 @@ from src.decoding import decoding
 
 @hydra.main(version_base=None, config_path="configs", config_name="grid_search")
 def main(cfg: DictConfig) -> None:
+    from src.utils import console
+
+    console.quiet = True
     cfg = OmegaConf.to_container(cfg, resolve=True)
 
     if cfg["latents_cfg"]["model"] == "llm2vec":

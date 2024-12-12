@@ -1,3 +1,4 @@
+import logging
 import string
 import zipfile
 from itertools import combinations_with_replacement
@@ -6,13 +7,14 @@ from pathlib import Path
 import nltk
 import numpy as np
 import requests
-import torch
 from fuzzywuzzy import fuzz
 from joblib import Parallel, delayed
 from joblib_progress import joblib_progress
 
 from evaluate import load
 from src.utils import batch_combinations, console, device, memory, progress
+
+logger = logging.getLogger(__name__)
 
 nlp_dist_cols = [
     "glove_bow",
@@ -49,7 +51,7 @@ def load_glove_embeddings():
         with zipfile.ZipFile(zip_path, "r") as zip_ref:
             zip_ref.extract("glove.6B.50d.txt", "data/")
         zip_path.unlink()
-        console.log(f"Saved GloVe embeddings to {glove_file}")
+        logger.info(f"Saved GloVe embeddings to {glove_file}")
 
     embeddings = {}
     with open(glove_file, "r", encoding="utf-8") as f:
@@ -195,7 +197,7 @@ def compute_nlp_distances(
         )
 
     # chunks_pairs = return_all_pairs(df.chunks_with_context.explode())
-    # console.log("Computing BERT F1 Scores")
+    # logger.info("Computing BERT F1 Scores")
     # bertscore = load("bertscore")
     # scores = bertscore.compute(
     #     predictions=chunks_pairs[0],

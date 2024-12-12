@@ -1,3 +1,4 @@
+import logging
 from collections import defaultdict
 from typing import List
 
@@ -10,6 +11,8 @@ from sklearn.metrics import r2_score
 from src.base_decoders import MeanDecoder
 from src.utils import console, corr, device
 
+logger = logging.getLogger(__name__)
+
 
 def retrieval_metrics(
     Y_true: torch.Tensor,
@@ -21,8 +24,8 @@ def retrieval_metrics(
     return_negatives_dist: bool = False,
 ):
     if Y_true.shape[0] != Y_pred.shape[0]:
-        console.log(
-            f"[bold red]Batch size mismatch:[/] {Y_true.shape[0]} {Y_pred.shape[0]}"
+        logger.warning(
+            f"Batch size mismatch: {Y_true.shape[0]} {Y_pred.shape[0]}"
         )
     if negatives is None:
         negatives = Y_true

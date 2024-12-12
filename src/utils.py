@@ -18,7 +18,7 @@ from rich.progress import (
     TimeRemainingColumn,
 )
 
-console = Console(force_terminal=True, width=None if os.isatty(1) else 500)
+console = Console(width=None if os.isatty(1) else 500)
 
 memory = memory.Memory(location=".cache", verbose=0)
 

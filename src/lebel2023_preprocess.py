@@ -1,3 +1,4 @@
+import logging
 import os
 import shutil
 from pathlib import Path
@@ -9,6 +10,8 @@ from joblib_progress import joblib_progress
 from sklearn.preprocessing import StandardScaler
 
 from src.utils import console, progress
+
+logger = logging.getLogger(__name__)
 
 
 def read(f):
@@ -28,7 +31,7 @@ def create_lebel2023_dataset():
     ), f"{source_path} does not exist, either the working directory {os.getcwd()} is not the root of the repo or the data has not been downloaded."
     source_path_subjects = source_path / "derivative" / "preprocessed_data"
     subjects = sorted(os.listdir(source_path_subjects))
-    console.log(f"Found {len(subjects)} subjects.")
+    logger.info(f"Found {len(subjects)} subjects.")
     for subject in subjects:
         target_path_subject = target_path / subject
         if target_path_subject.exists():
@@ -78,7 +81,7 @@ def create_lebel2023_balanced_dataset():
 
     # Find common runs across all subjects
     common_runs = set.intersection(*subject_runs.values())
-    console.log(f"Found {len(common_runs)} runs common to all subjects")
+    logger.info(f"Found {len(common_runs)} runs common to all subjects")
 
     # Create symbolic links for common runs
     for subject in subjects:
@@ -90,4 +93,4 @@ def create_lebel2023_balanced_dataset():
             relative_source = os.path.relpath(source_file, target_file.parent)
             target_file.unlink(missing_ok=True)
             target_file.symlink_to(relative_source)
-    console.log(f"Created balanced dataset at {target_path}")
+    logger.info(f"Created balanced dataset at {target_path}")

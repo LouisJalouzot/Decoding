@@ -1,3 +1,4 @@
+import logging
 from copy import deepcopy
 from numbers import Number
 from time import time
@@ -15,6 +16,8 @@ from src import base_decoders
 from src.decoder_wrapper import DecoderWrapper
 from src.evaluate import evaluate
 from src.utils import compute_gradient_norm, console, device
+
+logger = logging.getLogger(__name__)
 
 
 def init_optimizer(
@@ -48,7 +51,7 @@ def init_optimizer(
             wandb.config["n_params"] = n_params
         else:
             wandb.config["n_params_ft"] = n_params
-    console.log(f"{prefix} {n_params:.3g} parameters")
+    logger.info(f"{prefix} {n_params:.3g} parameters")
 
     return torch.optim.AdamW(opt_grouped_parameters)
 
@@ -171,8 +174,8 @@ def train_loop(
             )
 
             if patience_counter >= patience:
-                console.log(
-                    f"Early stopping at epoch {epoch} as [bold green]{monitor}[/] did not improve for {patience} epochs."
+                logger.info(
+                    f"Early stopping at epoch {epoch} as {monitor} did not improve for {patience} epochs."
                 )
                 break
 
@@ -301,6 +304,6 @@ def train(
     for split in ["Train", "Valid", "Test"]:
         split_key = f"{split.lower()}/relative_rank_median"
         if split_key in output:
-            console.log(f"{split} relative median rank {output[split_key]:.3g}")
+            logger.info(f"{split} relative median rank {output[split_key]:.3g}")
 
     return output, decoder._orig_mod.cpu()

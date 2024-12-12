@@ -1,3 +1,4 @@
+import logging
 import os
 from collections import defaultdict
 from numbers import Number
@@ -19,7 +20,9 @@ from src.prepare_data import (
 )
 from src.prepare_latents import prepare_latents
 from src.train import train
-from src.utils import console, device, progress, set_seeds
+from src.utils import device, progress, set_seeds
+
+logger = logging.getLogger(__name__)
 
 
 def align_latents(data, lag, smooth, stack):
@@ -54,11 +57,9 @@ def decoding(
 ):
     num_cpus = psutil.cpu_count()
     ram = psutil.virtual_memory().total / (1024**3)
-    console.log(
-        f"Number of available CPUs: [green]{num_cpus}[/]\n"
-        f"Available RAM: [green]{ram:.3g} GB[/]\n"
-        f"Using device [green]{device}[/]"
-    )
+    logger.info(f"Number of available CPUs: {num_cpus}")
+    logger.info(f"Available RAM: {ram:.3g} GB")
+    logger.info(f"Using device {device}")
 
     set_seeds(seed)
 
@@ -137,8 +138,8 @@ def decoding(
             scaler.partial_fit(data.Y)
             data = align_latents(data, **alignment_cfg)
             if data.Y.shape[0] > n_trs + 1:
-                console.log(
-                    f"[red]{data.Y.shape[0] - n_trs} > 1 latents trimmed for run {run} in dataset {dataset}"
+                logger.warning(
+                    f"{data.Y.shape[0] - n_trs} > 1 latents trimmed for run {run} in dataset {dataset}"
                 )
             # If more latents than brain scans, drop last seconds of run
             data = data.apply(lambda x: x[:n_trs])
@@ -208,17 +209,22 @@ def decoding(
                     data[k] = v.explode().values
                 nlp_distances[split] = compute_nlp_distances(**data)
 
-        console.log(
-            f"\n[bold]Fold {fold}/{n_folds}[/]\n"
-            if n_folds is not None
-            else ""
-            + f"Train split: {df_train.run.nunique()} runs with {len(df_train)} occurrences and {df_train.n_trs.sum()} scans\n"
-            + f"Valid split: {df_valid.run.nunique()} runs with {len(df_valid)} occurrences and {df_valid.n_trs.sum()} scans\n"
-            + f"Test split: {df_test.run.nunique()} runs with {len(df_test)} occurrences and {df_test.n_trs.sum()} scans"
+        if n_folds is not None:
+            logger.info(f"Fold {fold}/{n_folds}")
+        logger.info(
+            f"Train split: {df_train.run.nunique()} runs with {len(df_train)} occurrences and {df_train.n_trs.sum()} scans"
+        )
+        logger.info(
+            f"Valid split: {df_valid.run.nunique()} runs with {len(df_valid)} occurrences and {df_valid.n_trs.sum()} scans"
+        )
+        logger.info(
+            f"Test split: {df_test.run.nunique()} runs with {len(df_test)} occurrences and {df_test.n_trs.sum()} scans"
         )
         if not df_ft_train.empty:
-            console.log(
-                f"Fine-tune train split: {df_ft_train.run.nunique()} runs with {len(df_ft_train)} occurrences and {df_ft_train.n_trs.sum()} scans\n"
+            logger.info(
+                f"Fine-tune train split: {df_ft_train.run.nunique()} runs with {len(df_ft_train)} occurrences and {df_ft_train.n_trs.sum()} scans"
+            )
+            logger.info(
                 f"Fine-tune valid split: {df_ft_valid.run.nunique()} runs with {len(df_ft_valid)} occurrences and {df_ft_valid.n_trs.sum()} scans"
             )
 

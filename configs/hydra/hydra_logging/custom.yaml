@@ -1,0 +1,25 @@
+# Log hydra output both to file and to console
+
+defaults:
+  - colorlog
+  - _self_
+
+formatters:
+  simple:
+    format: '[%(asctime)s][%(name)s][%(levelname)s] - %(message)s'
+  colorlog:
+    log_colors:
+      DEBUG: purple
+      INFO: green
+      WARNING: yellow
+      ERROR: red
+      CRITICAL: red
+handlers:
+  file:
+    class: logging.FileHandler
+    formatter: simple
+    filename: outputs/${now:%Y-%m-%d}_${now:%H-%M-%S}_hydra.log
+root:
+  handlers:
+  - console
+  - file

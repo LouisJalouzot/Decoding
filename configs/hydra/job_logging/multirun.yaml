@@ -1,0 +1,11 @@
+# Only log job output to file
+
+defaults:
+  - custom
+
+handlers:
+  file:
+    filename: ${hydra.run.dir}/${hydra.job.id}/output.log
+root:
+  handlers:
+  - file

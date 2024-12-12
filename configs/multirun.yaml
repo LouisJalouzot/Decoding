@@ -1,0 +1,11 @@
+defaults:
+  - _self_
+  - config
+  - override hydra/job_logging: multirun
+
+hydra:
+  mode: MULTIRUN
+  output_subdir: ${hydra.job.id}
+  sweep:
+    dir: ${hydra.run.dir}
+    subdir: ${hydra.job.id}

@@ -1,0 +1,8 @@
+# Log job output both to file and to console
+
+defaults:
+  - colorlog
+
+handlers:
+  file:
+    filename: ${hydra.run.dir}/output.log

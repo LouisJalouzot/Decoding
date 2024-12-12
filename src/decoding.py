@@ -5,6 +5,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import psutil
 import torch
 from sklearn.preprocessing import StandardScaler
 
@@ -18,7 +19,7 @@ from src.prepare_data import (
 )
 from src.prepare_latents import prepare_latents
 from src.train import train
-from src.utils import console, progress, set_seeds
+from src.utils import console, device, progress, set_seeds
 
 
 def align_latents(data, lag, smooth, stack):
@@ -51,6 +52,14 @@ def decoding(
     decoder_cfg: dict,
     train_cfg: dict,
 ):
+    num_cpus = psutil.cpu_count()
+    ram = psutil.virtual_memory().total / (1024**3)
+    console.log(
+        f"Number of available CPUs: [green]{num_cpus}[/]\n"
+        f"Available RAM: [green]{ram:.3g} GB[/]\n"
+        f"Using device [green]{device}[/]"
+    )
+
     set_seeds(seed)
 
     if isinstance(datasets, str):

@@ -3,10 +3,10 @@ defaults:
   - splitting: train_test
   - decoder_cfg: brain_decoder
   - fine_tune_cfg: none
-  - override hydra/job_logging: colorlog
-  - override hydra/hydra_logging: colorlog
+  - override hydra/job_logging: custom
+  - override hydra/hydra_logging: custom
 
-meta: # Ignored for caching and wandb id
+meta:
   cache: false
   log_wandb: false
   wandb_project: fMRI-Decoding-wrap-up
@@ -26,14 +26,14 @@ runs: null
 tr: 2
 alignment_cfg:
   lag: 3
-  smooth: 0
+  smooth: 4
   stack: 0
 
-top_encoding_voxels: 3000
+top_encoding_voxels: 35000
 
 latents_cfg:
   context_length: 3
-  model: bert-base-uncased
+  model: llm2vec
   token_aggregation: mean
 
 train_cfg:
@@ -46,10 +46,10 @@ train_cfg:
 wrapper_cfg:
   loss: mixco
   multi_subject_mode: individual
-  temperature: 0.05
-  temperature_ft: 0.5
-  beta: 0.15
-  s_thresh: 0.5
+  temperature: 0.7
+  temperature_ft: 1
+  beta: 0.005
+  s_thresh: 0.05
   lr: ${decoder_cfg.lr}
   lr_ft: ${decoder_cfg.lr_ft}
   weight_decay: ${decoder_cfg.weight_decay}
@@ -58,3 +58,6 @@ wrapper_cfg:
   dropout: ${decoder_cfg.dropout}
   norm_type: ${decoder_cfg.norm_type}
   activation_layer_first: ${decoder_cfg.activation_layer_first}
+
+hydra:
+  output_subdir: ""

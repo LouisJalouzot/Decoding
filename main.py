@@ -1,12 +1,11 @@
 from hashlib import sha1
 
 import hydra
-import psutil
 from omegaconf import DictConfig, OmegaConf
 
 import wandb
 from src.decoding import decoding
-from src.utils import console, device, memory
+from src.utils import memory
 
 wandb.Table.MAX_ARTIFACT_ROWS = 1000000000
 
@@ -22,14 +21,6 @@ def wandb_wrapper(cfg: dict, id_config: dict):
             tags=cfg["meta"]["tags"],
             mode=cfg["meta"]["wandb_mode"],
         )
-
-    num_cpus = psutil.cpu_count()
-    ram = psutil.virtual_memory().total / (1024**3)
-    console.log(
-        f"Number of available CPUs: [green]{num_cpus}[/]\n"
-        f"Available RAM: [green]{ram:.3g} GB[/]\n"
-        f"Using device [green]{device}[/]"
-    )
 
     output = decoding(**cfg)
 

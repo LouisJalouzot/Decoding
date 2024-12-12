@@ -1,0 +1,9 @@
+defaults:
+  - _self_
+  - multirun
+  - override hydra/launcher: joblib
+
+hydra:
+  launcher:
+    n_jobs: 10
+    prefer: processes

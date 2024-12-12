@@ -1,9 +1,7 @@
 defaults:
-  - config
+  - slurm
   - subjects: balanced_123
   - override splitting: cv
-  # - override hydra/launcher: joblib
-  - override hydra/launcher: submitit_slurm
   - override hydra/sweeper: optuna
   - override hydra/sweeper/sampler: tpe
   - _self_
@@ -13,21 +11,7 @@ datasets: lebel2023_balanced
 meta:
   grid_search_version: 1
 
-# Cache top encoding voxels
 hydra:
-  launcher:
-    submitit_folder: ${hydra.sweep.dir}/%j
-    timeout_min: 960
-    cpus_per_task: 5
-    gpus_per_node: 1
-    mem_gb: 200
-    name: ${hydra.job.name}
-    partition: gpu
-    stderr_to_stdout: true
-  mode: MULTIRUN
-  sweep:
-    dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
-    subdir: ${hydra.job.id}
   sweeper:
     storage: sqlite:///results/grid_search_v${meta.grid_search_version}.db
     sampler:

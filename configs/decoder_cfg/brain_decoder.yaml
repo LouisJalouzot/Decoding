@@ -1,12 +1,12 @@
 class: BrainDecoder
-hidden_dim: 512
-hidden_dim_projector: 512
-dropout: 0.7
-n_res_blocks: 2
+hidden_dim: 2048
+hidden_dim_projector: 2048
+dropout: 0.5
+n_res_blocks: 1
 n_proj_blocks: 1
 norm_type: "ln" # @param ["ln", "bn"]
 activation_layer_first: False
 lr: 0.0001
 lr_ft: 0.00001
-weight_decay: 0.0001
-weight_decay_ft: 0.001
+weight_decay: 0.0005
+weight_decay_ft: 0.005

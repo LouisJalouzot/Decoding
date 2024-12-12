@@ -1,0 +1,34 @@
+defaults:
+  - config
+  - subjects: balanced_123
+  - override splitting: cv
+  - override hydra/launcher: joblib
+  - override hydra/sweeper: optuna
+  - override hydra/sweeper/sampler: tpe
+  - _self_
+
+datasets: lebel2023_balanced
+
+hydra:
+  sweeper:
+    storage: sqlite:///results/grid_search.db
+    sampler:
+      seed: 0
+    direction: minimize
+    study_name: mixco
+    n_trials: 1000
+    n_jobs: 2
+    params:
+      top_encoding_voxels: range(500,80000,step=500)
+      wrapper_cfg.lr: tag(log,interval(1e-5,0.1))
+      wrapper_cfg.weight_decay: tag(log,interval(1e-5,1))
+      wrapper_cfg.temperature: tag(log,interval(0.001,1))
+      wrapper_cfg.beta: tag(log,interval(0.001,1))
+      wrapper_cfg.s_thresh: tag(log,interval(0.001,1))
+      decoder_cfg.hidden_dim: choice(512,1024,2048,4096,8192)
+      decoder_cfg.hidden_dim_projector: choice(512,1024,2048,4096,8192)
+      decoder_cfg.dropout: interval(0.05,0.95)
+      decoder_cfg.n_res_blocks: range(1,5)
+      decoder_cfg.n_proj_blocks: range(1,5)
+      decoder_cfg.lr: tag(log,interval(1e-5,0.1))
+      decoder_cfg.weight_decay: tag(log,interval(1e-5,1))

@@ -1,6 +1,5 @@
 defaults:
-  - joblib
-  - subjects: balanced_123
+  - slurm
   - override splitting: cv
   - override hydra/sweeper: optuna
   - override hydra/sweeper/sampler: tpe
@@ -16,7 +15,7 @@ hydra:
     direction: minimize
     study_name: mixco_best
     n_trials: 1000
-    n_jobs: 1
+    n_jobs: 2
     params:
       top_encoding_voxels: range(500,80000,step=500)
       wrapper_cfg.norm_type: choice(ln,bn)

@@ -15,7 +15,7 @@ import wandb
 from src import base_decoders
 from src.decoder_wrapper import DecoderWrapper
 from src.evaluate import evaluate
-from src.utils import compute_gradient_norm, console, device
+from src.utils import compute_gradient_norm, console, device, negatives_from_dfs
 
 logger = logging.getLogger(__name__)
 
@@ -83,8 +83,7 @@ def train_loop(
 ):
     init_train_index = df_train.index
 
-    negatives = df_valid.drop_duplicates(["dataset", "run"]).Y
-    negatives = torch.cat(tuple(negatives)).to(device)
+    negatives = negatives_from_dfs(df_train, df_valid)
 
     best_monitor_metric = np.inf
     patience_counter = 0
@@ -272,6 +271,10 @@ def train(
         )
         output["best_epoch_ft"] = best_epoch_ft
 
+    negatives = negatives_from_dfs(
+        df_train, df_valid, df_test, df_ft_train, df_ft_valid
+    )
+
     for split, df_split in [
         ("train", df_train),
         ("valid", df_valid),
@@ -281,12 +284,10 @@ def train(
     ]:
         if df_split.empty:
             continue
-        Y_split = df_split.drop_duplicates(["dataset", "run"]).Y
-        Y_split = torch.cat(tuple(Y_split))
         for key, value in evaluate(
             df=df_split,
             decoder=decoder,
-            negatives=Y_split,
+            negatives=negatives,
             top_k_accuracies=top_k_accuracies,
             nlp_distances=nlp_distances.get(split, None),
             n_candidates=n_candidates,

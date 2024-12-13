@@ -4,6 +4,7 @@ import subprocess
 from typing import Union
 
 import numpy as np
+import pandas as pd
 import torch
 from joblib import memory
 from rich.console import Console
@@ -165,3 +166,10 @@ def batch_combinations(iterable, r, batch_size):
     # Yield any remaining combinations if they don't fill the last batch
     if batch:
         yield np.array(batch).swapaxes(0, 1)
+
+
+def negatives_from_dfs(*dfs):
+    df = pd.concat(dfs)
+    negatives = df.drop_duplicates(["dataset", "run"]).Y
+
+    return torch.cat(tuple(negatives)).to(device)

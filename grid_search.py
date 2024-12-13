@@ -1,4 +1,5 @@
 import hydra
+import torch
 from omegaconf import DictConfig, OmegaConf
 
 from src.decoding import decoding
@@ -16,6 +17,8 @@ def main(cfg: DictConfig) -> None:
             return 1
 
     output = decoding(**cfg)
+
+    torch.cuda.empty_cache()
 
     return output["test/relative_rank_median"]
 

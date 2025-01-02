@@ -43,6 +43,7 @@ dependencies = [
     "hydra-submitit-launcher>=1.2.0",
     "hydra-optuna-sweeper>=1.2.0",
     "sqlalchemy==1.4.46",
+    "pybids>=0.18.1",
 ]
 
 [project.optional-dependencies]

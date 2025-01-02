@@ -29,11 +29,11 @@ alignment_cfg:
   smooth: 4
   stack: 0
 
-top_encoding_voxels: 35000
+top_encoding_voxels: null
 
 latents_cfg:
   context_length: 3
-  model: llm2vec
+  model: bert-base-uncased
   token_aggregation: mean
 
 train_cfg:
@@ -45,7 +45,7 @@ train_cfg:
   max_epochs: 200
 
 wrapper_cfg:
-  loss: mixco
+  loss: symm_nce
   multi_subject_mode: individual
   temperature: 0.7
   temperature_ft: 1

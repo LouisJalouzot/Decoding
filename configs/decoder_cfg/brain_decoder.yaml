@@ -1,6 +1,6 @@
 class: BrainDecoder
-hidden_dim: 2048
-hidden_dim_projector: 2048
+hidden_dim: 768
+hidden_dim_projector: 768
 dropout: 0.5
 n_res_blocks: 1
 n_proj_blocks: 1

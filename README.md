@@ -19,27 +19,14 @@ This project has been tested on Ubuntu 22.04.
    source .venv/bin/activate
    ```
 
-4. Install optional dependencies
-
-   For jupyter notebooks
-   ```bash
-   uv sync --extra notebook
-   ```
-   For fetching datasets
-   ```bash
-   uv sync --extra aws
-   ```
-   Or both
-   ```bash
-   uv sync --extra notebook --extra aws
-   ```
-
 ## Data
 To fetch datasets
 ```bash
-#Lebel2023
+# Lebel2023
 aws s3 sync --no-sign-request s3://openneuro.org/ds003020 data/lebel2023/
-#Li2022
+# Rename derivative to derivatives
+mv data/lebel2023/derivative data/lebel2023/derivatives
+# Li2022
 aws s3 sync --no-sign-request s3://openneuro.org/ds003643 data/li2022/
 ```
 For Li2022, brain mask available [here](https://nist.mni.mcgill.ca/colin-27-average-brain/).

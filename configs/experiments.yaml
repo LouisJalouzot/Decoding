@@ -1,0 +1,14 @@
+defaults:
+  - slurm
+  - _self_
+
+meta:
+  log_wandb: true
+
+splitting:
+  n_folds: 5
+
+hydra:
+  launcher:
+    cpus_per_task: 5
+    mem_gb: 50

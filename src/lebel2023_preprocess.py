@@ -5,13 +5,12 @@ from pathlib import Path
 
 import h5py
 import numpy as np
+from bids import BIDSLayout
 from joblib import Parallel, delayed
 from joblib_progress import joblib_progress
 from sklearn.preprocessing import StandardScaler
 
 from src.utils import console, progress
-
-logger = logging.getLogger(__name__)
 
 
 def read(f):
@@ -29,9 +28,9 @@ def create_lebel2023_dataset():
     assert (
         source_path.exists()
     ), f"{source_path} does not exist, either the working directory {os.getcwd()} is not the root of the repo or the data has not been downloaded."
-    source_path_subjects = source_path / "derivative" / "preprocessed_data"
+    source_path_subjects = source_path / "derivatives" / "preprocessed_data"
     subjects = sorted(os.listdir(source_path_subjects))
-    logger.info(f"Found {len(subjects)} subjects.")
+    console.log(f"Found {len(subjects)} subjects.")
     for subject in subjects:
         target_path_subject = target_path / subject
         if target_path_subject.exists():
@@ -42,6 +41,7 @@ def create_lebel2023_dataset():
             else:
                 shutil.rmtree(target_path_subject)
         run_files = list((source_path_subjects / subject).iterdir())
+        run_files = [f for f in run_files if not "wheretheressmoke" in f.name]
         with joblib_progress(
             f"Reading brain scans for subject {subject}",
             total=len(run_files),
@@ -67,9 +67,9 @@ def create_lebel2023_dataset():
             progress.update(task, completed=True)
 
 
-def create_lebel2023_balanced_dataset():
-    source_path = Path("datasets/lebel2023")
-    target_path = Path("datasets/lebel2023_balanced")
+def create_lebel2023_balanced_dataset(dataset="lebel2023"):
+    source_path = Path("datasets") / dataset
+    target_path = Path("datasets") / (dataset + "_balanced")
 
     # Get all subjects
     subjects = sorted([d for d in source_path.iterdir() if d.is_dir()])
@@ -81,7 +81,7 @@ def create_lebel2023_balanced_dataset():
 
     # Find common runs across all subjects
     common_runs = set.intersection(*subject_runs.values())
-    logger.info(f"Found {len(common_runs)} runs common to all subjects")
+    console.log(f"Found {len(common_runs)} runs common to all subjects")
 
     # Create symbolic links for common runs
     for subject in subjects:
@@ -93,4 +93,69 @@ def create_lebel2023_balanced_dataset():
             relative_source = os.path.relpath(source_file, target_file.parent)
             target_file.unlink(missing_ok=True)
             target_file.symlink_to(relative_source)
-    logger.info(f"Created balanced dataset at {target_path}")
+    console.log(f"Created balanced dataset at {target_path}")
+
+
+def process_bold_file(bold_file, subject, story, mask, dataset_path):
+    path = dataset_path / subject / (story + ".npy")
+    if path.exists():
+        return
+
+    scaler = StandardScaler()
+    a = bold_file.get_fdata()[mask]
+    a = scaler.fit_transform(a.T)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    np.save(path, a)
+
+
+def create_lebel2023_fmriprep_dataset():
+    dataset_path = Path("datasets/lebel2023_fmriprep")
+    if dataset_path.exists():
+        if input(
+            f"{dataset_path} already exists. Do you want to recreate it (Y/n)? "
+        ) in ["", "y", "Y"]:
+            shutil.rmtree(dataset_path)
+        else:
+            if input("Do you to continue its creation (Y/n)? ") not in [
+                "",
+                "y",
+                "Y",
+            ]:
+                return
+
+    console.log("Creating Lebel2023 fMRIprep dataset")
+    console.log("Indexing BIDS dataset")
+    layout = BIDSLayout("data/lebel2023/derivatives/fmriprep", validate=False)
+    mask_files = layout.get(
+        suffix="mask", extension="nii.gz", space="MNI152NLin2009cAsym"
+    )
+    mask_files = [f for f in mask_files if "task" in f.filename]
+    mask_files = [f for f in mask_files if not "Localizer" in f.filename]
+    mask_files = [f for f in mask_files if not "wheretheressmoke" in f.filename]
+    mask = None
+    with progress:
+        task = progress.add_task("Combining masks", total=len(mask_files))
+        for f in mask_files:
+            run_mask = f.get_image().get_fdata()
+            if mask is None:
+                mask = run_mask == 1
+            else:
+                mask &= run_mask == 1
+            progress.update(task, advance=1, refresh=True)
+    console.log(f"{mask.sum()} voxels in the combined mask")
+    bold_files = layout.get(suffix="bold", extension="nii.gz")
+    bold_files = [f for f in bold_files if not "Localizer" in f.filename]
+    bold_files = [f for f in bold_files if not "wheretheressmoke" in f.filename]
+    with joblib_progress(
+        "Processing BOLD files", total=len(bold_files), console=console
+    ):
+        Parallel(n_jobs=-1)(
+            delayed(process_bold_file)(
+                f.get_image(),
+                f.entities["subject"],
+                f.entities["task"],
+                mask,
+                dataset_path,
+            )
+            for f in bold_files
+        )

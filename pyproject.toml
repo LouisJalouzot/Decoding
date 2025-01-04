@@ -3,7 +3,7 @@ name = "decoding"
 version = "0.1.0"
 description = "fMRI pipeline to decode language representations"
 readme = "README.md"
-requires-python = ">=3.11.10"
+requires-python = ">=3.11.10,<3.12"
 dependencies = [
     "bert-score>=0.3.13",
     "chardet>=5.2.0",
@@ -23,7 +23,7 @@ dependencies = [
     "pytorch-ignite>=0.5.0.post2",
     "regex>=2024.4.28",
     "rich>=13.7.1",
-    "scikit-learn>=1.4.2",
+    "scikit-learn<=1.5.1",
     "sentence-transformers[train]>=3.0.1",
     "setuptools>=69.5.1",
     "soundfile>=0.12.1",
@@ -44,16 +44,11 @@ dependencies = [
     "hydra-optuna-sweeper>=1.2.0",
     "sqlalchemy==1.4.46",
     "pybids>=0.18.1",
-]
-
-[project.optional-dependencies]
-notebook = [
     "ipykernel>=6.29.5",
     "ipywidgets>=8.1.5",
     "tqdm>=4.67.1",
-]
-aws = [
     "awscli>=1.36.12",
+    "python-levenshtein>=0.26.1",
 ]
 
 [tool.uv.sources]

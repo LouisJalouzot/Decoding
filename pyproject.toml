@@ -47,8 +47,10 @@ dependencies = [
     "ipykernel>=6.29.5",
     "ipywidgets>=8.1.5",
     "tqdm>=4.67.1",
-    "awscli>=1.36.12",
     "python-levenshtein>=0.26.1",
+    "seaborn>=0.13.2",
+    "plotly>=5.24.1",
+    "awscli>=1.36.21",
 ]
 
 [tool.uv.sources]

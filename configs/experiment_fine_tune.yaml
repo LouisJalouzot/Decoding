@@ -1,14 +1,14 @@
 defaults:
-  - experiment_compare_approach
+  - experiments
   - _self_
 
 meta:
-  tags: [fine_tune]
+  tags: [fine_tune,lebel2023_balanced]
 
 hydra:
   launcher:
-    cpus_per_task: 5
-    mem_gb: 50
+    cpus_per_task: 10
+    mem_gb: 100
   sweeper:
     params:
       ++dataset: lebel2023_balanced

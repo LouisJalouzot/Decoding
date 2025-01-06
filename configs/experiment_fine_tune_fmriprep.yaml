@@ -1,0 +1,15 @@
+defaults:
+  - experiments
+  - _self_
+
+meta:
+  tags: [fine_tune,lebel2023_fmriprep_balanced]
+
+hydra:
+  launcher:
+    cpus_per_task: 10
+    mem_gb: 100
+  sweeper:
+    params:
+      ++dataset: lebel2023_fmriprep_balanced
+      ++subjects.lebel2023_fmriprep_balanced: UTS01,UTS02,UTS03,UTS04,UTS05,UTS06,UTS07,UTS08

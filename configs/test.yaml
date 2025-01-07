@@ -1,0 +1,16 @@
+defaults:
+  - config
+  - _self_
+
+meta:
+  log_wandb: true
+
+datasets:
+  - lebel2023_fmriprep
+
+subjects:
+  lebel2023_fmriprep:
+    - UTS03
+
+splitting:
+  train_ratio: 0.2

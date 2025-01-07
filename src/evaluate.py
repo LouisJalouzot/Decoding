@@ -185,7 +185,7 @@ def evaluate(
                     )
                     nlp["candidate"].extend(all_chunks[candidates_idx])
 
-    output = {"retrieval_size": len(negatives)}
+    output = {"retrieval_size": len(negatives), "size": df.n_trs.sum()}
     metrics = pd.DataFrame(metrics)
     relative_ranks = pd.DataFrame(relative_ranks)
     dfs = [metrics, relative_ranks]

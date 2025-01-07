@@ -253,7 +253,7 @@ def prepare_latents(
     warnings.filterwarnings("ignore", module="transformers")
 
     if dataset == "lebel2023":
-        textgrid_path = f"data/lebel2023/derivative/TextGrids/{run}.TextGrid"
+        textgrid_path = f"data/lebel2023/derivatives/TextGrids/{run}.TextGrid"
         audio_path = f"data/lebel2023/stimuli/{run}.wav"
     elif dataset == "li2022":
         audio_path = f"data/li2022/stimuli/task-lppEN_section-{run}.wav"

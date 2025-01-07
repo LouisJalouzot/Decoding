@@ -85,8 +85,6 @@ def split_dataframe(
         kf = KFold(n_splits=n_folds, shuffle=True, random_state=seed)
         train_test_indices = kf.split(main_runs.index)
     else:
-        if train_ratio is None:
-            train_ratio = 1 - valid_ratio - test_ratio
         # Use a single split
         train_indices, test_indices = train_test_split(
             main_runs.index,
@@ -103,12 +101,17 @@ def split_dataframe(
             continue
 
         test_ratio_split = len(test_indices) / len(main_runs)
-        valid_ratio_split = valid_ratio / (1 - test_ratio_split)
+        if n_folds is None:
+            # If using K-fold, train and valid ratio are relative to the data not used for testing
+            # Otherwise, all ratios are relative to the whole dataset
+            valid_ratio_split = valid_ratio / (1 - test_ratio_split)
+            if train_ratio is not None:
+                train_ratio_split = train_ratio / (1 - test_ratio_split)
 
         if valid_ratio > 0:
             train_indices, valid_indices = train_test_split(
                 train_indices,
-                train_size=1 - valid_ratio_split,
+                train_size=train_ratio_split,
                 test_size=valid_ratio_split,
                 random_state=seed,
             )

@@ -196,6 +196,7 @@ def train(
     df_test,
     df_ft_train,
     df_ft_valid,
+    all_negatives,
     in_dims,
     decoder_cfg,
     wrapper_cfg,
@@ -271,10 +272,7 @@ def train(
         )
         output["best_epoch_ft"] = best_epoch_ft
 
-    negatives = negatives_from_dfs(
-        df_train, df_valid, df_test, df_ft_train, df_ft_valid
-    )
-
+    all_negatives = all_negatives.to(device)
     for split, df_split in [
         ("train", df_train),
         ("valid", df_valid),
@@ -287,7 +285,7 @@ def train(
         for key, value in evaluate(
             df=df_split,
             decoder=decoder,
-            negatives=negatives,
+            negatives=all_negatives,
             top_k_accuracies=top_k_accuracies,
             nlp_distances=nlp_distances.get(split, None),
             n_candidates=n_candidates,

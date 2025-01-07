@@ -103,10 +103,13 @@ def split_dataframe(
         test_ratio_split = len(test_indices) / len(main_runs)
         if n_folds is None:
             # If using K-fold, train and valid ratio are relative to the data not used for testing
-            # Otherwise, all ratios are relative to the whole dataset
             valid_ratio_split = valid_ratio / (1 - test_ratio_split)
             if train_ratio is not None:
                 train_ratio_split = train_ratio / (1 - test_ratio_split)
+        else:
+            # Otherwise, all ratios are relative to the whole dataset
+            valid_ratio_split = valid_ratio
+            train_ratio_split = train_ratio
 
         if valid_ratio > 0:
             train_indices, valid_indices = train_test_split(

@@ -12,4 +12,4 @@ splitting:
 hydra:
   launcher:
     cpus_per_task: 5
-    mem_gb: 50
+    mem_gb: 20

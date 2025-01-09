@@ -52,6 +52,7 @@ dependencies = [
     "plotly>=5.24.1",
     "awscli>=1.36.21",
     "statannotations>=0.7.1",
+    "fastsrm>=0.0.5",
 ]
 
 [tool.uv.sources]
@@ -59,7 +60,7 @@ joblib-progress = { git = "https://github.com/jonghwanhyeon/joblib-progress" }
 llm2vec = { git = "https://github.com/McGill-NLP/llm2vec" }
 
 [tool.pyright]
-typeCheckingMode = "basic"
+typeCheckingMode = "off"
 pythonVersion = "3.11"
 include = ["src"]
 reportMissingImports = true

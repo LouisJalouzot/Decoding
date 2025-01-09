@@ -2,13 +2,11 @@ defaults:
   - experiments
   - _self_
 
-datasets: lebel2023_fmriprep
-
 meta:
-  tags: [increase_data]
+  tags: [increase_data,mean_subject]
 
 hydra:
   sweeper:
     params:
-      ++subjects.lebel2023_fmriprep: UTS01,UTS02,UTS03,UTS04,UTS05,UTS06,UTS07,UTS08
+      datasets: lebel2023_fmriprep_mean,lebel2023_fmriprep_123_mean
       splitting.train_ratio: 0.05,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,null

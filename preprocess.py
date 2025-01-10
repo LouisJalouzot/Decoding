@@ -1,6 +1,7 @@
 from src.lebel2023_preprocess import (
     create_lebel2023_dataset,
     create_lebel2023_fmriprep_dataset,
+    create_lebel2023_fmripep_canica_dataset,
 )
 from src.li2022_preprocess import create_li2022_datasets
 from src.preprocess import create_balanced_dataset, create_mean_subject
@@ -19,3 +20,5 @@ create_li2022_datasets()
 create_li2022_datasets("FR")
 create_li2022_datasets("CN")
 create_mean_subject("li2022")
+create_lebel2023_fmripep_canica_dataset(per_subject=True)
+create_lebel2023_fmripep_canica_dataset(per_subject=False)

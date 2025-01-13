@@ -3,8 +3,9 @@ import shutil
 from pathlib import Path
 
 import numpy as np
-from fastsrm.identifiable_srm import IdentifiableFastSRM
 from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA, IncrementalPCA
+from tqdm.auto import tqdm
 
 from src.utils import console, progress
 
@@ -23,19 +24,24 @@ def create_balanced_dataset(dataset="lebel2023"):
 
     # Find common runs across all subjects
     common_runs = set.intersection(*subject_runs.values())
-    console.log(f"Found {len(common_runs)} runs common to all subjects")
+    print(f"Found {len(common_runs)} runs common to all subjects")
 
     # Create symbolic links for common runs
-    for subject in subjects:
-        subject_target = target_path / subject.name
-        subject_target.mkdir(parents=True, exist_ok=True)
-        for run in common_runs:
-            source_file = source_path / subject.name / f"{run}.npy"
-            target_file = subject_target / f"{run}.npy"
-            relative_source = os.path.relpath(source_file, target_file.parent)
-            target_file.unlink(missing_ok=True)
-            target_file.symlink_to(relative_source)
-    console.log(f"Created balanced dataset at {target_path}")
+    total_operations = len(subjects) * len(common_runs)
+    with tqdm(total=total_operations, desc="Creating balanced dataset") as pbar:
+        for subject in subjects:
+            subject_target = target_path / subject.name
+            subject_target.mkdir(parents=True, exist_ok=True)
+            for run in common_runs:
+                source_file = source_path / subject.name / f"{run}.npy"
+                target_file = subject_target / f"{run}.npy"
+                relative_source = os.path.relpath(
+                    source_file, target_file.parent
+                )
+                target_file.unlink(missing_ok=True)
+                target_file.symlink_to(relative_source)
+                pbar.update(1)
+    print(f"Created balanced dataset at {target_path}")
 
 
 def create_mean_subject(dataset="lebel2023", subjects=None):
@@ -75,14 +81,13 @@ def create_mean_subject(dataset="lebel2023", subjects=None):
         subject_runs[subject.name] = {f.stem for f in subject.glob("*.npy")}
     common_runs = set.intersection(*subject_runs.values())
 
-    console.log(
+    print(
         f"Processing {len(common_runs)} runs common to {len(all_subjects)} subjects in {source_path}"
     )
 
     # Process runs sequentially
-    with progress:
-        total_steps = len(common_runs) * len(all_subjects)
-        task = progress.add_task("Creating mean subject", total=total_steps)
+    total_operations = len(common_runs)
+    with tqdm(total=total_operations, desc="Creating mean subject") as pbar:
         for run in sorted(common_runs):
             output_path = mean_subject_path / f"{run}.npy"
             if not output_path.exists():
@@ -94,13 +99,65 @@ def create_mean_subject(dataset="lebel2023", subjects=None):
                         mean_data = np.load(run_file)
                     else:
                         mean_data += np.load(run_file)
-                    progress.update(task, advance=1, refresh=True)
                 mean_data /= len(all_subjects)
                 scaler = StandardScaler()
                 mean_data = scaler.fit_transform(mean_data)
                 np.save(output_path, mean_data.astype(np.float32))
-            else:
-                # Skip all subjects for this run if file exists
-                progress.update(task, advance=len(all_subjects), refresh=True)
+            pbar.update(1)
 
-    console.log(f"Created mean subject at {mean_subject_path}")
+    print(f"Created mean subject at {mean_subject_path}")
+
+
+def create_pca_dataset(
+    dataset="lebel2023_fmriprep",
+    n_components=768,
+    per_subject=False,
+):
+    """Create a PCA-reduced version of the dataset."""
+    source_path = Path("datasets") / dataset
+    dataset = f"{dataset}_pca{n_components}"
+    dataset_path = Path("datasets") / dataset
+    dataset_path.mkdir(parents=True, exist_ok=True)
+
+    subjects = sorted([d for d in source_path.iterdir() if d.is_dir()])
+
+    def fit_pca(subject, ipca):
+        """Fit IPCA on a subject's runs."""
+        for run_file in tqdm(
+            sorted(subject.glob("*.npy")),
+            desc=f"Fitting IPCA on {subject.name}",
+            leave=False,
+        ):
+            ipca.partial_fit(np.load(run_file))
+
+    def transform_and_save(subject, ipca):
+        """Transform and save a subject's runs."""
+        scaler = StandardScaler()
+        for run_file in tqdm(
+            sorted(subject.glob("*.npy")),
+            desc=f"Transforming {subject.name}",
+            leave=False,
+        ):
+            data = ipca.transform(np.load(run_file))
+            data = scaler.fit_transform(data)
+            output_path = dataset_path / subject.name / run_file.name
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            np.save(output_path, data.astype(np.float32))
+
+    if per_subject:
+        # Process each subject independently
+        for subject in tqdm(subjects, desc="Processing subjects"):
+            ipca = IncrementalPCA(n_components=n_components, copy=False)
+            fit_pca(subject, ipca)
+            transform_and_save(subject, ipca)
+    else:
+        # First fit IPCA on all subjects
+        ipca = IncrementalPCA(n_components=n_components, copy=False)
+        for subject in tqdm(subjects, desc="Fitting IPCA on all subjects"):
+            fit_pca(subject, ipca)
+
+        # Then transform all subjects
+        for subject in tqdm(subjects, desc="Transforming all subjects"):
+            transform_and_save(subject, ipca)
+
+    print(f"Created PCA dataset at {dataset_path}")

@@ -52,7 +52,6 @@ dependencies = [
     "plotly>=5.24.1",
     "awscli>=1.36.21",
     "statannotations>=0.7.1",
-    "fastsrm>=0.0.5",
     "jupyterlab>=4.3.4",
 ]
 

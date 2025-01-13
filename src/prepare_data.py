@@ -1,7 +1,9 @@
+import logging
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import plotly.express as px
 import torch
 from sklearn.linear_model import Ridge
 from sklearn.metrics import r2_score
@@ -9,6 +11,8 @@ from sklearn.model_selection import KFold, train_test_split
 
 import wandb
 from src.utils import memory, merge_drop, progress
+
+logger = logging.getLogger(__name__)
 
 
 def read_brain_volume(dataset, subject, run, lag, smooth, stack):
@@ -53,16 +57,17 @@ def split_dataframe(
     test_ratio,
     fine_tune_subjects: dict | None,
     fine_tune_disjoint: bool | None,
+    overlap_ratio: float | None,
     **kwargs,
 ):
-    # TODO implement leave out
-
     subjects_runs = df[["dataset", "subject", "run"]].drop_duplicates()
     n_subjects = (
         subjects_runs.groupby("dataset")
         .subject.apply("nunique")
         .reset_index(name="n_subjects")
     )
+    n_subjects_total = n_subjects.n_subjects.sum()
+
     occurrences = (
         subjects_runs.groupby(["dataset", "run"])
         .subject.apply(list)
@@ -97,7 +102,7 @@ def split_dataframe(
 
     splits = []
     for i, (train_indices, test_indices) in enumerate(train_test_indices, 1):
-        if fold is not None and fold != i:
+        if fold is not None and i != fold:
             continue
 
         test_ratio_split = len(test_indices) / len(main_runs)
@@ -106,23 +111,96 @@ def split_dataframe(
             valid_ratio_split = valid_ratio / (1 - test_ratio_split)
             if train_ratio is not None:
                 train_ratio_split = train_ratio / (1 - test_ratio_split)
+            else:
+                train_ratio_split = None
+            if overlap_ratio is not None:
+                overlap_ratio_split = overlap_ratio / (1 - test_ratio_split)
+            else:
+                overlap_ratio_split = None
         else:
             # Otherwise, all ratios are relative to the whole dataset
-            valid_ratio_split = valid_ratio
             train_ratio_split = train_ratio
+            valid_ratio_split = valid_ratio
+            overlap_ratio_split = overlap_ratio
 
-        if valid_ratio > 0:
-            train_indices, valid_indices = train_test_split(
+        if overlap_ratio_split is not None:
+            if overlap_ratio_split == 0:
+                overlap_indices = []
+
+            overlap_indices, train_indices = train_test_split(
                 train_indices,
-                train_size=train_ratio_split,
-                test_size=valid_ratio_split,
+                train_size=overlap_ratio_split,
                 random_state=seed,
             )
-        else:
-            valid_indices = []
+            if train_ratio_split is not None:
+                train_ratio_split -= overlap_ratio_split
+                if train_ratio_split * n_subjects_total > 1:
+                    logger.warning(
+                        (
+                            f"Fold [{i}/{n_folds}]: "
+                            if n_folds is not None
+                            else ""
+                        )
+                        + "Unbalanced numbers of not overlapping runs between subjects (try decreasing train_ratio or overlap_ratio)"
+                    )
+            else:
+                train_ratio_split = 1 / n_subjects_total
+            if valid_ratio > 0:
+                valid_ratio_split /= 1 - overlap_ratio_split
+                train_indices, valid_indices = train_test_split(
+                    train_indices,
+                    test_size=valid_ratio_split,
+                    random_state=seed,
+                )
+                train_ratio_split /= 1 - valid_ratio_split
+            else:
+                valid_indices = []
 
-        train_runs = main_runs.iloc[train_indices].copy()
-        train_runs["split"] = "train"
+            train_runs = main_runs.iloc[overlap_indices].copy()
+            train_runs["split"] = "train"
+            train_runs = [train_runs]
+            for subject in subjects_runs.subject.unique():
+                if len(train_indices) == 0:
+                    raise ValueError(
+                        "Not enough runs, try decreasing overlap_ratio or train_ratio"
+                    )
+                assert (
+                    train_ratio_split > 0
+                ), "Increase train_ratio or decrease overlap_ratio"
+                if train_ratio_split >= 1:
+                    subject_train_indices = train_indices
+                else:
+                    subject_train_indices, train_indices = train_test_split(
+                        train_indices,
+                        train_size=train_ratio_split,
+                        random_state=seed,
+                    )
+                subject_train_runs = main_runs.iloc[
+                    subject_train_indices
+                ].copy()
+                subject_train_runs["split"] = "train"
+                subject_train_runs["subject"] = subject
+                train_runs.append(subject_train_runs)
+                train_ratio_split /= 1 - train_ratio_split
+            train_runs = pd.concat(train_runs)
+        else:
+            if valid_ratio > 0:
+                if (
+                    train_ratio_split is not None
+                    and train_ratio_split + valid_ratio_split >= 1
+                ):
+                    train_ratio_split = None
+                train_indices, valid_indices = train_test_split(
+                    train_indices,
+                    train_size=train_ratio_split,
+                    test_size=valid_ratio_split,
+                    random_state=seed,
+                )
+            else:
+                valid_indices = []
+            train_runs = main_runs.iloc[train_indices].copy()
+            train_runs["split"] = "train"
+
         valid_runs = main_runs.iloc[valid_indices].copy()
         valid_runs["split"] = "valid"
         test_runs = main_runs.iloc[test_indices].copy()
@@ -160,11 +238,7 @@ def split_dataframe(
 
         df_split["fold"] = i
         splits.append(df_split)
-
     splits = pd.concat(splits)
-
-    if wandb.run is not None:
-        wandb.log({"splits": wandb.Table(data=splits)})
 
     # Treat NaNs and non NaNs for subjects separately
     if "subject" in splits:
@@ -173,6 +247,27 @@ def split_dataframe(
         df = pd.concat([df.merge(sub), df.merge(no_sub)])
     else:
         df = df.merge(splits)
+
+    if wandb.run is not None:
+        splits_to_log = df[
+            ["fold", "dataset", "subject", "run", "split"]
+        ].drop_duplicates()
+        fig = px.scatter(
+            splits_to_log,
+            x="run",
+            y="subject",
+            color="split",
+            facet_row="fold",
+            facet_col="dataset",
+            height=200 * splits_to_log["fold"].nunique(),
+            width=400 * splits_to_log["dataset"].nunique(),
+        )
+        wandb.log(
+            {
+                "splits": wandb.Table(data=splits_to_log),
+                "splits_viz": wandb.Plotly(fig),
+            }
+        )
 
     # Save original X for multiple encoding voxels selections
     if "X" in df:

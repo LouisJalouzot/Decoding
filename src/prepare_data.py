@@ -126,12 +126,15 @@ def split_dataframe(
         if overlap_ratio_split is not None:
             if overlap_ratio_split == 0:
                 overlap_indices = []
-
-            overlap_indices, train_indices = train_test_split(
-                train_indices,
-                train_size=overlap_ratio_split,
-                random_state=seed,
-            )
+            elif overlap_ratio_split == 1:
+                overlap_indices = train_indices
+                train_indices = []
+            else:
+                overlap_indices, train_indices = train_test_split(
+                    train_indices,
+                    train_size=overlap_ratio_split,
+                    random_state=seed,
+                )
             if train_ratio_split is not None:
                 train_ratio_split -= overlap_ratio_split
                 if train_ratio_split * n_subjects_total > 1:
@@ -159,29 +162,30 @@ def split_dataframe(
             train_runs = main_runs.iloc[overlap_indices].copy()
             train_runs["split"] = "train"
             train_runs = [train_runs]
-            for subject in subjects_runs.subject.unique():
-                if len(train_indices) == 0:
-                    raise ValueError(
-                        "Not enough runs, try decreasing overlap_ratio or train_ratio"
-                    )
-                assert (
-                    train_ratio_split > 0
-                ), "Increase train_ratio or decrease overlap_ratio"
-                if train_ratio_split >= 1:
-                    subject_train_indices = train_indices
-                else:
-                    subject_train_indices, train_indices = train_test_split(
-                        train_indices,
-                        train_size=train_ratio_split,
-                        random_state=seed,
-                    )
-                subject_train_runs = main_runs.iloc[
-                    subject_train_indices
-                ].copy()
-                subject_train_runs["split"] = "train"
-                subject_train_runs["subject"] = subject
-                train_runs.append(subject_train_runs)
-                train_ratio_split /= 1 - train_ratio_split
+            if train_ratio_split > 0:
+                for subject in subjects_runs.subject.unique():
+                    if len(train_indices) == 0:
+                        raise ValueError(
+                            "Not enough runs, try decreasing overlap_ratio or train_ratio"
+                        )
+                    assert (
+                        train_ratio_split > 0
+                    ), "Increase train_ratio or decrease overlap_ratio"
+                    if train_ratio_split >= 1:
+                        subject_train_indices = train_indices
+                    else:
+                        subject_train_indices, train_indices = train_test_split(
+                            train_indices,
+                            train_size=train_ratio_split,
+                            random_state=seed,
+                        )
+                    subject_train_runs = main_runs.iloc[
+                        subject_train_indices
+                    ].copy()
+                    subject_train_runs["split"] = "train"
+                    subject_train_runs["subject"] = subject
+                    train_runs.append(subject_train_runs)
+                    train_ratio_split /= 1 - train_ratio_split
             train_runs = pd.concat(train_runs)
         else:
             if valid_ratio > 0:

@@ -60,6 +60,11 @@ def split_dataframe(
     overlap_ratio: float | None,
     **kwargs,
 ):
+    if train_ratio is None:
+        train_ratio = 1 - valid_ratio
+    if overlap_ratio is None:
+        overlap_ratio = 1
+
     subjects_runs = df[["dataset", "subject", "run"]].drop_duplicates()
     n_subjects = (
         subjects_runs.groupby("dataset")
@@ -67,7 +72,6 @@ def split_dataframe(
         .reset_index(name="n_subjects")
     )
     n_subjects_total = n_subjects.n_subjects.sum()
-
     occurrences = (
         subjects_runs.groupby(["dataset", "run"])
         .subject.apply(list)
@@ -101,107 +105,79 @@ def split_dataframe(
         train_test_indices = [(train_indices, test_indices)]
 
     splits = []
-    for i, (train_indices, test_indices) in enumerate(train_test_indices, 1):
+    for i, (train_valid_indices, test_indices) in enumerate(
+        train_test_indices, 1
+    ):
         if fold is not None and i != fold:
             continue
 
+        # Actual test ratio of the split
         test_ratio_split = len(test_indices) / len(main_runs)
-        if n_folds is None:
-            # If using K-fold, train and valid ratio are relative to the data not used for testing
+        if test_ratio_split < 1:
+            # Update ratio to account for the allocated test runs
             valid_ratio_split = valid_ratio / (1 - test_ratio_split)
-            if train_ratio is not None:
-                train_ratio_split = train_ratio / (1 - test_ratio_split)
-            else:
-                train_ratio_split = None
-            if overlap_ratio is not None:
-                overlap_ratio_split = overlap_ratio / (1 - test_ratio_split)
-            else:
-                overlap_ratio_split = None
-        else:
-            # Otherwise, all ratios are relative to the whole dataset
-            train_ratio_split = train_ratio
-            valid_ratio_split = valid_ratio
-            overlap_ratio_split = overlap_ratio
+            train_ratio_split = train_ratio / (1 - test_ratio_split)
 
-        if overlap_ratio_split is not None:
-            if overlap_ratio_split == 0:
+        # then get valid runs
+        if valid_ratio >= 1:
+            train_indices = []
+            valid_indices = train_valid_indices
+        elif valid_ratio <= 0:
+            train_indices = train_valid_indices
+            valid_indices = []
+        else:
+            n_train_valid_runs = len(train_valid_indices)
+            train_indices, valid_indices = train_test_split(
+                train_valid_indices,
+                test_size=valid_ratio_split,
+                random_state=seed,
+            )
+            # Actual valid_ratio of the split
+            valid_ratio_split = len(valid_indices) / n_train_valid_runs
+            train_ratio_split = train_ratio_split / (1 - valid_ratio_split)
+
+        # Drop some runs if not willing to have all of them with small train ratio
+        if train_ratio_split >= 1:
+            train_indices = train_valid_indices
+        elif train_ratio_split <= 0:
+            train_indices = []
+        else:
+            train_indices, unused_indices = train_test_split(
+                train_indices,
+                train_size=train_ratio_split,
+                random_state=seed,
+            )
+
+        # Then split train into overlap and non-overlap
+        if overlap_ratio < 1:
+            if overlap_ratio == 0:
                 overlap_indices = []
-            elif overlap_ratio_split == 1:
-                overlap_indices = train_indices
-                train_indices = []
             else:
                 overlap_indices, train_indices = train_test_split(
                     train_indices,
-                    train_size=overlap_ratio_split,
+                    train_size=overlap_ratio,
                     random_state=seed,
                 )
-            if train_ratio_split is not None:
-                train_ratio_split -= overlap_ratio_split
-                if train_ratio_split * n_subjects_total > 1:
-                    logger.warning(
-                        (
-                            f"Fold [{i}/{n_folds}]: "
-                            if n_folds is not None
-                            else ""
-                        )
-                        + "Unbalanced numbers of not overlapping runs between subjects (try decreasing train_ratio or overlap_ratio)"
-                    )
-            else:
-                train_ratio_split = 1 / n_subjects_total
-            if valid_ratio > 0:
-                valid_ratio_split /= 1 - overlap_ratio_split
-                train_indices, valid_indices = train_test_split(
-                    train_indices,
-                    test_size=valid_ratio_split,
-                    random_state=seed,
-                )
-                train_ratio_split /= 1 - valid_ratio_split
-            else:
-                valid_indices = []
-
             train_runs = main_runs.iloc[overlap_indices].copy()
             train_runs["split"] = "train"
             train_runs = [train_runs]
-            if train_ratio_split > 0:
-                for subject in subjects_runs.subject.unique():
-                    if len(train_indices) == 0:
-                        raise ValueError(
-                            "Not enough runs, try decreasing overlap_ratio or train_ratio"
-                        )
-                    assert (
-                        train_ratio_split > 0
-                    ), "Increase train_ratio or decrease overlap_ratio"
-                    if train_ratio_split >= 1:
-                        subject_train_indices = train_indices
-                    else:
-                        subject_train_indices, train_indices = train_test_split(
-                            train_indices,
-                            train_size=train_ratio_split,
-                            random_state=seed,
-                        )
-                    subject_train_runs = main_runs.iloc[
-                        subject_train_indices
-                    ].copy()
-                    subject_train_runs["split"] = "train"
-                    subject_train_runs["subject"] = subject
-                    train_runs.append(subject_train_runs)
-                    train_ratio_split /= 1 - train_ratio_split
+            # Allocate remaining runs to subjects without overlapping
+            if len(train_indices) < n_subjects_total:
+                raise ValueError(
+                    f"Not enough remaining runs ({len(train_indices)}) to allocate to the {n_subjects_total} subjects without overlapping, try decreasing overlap_ratio or increase train_ratio"
+                )
+            subject_train_indices = np.array_split(
+                np.random.permutation(train_indices), n_subjects_total
+            )
+            for subject, train_indices in zip(
+                subjects_runs.subject.unique(), subject_train_indices
+            ):
+                subject_train_runs = main_runs.iloc[train_indices].copy()
+                subject_train_runs["split"] = "train"
+                subject_train_runs["subject"] = subject
+                train_runs.append(subject_train_runs)
             train_runs = pd.concat(train_runs)
         else:
-            if valid_ratio > 0:
-                if (
-                    train_ratio_split is not None
-                    and train_ratio_split + valid_ratio_split >= 1
-                ):
-                    train_ratio_split = None
-                train_indices, valid_indices = train_test_split(
-                    train_indices,
-                    train_size=train_ratio_split,
-                    test_size=valid_ratio_split,
-                    random_state=seed,
-                )
-            else:
-                valid_indices = []
             train_runs = main_runs.iloc[train_indices].copy()
             train_runs["split"] = "train"
 

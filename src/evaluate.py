@@ -9,7 +9,7 @@ import torchmetrics as tm
 from sklearn.metrics import r2_score
 
 from src.base_decoders import MeanDecoder
-from src.utils import console, corr, device
+from src.utils import corr, device
 
 logger = logging.getLogger(__name__)
 
@@ -29,9 +29,8 @@ def retrieval_metrics(
         )
     if negatives is None:
         negatives = Y_true
-    size = len(Y_true)
     retrieval_size = len(negatives)
-    output = {"size": size}
+    output = {"retrieval_size": retrieval_size, "size": len(Y_true)}
     if metric == "cosine":
         dist_to_negatives = 1 - tm.functional.pairwise_cosine_similarity(
             Y_pred,
@@ -81,6 +80,10 @@ def aggregate_metrics_df(df):
                 suffix = "_median"
                 output[key + suffix] = df[key].median()
                 subjects_df = df[key].groupby(subject_id).median()
+            elif key == "size":
+                suffix = ""
+                output[key + suffix] = df[key].sum()
+                subjects_df = df[key].groupby(subject_id).sum()
             else:
                 suffix = ""
                 output[key + suffix] = df[key].mean()
@@ -157,7 +160,7 @@ def evaluate(
                 return_negatives_dist=(nlp_distances is not None),
             )
             for key, value in r_metrics.items():
-                if key not in ["negatives_dist", "relative_rank", "size"]:
+                if key not in ["negatives_dist", "relative_rank"]:
                     metrics[key].extend([value])
             relative_ranks["relative_rank"].extend(r_metrics["relative_rank"])
 
@@ -185,7 +188,7 @@ def evaluate(
                     )
                     nlp["candidate"].extend(all_chunks[candidates_idx])
 
-    output = {"retrieval_size": len(negatives), "size": df.n_trs.sum()}
+    output = {}
     metrics = pd.DataFrame(metrics)
     relative_ranks = pd.DataFrame(relative_ranks)
     dfs = [metrics, relative_ranks]

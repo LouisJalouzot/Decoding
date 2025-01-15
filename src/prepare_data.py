@@ -53,6 +53,8 @@ def shuffle_split_runs(runs, ratio=None):
 
     runs = np.random.permutation(runs)
     n = int(ratio * len(runs))
+    if ratio > 0 and n == 0:
+        n = 1
 
     return runs[:n], runs[n:]
 
@@ -136,7 +138,7 @@ def split_dataframe(
             overlap_runs, train_runs = shuffle_split_runs(
                 train_runs, train_overlap_ratio_split
             )
-            if train_ratio_split is not None:
+            if train_ratio_split is not None and train_overlap_ratio_split < 1:
                 # Actual train_overlap_ratio of the split
                 train_overlap_ratio_split = len(overlap_runs) / n_train_runs
                 train_ratio_split /= 1 - train_overlap_ratio_split
@@ -226,15 +228,11 @@ def split_dataframe(
             facet_col="dataset",
             height=(50 * splits["subject"].nunique()) * splits["fold"].nunique()
             + 300,
-            width=(20 * splits["run"].nunique()) * splits["dataset"].nunique(),
+            width=(20 * splits["run"].nunique()) * splits["dataset"].nunique()
+            + 200,
             category_orders={"split": ["train", "valid", "test"]},
         )
-        wandb.log(
-            {
-                "splits": wandb.Table(data=splits),
-                "splits_viz": wandb.Plotly(fig),
-            }
-        )
+        wandb.log({"splits": wandb.Plotly(fig)})
 
     df = df.merge(splits)
     # Save original X for multiple encoding voxels selections

@@ -1,0 +1,20 @@
+defaults:
+  - experiments
+  - _self_
+
+datasets: lebel2023_fmriprep
+subjects:
+  lebel2023_fmriprep:
+    - UTS02
+    - UTS03
+
+splitting:
+  train_ratio: 0.46
+
+meta:
+  tags: [overlap]
+
+hydra:
+  sweeper:
+    params:
+      ++splitting.overlap: 0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1

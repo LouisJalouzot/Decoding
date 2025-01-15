@@ -3,6 +3,6 @@ fold: null
 train_ratio: null
 valid_ratio: 0.05
 test_ratio: null
-overlap_ratio: null
+overlap: 1
 
 # Valid ratio is always required and test ratio only without CV

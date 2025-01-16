@@ -18,6 +18,7 @@ seed: 0
 return_tables: false
 log_nlp_distances: false
 n_candidates: 10
+performance_ceiling: false
 
 datasets: lebel2023
 subjects: null

@@ -54,6 +54,7 @@ def decoding(
     wrapper_cfg: dict,
     decoder_cfg: dict,
     train_cfg: dict,
+    performance_ceiling: bool,
 ):
     num_cpus = psutil.cpu_count()
     ram = psutil.virtual_memory().total / (1024**3)
@@ -156,12 +157,21 @@ def decoding(
         lambda x: torch.from_numpy(scaler.transform(x).astype(np.float32))
     )
     df = df.merge(latents, on=["dataset", "run"])
+    if performance_ceiling:
+        n_features = df.Y.iloc[0].shape[1]
+        shuffled_features = np.random.permutation(n_features)
+        for i, row in df.iterrows():
+            noisy_Y = row.Y + torch.randn_like(row.Y)
+            df.at[i, "X"] = noisy_Y[:, shuffled_features]
+            df.at[i, "n_voxels"] = n_features
 
     # Get all the latents to use as negatives to compute metrics (because some might be missing when train_ratio + valid_ratio + test_ratio < 1)
     all_negatives = negatives_from_dfs(df)
 
     # Compute (CV) train/valid/test splits
     df = split_dataframe(df, seed, **splitting, **fine_tune_cfg)
+    if meta["return_data"]:
+        return df
 
     n_folds = splitting["n_folds"]
     outputs = defaultdict(list)
@@ -235,32 +245,29 @@ def decoding(
                 f"Fine-tune valid split: {df_ft_valid.run.nunique()} runs with {len(df_ft_valid)} occurrences and {df_ft_valid.n_trs.sum()} scans"
             )
 
-        if meta["return_data"]:
-            outputs[fold] = df_train, df_valid, df_test, nlp_distances
-        else:
-            prefix = f"fold_{fold}/" if n_folds is not None else ""
-            metrics, _decoder = train(
-                df_train,
-                df_valid,
-                df_test,
-                df_ft_train,
-                df_ft_valid,
-                all_negatives,
-                in_dims,
-                decoder_cfg=decoder_cfg,
-                wrapper_cfg=wrapper_cfg,
-                train_cfg=train_cfg,
-                return_tables=return_tables,
-                nlp_distances=nlp_distances,
-                n_candidates=n_candidates,
-                metrics_prefix=prefix,
-            )
-            outputs.update({prefix + k: v for k, v in metrics.items()})
-            # outputs[prefix + "decoder"] = _decoder # Not saving decoder for now
-            if n_folds is not None:
-                for k, v in metrics.items():
-                    if isinstance(v, Number):
-                        outputs[k].append(v)
+        prefix = f"fold_{fold}/" if n_folds is not None else ""
+        metrics, _decoder = train(
+            df_train,
+            df_valid,
+            df_test,
+            df_ft_train,
+            df_ft_valid,
+            all_negatives,
+            in_dims,
+            decoder_cfg=decoder_cfg,
+            wrapper_cfg=wrapper_cfg,
+            train_cfg=train_cfg,
+            return_tables=return_tables,
+            nlp_distances=nlp_distances,
+            n_candidates=n_candidates,
+            metrics_prefix=prefix,
+        )
+        outputs.update({prefix + k: v for k, v in metrics.items()})
+        # outputs[prefix + "decoder"] = _decoder # Not saving decoder for now
+        if n_folds is not None:
+            for k, v in metrics.items():
+                if isinstance(v, Number):
+                    outputs[k].append(v)
 
     # If CV has been used, average metrics over folds
     if not n_folds is None:

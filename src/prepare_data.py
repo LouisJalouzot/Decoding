@@ -149,7 +149,7 @@ def split_dataframe(
                 )
                 if total_train_ratio_split > 1:
                     raise ValueError(
-                        f"train_ratio * n_subjects * (1 - overlap) / (1 - valid_ratio) > 1, try decreasing overlap or increasing train_ratio"
+                        f"train_ratio * n_subjects * (1 - overlap) / (1 - valid_ratio) > 1, try increasing overlap or decreasing train_ratio"
                     )
             else:
                 total_train_ratio_split = None
@@ -158,7 +158,7 @@ def split_dataframe(
             )
             if overlap < 1 and len(train_runs) < n_subjects:
                 raise ValueError(
-                    f"Not enough remaining runs ({len(train_runs)}) to allocate to the {n_subjects} subjects without overlapping, try decreasing overlap or increasing train_ratio"
+                    f"Not enough remaining runs ({len(train_runs)}) to allocate to the {n_subjects} subjects without overlapping, try increasing overlap or decreasing train_ratio"
                 )
             else:
                 train_runs = np.random.permutation(train_runs)

@@ -8,11 +8,17 @@ subjects:
     - UTS02
     - UTS03
 
+train_cfg:
+  monitor: valid/mse
+
+wrapper_cfg:
+  loss: mse
+
 splitting:
   train_ratio: 0.46
 
 meta:
-  tags: [overlap,contrastive]
+  tags: [overlap,classical]
 
 hydra:
   sweeper:

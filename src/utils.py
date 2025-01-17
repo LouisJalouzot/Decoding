@@ -168,8 +168,7 @@ def batch_combinations(iterable, r, batch_size):
         yield np.array(batch).swapaxes(0, 1)
 
 
-def negatives_from_dfs(*dfs):
-    df = pd.concat(dfs)
+def negatives_from_df(df):
     negatives = df.drop_duplicates(["dataset", "run"]).Y
 
     return torch.cat(tuple(negatives)).to(device)

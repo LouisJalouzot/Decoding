@@ -15,7 +15,7 @@ import wandb
 from src import base_decoders
 from src.decoder_wrapper import DecoderWrapper
 from src.evaluate import evaluate
-from src.utils import compute_gradient_norm, console, device, negatives_from_dfs
+from src.utils import compute_gradient_norm, console, device, negatives_from_df
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +83,7 @@ def train_loop(
 ):
     init_train_index = df_train.index
 
-    negatives = negatives_from_dfs(df_train, df_valid)
+    valid_negatives = negatives_from_df(df_valid)
 
     best_monitor_metric = np.inf
     patience_counter = 0
@@ -125,7 +125,7 @@ def train_loop(
             val_metrics = evaluate(
                 df=df_valid,
                 decoder=decoder,
-                negatives=negatives,
+                negatives=valid_negatives,
                 top_k_accuracies=top_k_accuracies,
                 nlp_distances=nlp_distances.get("valid", None),
                 n_candidates=n_candidates,
@@ -196,7 +196,6 @@ def train(
     df_test,
     df_ft_train,
     df_ft_valid,
-    all_negatives,
     in_dims,
     decoder_cfg,
     wrapper_cfg,
@@ -272,7 +271,6 @@ def train(
         )
         output["best_epoch_ft"] = best_epoch_ft
 
-    all_negatives = all_negatives.to(device)
     for split, df_split in [
         ("train", df_train),
         ("valid", df_valid),
@@ -285,7 +283,7 @@ def train(
         for key, value in evaluate(
             df=df_split,
             decoder=decoder,
-            negatives=all_negatives,
+            negatives=negatives_from_df(df_split),
             top_k_accuracies=top_k_accuracies,
             nlp_distances=nlp_distances.get(split, None),
             n_candidates=n_candidates,

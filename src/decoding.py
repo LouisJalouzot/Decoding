@@ -20,7 +20,7 @@ from src.prepare_data import (
 )
 from src.prepare_latents import prepare_latents
 from src.train import train
-from src.utils import device, negatives_from_dfs, progress, set_seeds
+from src.utils import device, progress, set_seeds
 
 logger = logging.getLogger(__name__)
 
@@ -165,9 +165,6 @@ def decoding(
             df.at[i, "X"] = noisy_Y[:, shuffled_features]
             df.at[i, "n_voxels"] = n_features
 
-    # Get all the latents to use as negatives to compute metrics (because some might be missing when train_ratio + valid_ratio + test_ratio < 1)
-    all_negatives = negatives_from_dfs(df)
-
     # Compute (CV) train/valid/test splits
     df = split_dataframe(df, seed, **splitting, **fine_tune_cfg)
     if meta["return_data"]:
@@ -252,7 +249,6 @@ def decoding(
             df_test,
             df_ft_train,
             df_ft_valid,
-            all_negatives,
             in_dims,
             decoder_cfg=decoder_cfg,
             wrapper_cfg=wrapper_cfg,

@@ -1,0 +1,8 @@
+defaults:
+  - base
+  - _self_
+
+class: SimpleMLP
+hidden_dim: ${wrapper_cfg.hidden_dim}
+dropout: ${wrapper_cfg.dropout}
+num_layers: 2

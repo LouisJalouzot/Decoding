@@ -1,0 +1,16 @@
+defaults:
+  - multirun
+  - _self_
+
+datasets: li2022_EN_SS_trimmed_mean
+# datasets: lebel2023_fmriprep
+# subjects:
+#   lebel2023_fmriprep: UTS01
+
+# meta:
+#   tags: [baselines]
+
+hydra:
+  sweeper:
+    params:
+      +baseline: random,performance_ceiling

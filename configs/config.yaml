@@ -54,14 +54,14 @@ wrapper_cfg:
   beta_ft: ${wrapper_cfg.beta}
   s_thresh: 0.05
   s_thresh_ft: ${wrapper_cfg.s_thresh}
-  lr: ${decoder_cfg.lr}
-  lr_ft: ${decoder_cfg.lr_ft}
-  weight_decay: ${decoder_cfg.weight_decay}
-  weight_decay_ft: ${decoder_cfg.weight_decay_ft}
-  hidden_dim: ${decoder_cfg.hidden_dim}
-  dropout: ${decoder_cfg.dropout}
-  norm_type: ${decoder_cfg.norm_type}
-  activation_layer_first: ${decoder_cfg.activation_layer_first}
+  lr: 0.0001
+  lr_ft: 0.00001
+  weight_decay: 0.0005
+  weight_decay_ft: 0.005
+  hidden_dim: 768
+  dropout: 0.5
+  norm_type: "ln" # @param ["ln", "bn"]
+  activation_layer_first: false
 
 hydra:
   run:

@@ -1,0 +1,4 @@
+lr: ${wrapper_cfg.lr}
+lr_ft: ${wrapper_cfg.lr_ft}
+weight_decay: ${wrapper_cfg.weight_decay}
+weight_decay_ft: ${wrapper_cfg.weight_decay_ft}

@@ -1,0 +1,17 @@
+defaults:
+  - experiments
+  - _self_
+
+datasets: lebel2023_fmriprep
+
+meta:
+  tags: [setup]
+
+hydra:
+  sweeper:
+    params:
+      decoder_cfg: simple_mlp,brain_decoder
+      top_encoding_voxels: 768,null
+      subjects: lebel2023,lebel2023_fmriprep
+      wrapper_cfg.loss: mse,symm_nce
+      ++subjects.lebel2023_fmriprep: UTS01,UTS02,UTS03

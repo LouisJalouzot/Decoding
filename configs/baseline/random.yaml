@@ -1,0 +1,5 @@
+# @package _global_
+defaults:
+  - override /decoder_cfg: random
+train_cfg:
+  max_epochs: 0

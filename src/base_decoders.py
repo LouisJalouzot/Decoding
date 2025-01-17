@@ -5,9 +5,11 @@ from torch import nn
 
 
 class RandomDecoder(nn.Module):
-    def __init__(self, out_dim):
+    def __init__(self, out_dim, **kwargs):
         super().__init__()
         self.out_dim = out_dim
+        for k, v in kwargs.items():
+            setattr(self, k, v)
 
     def forward(self, x):
         return torch.randn(
@@ -20,10 +22,12 @@ class RandomDecoder(nn.Module):
 
 
 class MeanDecoder(nn.Module):
-    def __init__(self, out_dim):
+    def __init__(self, out_dim, **kwargs):
         super().__init__()
         self.out_dim = out_dim
         self.mean = None
+        for k, v in kwargs.items():
+            setattr(self, k, v)
 
     def set_mean_from_Ys(self, Ys):
         self.mean = Ys.mean(dim=0)
@@ -47,17 +51,15 @@ class MeanDecoder(nn.Module):
 
 class SimpleMLP(nn.Module):
     def __init__(
-        self,
-        out_dim,
-        hidden_dim=512,
-        num_layers=3,
-        dropout=0.7,
+        self, out_dim, hidden_dim=512, num_layers=3, dropout=0.7, **kwargs
     ):
         super().__init__()
         self.out_dim = out_dim
         self.hidden_dim = hidden_dim
         self.num_layers = num_layers
         self.dropout = dropout
+        for k, v in kwargs.items():
+            setattr(self, k, v)
 
         self.fc = []
         for _ in range(num_layers - 1):
@@ -86,8 +88,11 @@ class RNN(nn.Module):
         nonlinearity="tanh",
         bias=True,
         dropout=0.7,
+        **kwargs,
     ):
         super().__init__()
+        for k, v in kwargs.items():
+            setattr(self, k, v)
         self.rnn = nn.RNN(
             input_size=hidden_dim,
             hidden_dim=out_dim,
@@ -110,8 +115,11 @@ class GRU(nn.Module):
         num_layers=1,
         bias=True,
         dropout=0.7,
+        **kwargs,
     ):
         super().__init__()
+        for k, v in kwargs.items():
+            setattr(self, k, v)
         self.gru = nn.GRU(
             input_size=hidden_dim,
             hidden_dim=out_dim,
@@ -134,8 +142,11 @@ class LSTM(nn.Module):
         bias=True,
         proj_size=0,
         dropout=0.7,
+        **kwargs,
     ):
         super().__init__()
+        for k, v in kwargs.items():
+            setattr(self, k, v)
         input_size = hidden_dim
         if proj_size > 0:
             assert proj_size < hidden_dim

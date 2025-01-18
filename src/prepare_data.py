@@ -107,7 +107,7 @@ def split_dataframe(
                 continue
 
             # Update ratio to account for the allocated test runs
-            test_ratio_split = len(train_valid_runs) / n_main_runs
+            test_ratio_split = len(test_runs) / n_main_runs
             if n_folds is not None:
                 # When using cross validation, train and valid ratio are relative to the amount of data remaining after test split
                 valid_ratio_split = valid_ratio
@@ -166,13 +166,12 @@ def split_dataframe(
                 train_runs = zip(subjects, train_runs)
 
             df_splits = subject_runs.copy()
-            df_splits["split"] = (
-                pd.NA
-            )  # Initialize with pandas NA for string type
+            df_splits["split"] = pd.NA
             df_splits["split"] = df_splits["split"].astype("string")
             df_splits.loc[df_splits.run.isin(test_runs), "split"] = "test"
             df_splits.loc[df_splits.run.isin(valid_runs), "split"] = "valid"
             df_splits.loc[df_splits.run.isin(overlap_runs), "split"] = "train"
+            df_splits.loc[df_splits.run.isin(extra_runs), "split"] = "train"
             for e in train_runs:
                 subject, runs = e
                 df_splits.loc[

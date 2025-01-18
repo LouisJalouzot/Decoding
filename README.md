@@ -42,3 +42,5 @@ To build SRM datasets
 ```bash
 pip install git+https://github.com/hugorichard/FastSRM
 ```
+
+To use `llm2vec` embeddings you need to have access to the gated model [Llama3.1](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct) then link your HF account to your machine with a token (run `huggingface-cli login`).

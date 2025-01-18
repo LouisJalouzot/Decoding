@@ -57,7 +57,11 @@ def retrieval_metrics(
         accuracy = accuracy.cpu().numpy().mean()
         output[f"top_{top_k}_accuracy"] = accuracy
     if return_ranks:
-        output["relative_rank"] = (ranks / retrieval_size).cpu().numpy()
+        ranks = ranks.cpu().numpy()
+        # Median will be applied in aggregate_metrics_df
+        output["relative_rank_median"] = ranks / retrieval_size
+        # Mean will be applied in aggregate_metrics_df
+        output["mean_reciprocal_rank"] = 1 / (ranks + 1)
     if return_negatives_dist:
         output["negatives_dist"] = dist_to_negatives.cpu().numpy()
     return output
@@ -76,20 +80,17 @@ def aggregate_metrics_df(df):
             "chunk",
             "candidate",
         ]:
-            if key == "relative_rank":
-                suffix = "_median"
-                output[key + suffix] = df[key].median()
+            if key == "relative_rank_median":
+                output[key] = df[key].median()
                 subjects_df = df[key].groupby(subject_id).median()
             elif key == "size":
-                suffix = ""
-                output[key + suffix] = df[key].sum()
+                output[key] = df[key].sum()
                 subjects_df = df[key].groupby(subject_id).sum()
             else:
-                suffix = ""
-                output[key + suffix] = df[key].mean()
+                output[key] = df[key].mean()
                 subjects_df = df[key].groupby(subject_id).mean()
             for k, v in subjects_df.items():
-                output[k + key + suffix] = v
+                output[k + key] = v
 
     return output
 
@@ -107,7 +108,7 @@ def evaluate(
 
     metrics = defaultdict(list)
     nlp = defaultdict(list)
-    relative_ranks = defaultdict(list)
+    ranks = defaultdict(list)
 
     if nlp_distances is not None:
         all_chunks = df.drop_duplicates(["dataset", "run"])
@@ -124,13 +125,13 @@ def evaluate(
         for _, row in df.iterrows():
             run_id = row[["dataset", "subject", "run"]]
             for k, v in run_id.items():
-                relative_ranks[k].extend([v] * row.n_trs)
+                ranks[k].extend([v] * row.n_trs)
                 metrics[k].append(v)
                 if nlp_distances is not None:
                     nlp[k].extend([v] * row.n_trs * n_candidates)
             if nlp_distances is not None:
                 nlp["tr"].extend(np.repeat(range(row.n_trs), n_candidates))
-            relative_ranks["tr"].extend(range(row.n_trs))
+            ranks["tr"].extend(range(row.n_trs))
 
             X = row.X.to(device)
             Y = row.Y.to(device)
@@ -159,10 +160,11 @@ def evaluate(
                 return_ranks=True,
                 return_negatives_dist=(nlp_distances is not None),
             )
-            for key, value in r_metrics.items():
-                if key not in ["negatives_dist", "relative_rank"]:
-                    metrics[key].extend([value])
-            relative_ranks["relative_rank"].extend(r_metrics["relative_rank"])
+            for key, values in r_metrics.items():
+                if key in ["relative_rank_median", "mean_reciprocal_rank"]:
+                    ranks[key].extend(values)
+                elif key != "negatives_dist":
+                    metrics[key].extend([values])
 
             if nlp_distances is not None:
                 negatives_dist = r_metrics["negatives_dist"]
@@ -190,8 +192,8 @@ def evaluate(
 
     output = {}
     metrics = pd.DataFrame(metrics)
-    relative_ranks = pd.DataFrame(relative_ranks)
-    dfs = [metrics, relative_ranks]
+    ranks = pd.DataFrame(ranks)
+    dfs = [metrics, ranks]
     if nlp_distances is not None:
         nlp = pd.DataFrame(nlp)
         dfs.append(nlp)
@@ -201,6 +203,6 @@ def evaluate(
         output.update(aggregate_metrics_df(df))
     if return_tables:
         output["metrics"] = metrics
-        output["relative_ranks"] = relative_ranks
+        output["ranks"] = ranks
 
     return output

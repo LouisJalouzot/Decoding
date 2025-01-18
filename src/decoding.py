@@ -158,11 +158,10 @@ def decoding(
     )
     df = df.merge(latents, on=["dataset", "run"])
     if performance_ceiling:
+        # Setup to train the model to predict Y from Y to get measure ceilings
         n_features = df.Y.iloc[0].shape[1]
-        shuffled_features = np.random.permutation(n_features)
         for i, row in df.iterrows():
-            noisy_Y = row.Y + torch.randn_like(row.Y)
-            df.at[i, "X"] = noisy_Y[:, shuffled_features]
+            df.at[i, "X"] = row.Y
             df.at[i, "n_voxels"] = n_features
 
     # Compute (CV) train/valid/test splits

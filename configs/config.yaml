@@ -20,7 +20,7 @@ log_nlp_distances: false
 n_candidates: 10
 performance_ceiling: false
 
-datasets: lebel2023
+datasets: lebel2023_fmriprep
 subjects: null
 runs: null
 
@@ -30,11 +30,11 @@ alignment_cfg:
   smooth: 4
   stack: 0
 
-top_encoding_voxels: null
+top_encoding_voxels: 4096
 
 latents_cfg:
   context_length: 3
-  model: bert-base-uncased
+  model: llm2vec
   token_aggregation: mean
 
 train_cfg:
@@ -58,7 +58,7 @@ wrapper_cfg:
   lr_ft: 0.00001
   weight_decay: 0.0005
   weight_decay_ft: 0.005
-  hidden_dim: 768
+  hidden_dim: 2048
   dropout: 0.5
   norm_type: "ln" # @param ["ln", "bn"]
   activation_layer_first: false

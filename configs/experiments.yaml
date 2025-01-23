@@ -1,5 +1,5 @@
 defaults:
-  - slurm
+  - slurm_JZ
   - _self_
 
 meta:
@@ -8,8 +8,3 @@ meta:
 
 splitting:
   n_folds: 5
-
-hydra:
-  launcher:
-    cpus_per_task: 5
-    mem_gb: 50

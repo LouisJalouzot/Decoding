@@ -1,0 +1,21 @@
+defaults:
+  - experiments
+  - _self_
+
+datasets: lebel2023_fmriprep_balanced
+
+meta:
+  tags: [subj_data_dim_overlap]
+
+hydra:
+  sweeper:
+    params:
+      # Testing
+      # wrapper_cfg.hidden_dim: 2048
+      # splitting.overlap: 0,0.5
+      # splitting.train_ratio: 0.1,0.2
+
+      ++subjects.lebel2023_fmriprep_balanced: UTS04,[UTS04,UTS03],[UTS04,UTS03,UTS01],[UTS04,UTS03,UTS01,UTS02],[UTS04,UTS03,UTS01,UTS02,UTS05],[UTS04,UTS03,UTS01,UTS02,UTS05,UTS06],[UTS04,UTS03,UTS01,UTS02,UTS05,UTS06,UTS07],[UTS04,UTS03,UTS01,UTS02,UTS05,UTS06,UTS07,UTS08]
+      wrapper_cfg.hidden_dim: 16,64,512,2048
+      splitting.train_ratio: 0.1,0.3,0.5,0.7,0.9
+      splitting.overlap: 0,1,0.25,0.5,0.75

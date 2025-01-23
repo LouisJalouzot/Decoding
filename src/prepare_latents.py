@@ -284,10 +284,10 @@ def prepare_latents(
 
         assert token_aggregation == "mean", "Only mean aggregation is supported"
         model = "McGill-NLP/LLM2Vec-Meta-Llama-31-8B-Instruct-mntp"
-        perf_model = "unsup-simcse"
+        peft_model = "unsup-simcse"
         l2v = LLM2Vec.from_pretrained(
             model,
-            peft_model_name_or_path=model + "-" + perf_model,
+            peft_model_name_or_path=model + "-" + peft_model,
             merge_peft=True,
             device_map=device.type,
             max_length=None,

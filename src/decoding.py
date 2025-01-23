@@ -61,6 +61,10 @@ def decoding(
     logger.info(f"Number of available CPUs: {num_cpus}")
     logger.info(f"Available RAM: {ram:.3g} GB")
     logger.info(f"Using device {device}")
+    if device.type == "cuda":
+        gpu = torch.cuda.get_device_properties(device.index)
+        vram = gpu.total_memory / (1024**3)
+        logger.info(f"Available VRAM: {vram:.3g} GB")
 
     set_seeds(seed)
 

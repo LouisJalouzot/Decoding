@@ -73,6 +73,7 @@ def train_loop(
     max_epochs,
     batch_size,
     monitor,
+    direction,
     patience,
     scheduler_patience,
     top_k_accuracies,
@@ -85,7 +86,7 @@ def train_loop(
 
     valid_negatives = negatives_from_df(df_valid)
 
-    best_monitor_metric = np.inf
+    best_monitor_metric = np.inf if direction == "lower_is_better" else -np.inf
     patience_counter = 0
     best_epoch = -1
     output = {}
@@ -98,7 +99,10 @@ def train_loop(
         title="Training loop",
     )
     scheduler = ReduceLROnPlateau(
-        optimizer, mode="min", patience=scheduler_patience, factor=0.5
+        optimizer,
+        mode=("min" if direction == "lower_is_better" else "max"),
+        patience=scheduler_patience,
+        factor=0.5,
     )
     with Live(table, console=console, vertical_overflow="visible"):
         for epoch in range(1, max_epochs + 1):
@@ -150,7 +154,13 @@ def train_loop(
             # Early stopping
             monitor_metric = np.mean(output[monitor])
             scheduler.step(monitor_metric)
-            if monitor_metric < best_monitor_metric:
+            if (
+                direction == "higher_is_better"
+                and monitor_metric > best_monitor_metric
+            ) or (
+                direction == "lower_is_better"
+                and monitor_metric < best_monitor_metric
+            ):
                 best_epoch = epoch
                 best_monitor_metric = monitor_metric
                 patience_counter = 0
@@ -304,8 +314,8 @@ def train(
         )
 
     for split in ["Train", "Valid", "Test"]:
-        split_key = f"{split.lower()}/relative_rank_median"
+        split_key = f"{split.lower()}/top_10_accuracy"
         if split_key in output:
-            logger.info(f"{split} relative median rank {output[split_key]:.3g}")
+            logger.info(f"{split} Top 10 Accuracy {output[split_key]:.3g}")
 
     return output, decoder._orig_mod.cpu()

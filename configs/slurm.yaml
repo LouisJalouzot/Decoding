@@ -9,7 +9,7 @@ hydra:
     timeout_min: 2880
     cpus_per_task: 10
     gpus_per_node: 1
-    mem_gb: 100
+    mem_gb: 50
     name: ${hydra.job.name}
     partition: gpu
     stderr_to_stdout: true

@@ -38,7 +38,8 @@ latents_cfg:
   token_aggregation: mean
 
 train_cfg:
-  monitor: valid/relative_rank_median
+  monitor: valid/mean_reciprocal_rank
+  direction: higher_is_better # or lower_is_better
   patience: 20
   scheduler_patience: 5
   batch_size: 1

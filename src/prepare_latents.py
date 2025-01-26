@@ -54,9 +54,13 @@ def compute_chunks(
         transcript["text"].str.lower().str.strip("{} ").replace("i", "I")
     )
     transcript = transcript[~transcript.text.isin(DEFAULT_BAD_WORDS)]
+    if "lppCN" in textgrid_path or "SMN4Lang" in textgrid_path:
+        combiner = ""
+    else:
+        combiner = " "
     transcript = (
         transcript.groupby("chunk_id", observed=False)
-        .text.apply(lambda x: " ".join(x))
+        .text.apply(lambda x: combiner.join(x))
         .to_frame(name="chunks")
     )
     transcript["chunks_with_context"] = [
@@ -258,6 +262,8 @@ def prepare_latents(
     elif dataset == "li2022":
         audio_path = f"data/li2022/stimuli/task-lppEN_section-{run}.wav"
         textgrid_path = f"data/li2022/annotation/EN/lppEN_section{run}.TextGrid"
+    elif dataset == "smn4lang":
+        textgrid_path = f"data/SMN4Lang/derivatives/annotations/time_align/word-level/story_{run}_word_time.TexGrid"
     else:
         raise ValueError(f"Unsupported dataset {dataset}")
     chunks = compute_chunks(textgrid_path, tr, context_length)

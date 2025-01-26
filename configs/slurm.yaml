@@ -7,7 +7,7 @@ hydra:
   launcher:
     submitit_folder: ${hydra.sweep.dir}/%j
     timeout_min: 2880
-    cpus_per_task: 20
+    cpus_per_task: 10
     gpus_per_node: 1
     mem_gb: 100
     name: ${hydra.job.name}

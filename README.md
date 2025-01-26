@@ -28,6 +28,14 @@ aws s3 sync --no-sign-request s3://openneuro.org/ds003020 data/lebel2023/
 mv data/lebel2023/derivative data/lebel2023/derivatives
 # Li2022
 aws s3 sync --no-sign-request s3://openneuro.org/ds003643 data/li2022/
+# SMN4Lang
+aws s3 sync --no-sign-request \
+   --exclude "*" \
+   --include "*events.tsv" \
+   --include "*/annotations/time_align/*" \
+   --include "*/*bold.nii.gz" \
+   s3://openneuro.org/ds004078 \
+   data/SMN4Lang
 ```
 For Li2022, brain mask available [here](https://nist.mni.mcgill.ca/colin-27-average-brain/).
 

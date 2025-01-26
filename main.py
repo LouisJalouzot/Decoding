@@ -22,12 +22,20 @@ def wandb_wrapper(cfg: dict, id_config: dict):
             mode=cfg["meta"]["wandb_mode"],
         )
 
-    outputs = decoding(**cfg)
+    # To circumvent a bug in Hydra
+    # See https://github.com/facebookresearch/hydra/issues/2664
+    try:
+        outputs = decoding(**cfg)
+        if wandb.run is not None:
+            wandb.finish(exit_code=0)
 
-    if wandb.run is not None:
-        wandb.finish()
+        return outputs
 
-    return outputs
+    except BaseException as e:
+        if wandb.run is not None:
+            wandb.finish(exit_code=1)
+
+        raise
 
 
 def cache_wrapper(cfg: DictConfig):

@@ -48,9 +48,9 @@ def init_optimizer(
 
     if wandb.run is not None:
         if prefix == "Training":
-            wandb.config["n_params"] = n_params
+            wandb.summary["n_params"] = n_params
         else:
-            wandb.config["n_params_ft"] = n_params
+            wandb.summary["n_params_ft"] = n_params
     logger.info(f"{prefix} {n_params:.3g} parameters")
 
     return torch.optim.AdamW(opt_grouped_parameters)
@@ -234,8 +234,8 @@ def train(
     decoder = torch.compile(decoder)
 
     if wandb.run is not None:
-        wandb.config["in_dims"] = in_dims
-        wandb.config["out_dim"] = out_dim
+        wandb.summary["in_dims"] = in_dims
+        wandb.summary["out_dim"] = out_dim
 
     # Initialize optimizer
     optimizer = init_optimizer(decoder)

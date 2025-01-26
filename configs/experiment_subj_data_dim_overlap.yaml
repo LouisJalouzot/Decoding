@@ -2,20 +2,21 @@ defaults:
   - experiments
   - _self_
 
-datasets: lebel2023_fmriprep_balanced
+datasets: lebel2023_fmriprep
 
 meta:
-  tags: [subj_data_dim_overlap]
+  tags: [subj_data_dim_overlap_123]
 
 hydra:
   sweeper:
     params:
       # Testing
-      # wrapper_cfg.hidden_dim: 2048
-      # splitting.overlap: 0,0.5
-      # splitting.train_ratio: 0.1,0.2
+      # +subjects.lebel2023_fmriprep: [UTS01,UTS02,UTS03]
+      # wrapper_cfg.hidden_dim: 8192
+      # splitting.train_ratio: 0.9
+      # splitting.overlap: 1
 
-      ++subjects.lebel2023_fmriprep_balanced: UTS04,[UTS04,UTS03],[UTS04,UTS03,UTS01],[UTS04,UTS03,UTS01,UTS02],[UTS04,UTS03,UTS01,UTS02,UTS05],[UTS04,UTS03,UTS01,UTS02,UTS05,UTS06],[UTS04,UTS03,UTS01,UTS02,UTS05,UTS06,UTS07],[UTS04,UTS03,UTS01,UTS02,UTS05,UTS06,UTS07,UTS08]
-      wrapper_cfg.hidden_dim: 16,64,512,2048
+      +subjects.lebel2023_fmriprep: UTS01,UTS02,UTS03,[UTS01,UTS02],[UTS01,UTS03],[UTS02,UTS03],[UTS01,UTS02,UTS03]
+      wrapper_cfg.hidden_dim: 512,1024,2048,4096,8192
       splitting.train_ratio: 0.1,0.3,0.5,0.7,0.9
-      splitting.overlap: 0,1,0.25,0.5,0.75
+      splitting.overlap: 0,0.25,0.5,0.75,1

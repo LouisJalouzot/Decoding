@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 def read_brain_volume(dataset, subject, run, lag, smooth, stack):
-    path = Path("datasets") / str(dataset) / str(subject) / str(run)
+    path = Path("datasets") / dataset / subject / run
     path = path.with_suffix(".npy")
     X = torch.from_numpy(np.load(path))
     if smooth > 0:

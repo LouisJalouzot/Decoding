@@ -27,7 +27,7 @@ aws s3 sync --no-sign-request s3://openneuro.org/ds003020 data/lebel2023/
 # Rename derivative to derivatives
 mv data/lebel2023/derivative data/lebel2023/derivatives
 # Li2022
-aws s3 sync --no-sign-request s3://openneuro.org/ds003643 data/li2022/
+aws s3 sync --exclude "sub*" --no-sign-request s3://openneuro.org/ds003643 data/li2022/
 # SMN4Lang
 aws s3 sync --no-sign-request \
    --exclude "*" \

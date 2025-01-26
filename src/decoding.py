@@ -81,7 +81,9 @@ def decoding(
         else:
             for dataset, s in subjects.items():
                 if not isinstance(s, list):
-                    subjects[dataset] = [s]
+                    subjects[dataset] = [str(s)]
+                else:
+                    subjects[dataset] = [str(sub) for sub in s]
         runs = {
             dataset: {
                 subject: sorted(

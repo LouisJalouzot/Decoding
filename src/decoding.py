@@ -127,7 +127,6 @@ def decoding(
     # Fetch latents
     runs = df[["dataset", "run", "n_trs"]].drop_duplicates()
     n_runs = len(runs)
-    scaler = StandardScaler()
     with progress:
         task = progress.add_task("", total=n_runs)
         progress.update(task, description=f"Fetching latents for {n_runs} runs")
@@ -140,23 +139,18 @@ def decoding(
                 tr=tr,
                 **latents_cfg,
             )
-            scaler.partial_fit(data.Y)
             data = align_latents(data, **alignment_cfg)
-            if data.Y.shape[0] > n_trs + 1:
-                logger.warning(
-                    f"{data.Y.shape[0] - n_trs} > 1 latents trimmed for run {run} in dataset {dataset}"
-                )
-            # If more latents than brain scans, drop last seconds of run
-            data = data.apply(lambda x: x[:n_trs])
             data["dataset"] = dataset
             data["run"] = run
+            # Truncate latents to match the number of TRs in the brain scans
+            data["Y"] = torch.from_numpy(data["Y"][:n_trs])
             latents.append(data)
             progress.update(task, advance=1, refresh=True)
     latents = pd.concat(latents, axis=1).T
-    latents["Y"] = latents.Y.apply(
-        lambda x: torch.from_numpy(scaler.transform(x).astype(np.float32))
-    )
     df = df.merge(latents, on=["dataset", "run"])
+    # Truncate brain scans to match the number of TRs in the latents
+    df["X"] = df.apply(lambda x: x.X[: x.Y.shape[0]], axis=1)
+    df["n_trs"] = df.apply(lambda x: x.Y.shape[0], axis=1)
     if performance_ceiling:
         # Setup to train the model to predict Y from Y to get measure ceilings
         n_features = df.Y.iloc[0].shape[1]

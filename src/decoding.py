@@ -80,7 +80,7 @@ def decoding(
             }
         else:
             for dataset, s in subjects.items():
-                if isinstance(s, str):
+                if not isinstance(s, list):
                     subjects[dataset] = [s]
         runs = {
             dataset: {

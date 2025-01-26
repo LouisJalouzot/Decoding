@@ -64,7 +64,7 @@ def create_smn4lang_dataset():
     )
     mask = mask.get_fdata() == 1
 
-    Parallel(n_jobs=1)(
+    Parallel(n_jobs=12)(
         delayed(process_bold_file)(
             f.get_image(),
             f.entities["subject"],

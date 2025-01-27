@@ -1,0 +1,57 @@
+defaults:
+  - multirun
+  - _self_
+  - override hydra/launcher: submitit_slurm
+
+meta:
+  wandb_mode: offline
+
+hydra:
+  launcher:
+    submitit_folder: ${hydra.sweep.dir}/%j
+    gpus_per_node: 1
+    name: ${hydra.job.name}
+    stderr_to_stdout: true
+    additional_parameters: {"hint": "nomultithread"}
+
+    # Default: V100 partition, 40Go RAM, 16 or 32Go VRAM
+    cpus_per_task: 10
+    account: ioj@v100
+    # constraint v100-32g # For 32Go VRAM, otherwise don't specify for queueing time 
+
+    # V100 partition gpu_p2, 32Go VRAM
+    # cpus_per_task: 3
+    # account: ioj@v100
+    # partition: gpu_p2
+    # partition: gpu_p2s # For 45Go RAM
+    # partition: gpu_p2l # For 90Go RAM
+
+    # QoS V100
+    # qos: qos_gpu-t3 # 20h max
+    # timeout_min: 1200
+    # qos: qos_gpu-t4 # 100h max
+    # timeout_min: 6000
+    # qos: qos_gpu-dev # 2h max, <= 10 simultaneous jobs
+    # timeout_min: 120
+
+    # A100 partition, 58Go RAM, 80Go VRAM
+    # cpus_per_task: 8
+    # constraint: a100
+    # account: ioj@a100
+
+    # qos: qos_gpu_a100-t3 # 20h max
+    # timeout_min: 1200
+    # qos: qos_gpu_a100-dev # 2h max, <= 10 simultaneous jobs
+    # timeout_min: 120
+
+    # H100 partition, 117Go RAM, 80Go VRAM
+    # cpus_per_task: 24
+    # constraint: h100
+    # account: ioj@h100
+    
+    # qos: qos_gpu_h100-t3 # 20h max
+    # timeout_min: 1200
+    # qos: qos_gpu_h100-t4 # 100h max
+    # timeout_min: 6000
+    # qos: qos_gpu_h100-dev # 2h max, <= 10 simultaneous jobs
+    # timeout_min: 120

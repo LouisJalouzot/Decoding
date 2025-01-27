@@ -4,10 +4,8 @@ defaults:
   - _self_
 
 datasets: smn4lang
-subjects:
-  smn4lang: "01"
 
 hydra:
   sweeper:
     params:
-      latents_cfg.model: BAAI/bge-multilingual-gemma2,TencentBAC/Conan-embedding-v1,Alignment-Lab-AI/e5-mistral-7b-instruct,intfloat/multilingual-e5-large
+      +subjects.smn4lang: 01,02,03,04,05,06,07,08,09,10,11,12

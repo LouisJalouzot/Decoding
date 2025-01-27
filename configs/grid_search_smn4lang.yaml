@@ -5,9 +5,9 @@ defaults:
   - override hydra/sweeper/sampler: tpe
   - _self_
 
-datasets: lebel2023_fmriprep_balanced
+datasets: smn4lang
 subjects:
-  lebel2023_fmriprep_balanced: UTS03
+  smn4lang: "08"
 
 hydra:
   sweeper:
@@ -15,13 +15,13 @@ hydra:
     sampler:
       seed: 0
     direction: maximize
-    study_name: grid_search_lebel
+    study_name: grid_search_smn4lang
     n_trials: 100
     n_jobs: 1
     params:
-      latents_cfg.context_length: range(0,8)
-      alignment_cfg.lag: range(0,5)
-      alignment_cfg.smooth: range(0,5)
+      latents_cfg.context_length: range(0,16)
+      alignment_cfg.lag: range(0,10)
+      alignment_cfg.smooth: range(0,10)
       alignment_cfg.stack: range(0,2)
       top_encoding_voxels: choice(128,256,512,1024,2048,4096)
       wrapper_cfg.hidden_dim: choice(128,256,512,1024,2048,4096)

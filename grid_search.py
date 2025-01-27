@@ -1,22 +1,28 @@
+import sys
+import traceback
 import hydra
-import torch
 from omegaconf import DictConfig, OmegaConf
 
-from src.decoding import decoding
+
+def grid_search(cfg):
+    from src.decoding import decoding
+
+    cfg = OmegaConf.to_container(cfg, resolve=True)
+
+    return decoding(**cfg)
 
 
 @hydra.main(version_base=None, config_path="configs", config_name="grid_search")
 def main(cfg: DictConfig) -> None:
-    # from src.utils import console
+    # To circumvent a bug in Hydra
+    # See https://github.com/facebookresearch/hydra/issues/2664
+    try:
+        output = grid_search(cfg)
+        return output["test/mean_reciprocal_rank"]
 
-    # console.quiet = True
-    cfg = OmegaConf.to_container(cfg, resolve=True)
-
-    output = decoding(**cfg)
-
-    torch.cuda.empty_cache()
-
-    return output["test/relative_rank_median"]
+    except BaseException:
+        traceback.print_exc(file=sys.stderr)
+        raise
 
 
 if __name__ == "__main__":

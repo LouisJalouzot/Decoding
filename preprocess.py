@@ -49,6 +49,10 @@ models = [
     "bert-base-uncased",
     "meta-llama/Llama-3.1-8B-Instruct",
     "TencentBAC/Conan-embedding-v1",
+    "BAAI/bge-multilingual-gemma2",
+    "Linq-AI-Research/Linq-Embed-Mistral",
+    "Alignment-Lab-AI/e5-mistral-7b-instruct",
+    "intfloat/multilingual-e5-large",
 ]
 
 for model_name in models:
@@ -79,8 +83,8 @@ nltk.download("universal_tagset")
 # create_li2022_datasets("FR")
 # create_li2022_datasets("CN")
 # create_mean_subject("li2022")
-create_smn4lang_textgrids()
-create_smn4lang_dataset()
+# create_smn4lang_textgrids()
+# create_smn4lang_dataset()
 # create_lebel2023_fmripep_canica_dataset(per_subject=True)
 # create_lebel2023_fmripep_canica_dataset(per_subject=True, n_components=768)
 # create_lebel2023_fmripep_canica_dataset(per_subject=False, n_components=768)

@@ -1,0 +1,13 @@
+defaults:
+  - experiments
+  - config_smn4lang
+  - _self_
+
+datasets: smn4lang
+subjects:
+  smn4lang: "01"
+
+hydra:
+  sweeper:
+    params:
+      latents_cfg.model: BAAI/bge-multilingual-gemma2,TencentBAC/Conan-embedding-v1,Alignment-Lab-AI/e5-mistral-7b-instruct,intfloat/multilingual-e5-large

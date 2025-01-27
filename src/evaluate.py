@@ -20,6 +20,7 @@ def retrieval_metrics(
     negatives: torch.Tensor = None,
     metric: str = "cosine",
     top_k_accuracies: List[int] = [],
+    top_k_percent_accuracies: List[int] = [],
     return_ranks: bool = False,
     return_negatives_dist: bool = False,
 ):
@@ -53,9 +54,11 @@ def retrieval_metrics(
         )
     ranks = (dist_to_ground_truth > dist_to_negatives).sum(1).double()
     for top_k in top_k_accuracies:
-        accuracy = ranks < top_k
-        accuracy = accuracy.cpu().numpy().mean()
+        accuracy = (ranks < top_k).cpu().numpy().mean()
         output[f"top_{top_k}_accuracy"] = accuracy
+    for top_kp in top_k_percent_accuracies:
+        accuracy = (ranks < retrieval_size * top_kp / 100).cpu().numpy().mean()
+        output[f"top_{top_kp}_percent_accuracy"] = accuracy
     if return_ranks:
         ranks = ranks.cpu().numpy()
         # Median will be applied in aggregate_metrics_df
@@ -100,6 +103,7 @@ def evaluate(
     decoder,
     negatives,
     top_k_accuracies=[],
+    top_k_percent_accuracies=[],
     nlp_distances=None,
     n_candidates=10,
     return_tables=False,
@@ -157,6 +161,7 @@ def evaluate(
                 Y_preds,
                 negatives,
                 top_k_accuracies=top_k_accuracies,
+                top_k_percent_accuracies=top_k_percent_accuracies,
                 return_ranks=True,
                 return_negatives_dist=(nlp_distances is not None),
             )

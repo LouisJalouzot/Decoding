@@ -1,0 +1,7 @@
+tr: 0.71
+
+latents_cfg:
+  context_length: 8
+
+alignment_cfg:
+  lag: 8

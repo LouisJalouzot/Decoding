@@ -34,7 +34,7 @@ top_encoding_voxels: 4096
 
 latents_cfg:
   context_length: 3
-  model: llm2vec
+  model: intfloat/multilingual-e5-large
   token_aggregation: mean
 
 train_cfg:

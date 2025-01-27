@@ -49,9 +49,9 @@ hydra:
     constraint: h100
     account: ioj@h100
     
-    qos: qos_gpu_h100-t3 # 20h max
-    timeout_min: 1200
+    # qos: qos_gpu_h100-t3 # 20h max
+    # timeout_min: 1200
     # qos: qos_gpu_h100-t4 # 100h max
     # timeout_min: 6000
-    # qos: qos_gpu_h100-dev # 2h max, <= 10 simultaneous jobs
-    # timeout_min: 120
+    qos: qos_gpu_h100-dev # 2h max, <= 10 simultaneous jobs
+    timeout_min: 120

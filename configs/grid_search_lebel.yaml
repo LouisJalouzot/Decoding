@@ -1,0 +1,30 @@
+defaults:
+  - slurm_JZ
+  - override splitting: cv
+  - override hydra/sweeper: optuna
+  - override hydra/sweeper/sampler: tpe
+  - _self_
+
+datasets: lebel2023_fmriprep
+subjects:
+  lebel2023_fmriprep: UTS03
+
+hydra:
+  sweeper:
+    storage: sqlite:///grid_search.db
+    sampler:
+      seed: 0
+    direction: minimize
+    study_name: grid_search_lebel
+    n_trials: 1000
+    n_jobs: 1
+    params:
+      latents_cfg.context_length: range(0,8)
+      alignment_cfg.lag: range(0,5)
+      alignment_cfg.smooth: range(0,5)
+      alignment_cfg.stack: range(0,2)
+      top_encoding_voxels: range(500,80000,step=500)
+      wrapper_cfg.hidden_dim: choice(128,256,512,1024,2048)
+      decoder_cfg.hidden_dim_projector: choice(128,256,512,1024,2048)
+      decoder_cfg.n_res_blocks: range(1,4)
+      decoder_cfg.n_proj_blocks: range(1,3)

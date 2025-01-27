@@ -4,7 +4,7 @@ defaults:
 
 meta:
   log_wandb: true
-  cache: true
+  cache: false
 
 splitting:
-  n_folds: 5
+  n_folds: 3

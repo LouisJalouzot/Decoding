@@ -77,6 +77,7 @@ def train_loop(
     patience,
     scheduler_patience,
     top_k_accuracies,
+    top_k_percent_accuracies,
     nlp_distances,
     n_candidates,
     metrics_prefix,
@@ -131,6 +132,7 @@ def train_loop(
                 decoder=decoder,
                 negatives=valid_negatives,
                 top_k_accuracies=top_k_accuracies,
+                top_k_percent_accuracies=top_k_percent_accuracies,
                 nlp_distances=nlp_distances.get("valid", None),
                 n_candidates=n_candidates,
             )
@@ -241,6 +243,7 @@ def train(
     optimizer = init_optimizer(decoder)
 
     top_k_accuracies = [1, 5, 10]
+    top_k_percent_accuracies = [1, 5, 10]
 
     # Train the decoder
     decoder, optimizer, best_epoch = train_loop(
@@ -249,6 +252,7 @@ def train(
         df_train=df_train,
         df_valid=df_valid,
         top_k_accuracies=top_k_accuracies,
+        top_k_percent_accuracies=top_k_percent_accuracies,
         nlp_distances=nlp_distances,
         n_candidates=n_candidates,
         metrics_prefix=metrics_prefix,
@@ -295,6 +299,7 @@ def train(
             decoder=decoder,
             negatives=negatives_from_df(df_split),
             top_k_accuracies=top_k_accuracies,
+            top_k_percent_accuracies=top_k_percent_accuracies,
             nlp_distances=nlp_distances.get(split, None),
             n_candidates=n_candidates,
             return_tables=return_tables,
@@ -314,8 +319,8 @@ def train(
         )
 
     for split in ["Train", "Valid", "Test"]:
-        split_key = f"{split.lower()}/top_10_accuracy"
+        split_key = f"{split.lower()}/top_10_percent_accuracy"
         if split_key in output:
-            logger.info(f"{split} Top 10 Accuracy {output[split_key]:.3g}")
+            logger.info(f"{split} Top 10% Accuracy {output[split_key]:.3g}")
 
     return output, decoder._orig_mod.cpu()

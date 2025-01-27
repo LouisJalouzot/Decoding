@@ -6,7 +6,7 @@ class: BrainDecoder
 hidden_dim: ${wrapper_cfg.hidden_dim}
 hidden_dim_projector: ${wrapper_cfg.hidden_dim}
 dropout: ${wrapper_cfg.dropout}
-n_res_blocks: 1
+n_res_blocks: 2
 n_proj_blocks: 1
 norm_type: ${wrapper_cfg.norm_type}
 activation_layer_first: ${wrapper_cfg.activation_layer_first}

@@ -349,7 +349,7 @@ def prepare_latents(
     if "lebel2023" in dataset or "li2022" in dataset:
         latents = latents[5:-5]
         chunks = chunks.iloc[5:-5]
-    data = {"Y": latents.astype(np.float32)}
+    data = {"Y": torch.from_numpy(latents).float()}
     for col in chunks:
         data[col] = chunks[col].values
     return pd.Series(data)

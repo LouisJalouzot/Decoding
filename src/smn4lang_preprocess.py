@@ -29,6 +29,7 @@ def process_bold_file(bold_file, subject, run, mask, dataset_path):
     scaler = StandardScaler(copy=False)
     a = bold_file.get_fdata()[mask, start:end]
     a = scaler.fit_transform(a.T)
+    a = a.astype(np.float32)
     path.parent.mkdir(parents=True, exist_ok=True)
     np.save(path, a)
 

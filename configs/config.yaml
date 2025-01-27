@@ -27,10 +27,10 @@ runs: null
 tr: 2
 alignment_cfg:
   lag: 3
-  smooth: 4
-  stack: 0
+  smooth: 1
+  stack: 2
 
-top_encoding_voxels: 4096
+top_encoding_voxels: 2048
 
 latents_cfg:
   context_length: 3

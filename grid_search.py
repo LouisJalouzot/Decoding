@@ -22,7 +22,7 @@ def main(cfg: DictConfig) -> None:
 
     except BaseException:
         traceback.print_exc(file=sys.stderr)
-        raise
+        return 0
 
 
 if __name__ == "__main__":

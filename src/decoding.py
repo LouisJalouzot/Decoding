@@ -147,7 +147,7 @@ def decoding(
             data["dataset"] = dataset
             data["run"] = run
             # Truncate latents to match the number of TRs in the brain scans
-            data["Y"] = torch.from_numpy(data["Y"][:n_trs])
+            data["Y"] = data["Y"][:n_trs]
             latents.append(data)
             progress.update(task, advance=1, refresh=True)
     latents = pd.concat(latents, axis=1).T

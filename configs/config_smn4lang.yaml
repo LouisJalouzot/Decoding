@@ -1,7 +1,17 @@
 tr: 0.71
 
 latents_cfg:
-  context_length: 8
+  context_length: 16
 
 alignment_cfg:
-  lag: 8
+  lag: 4
+  smooth: 5
+  stack: 2
+
+wrapper_cfg:
+  hidden_dim: 1024
+
+decoder_cfg:
+  hidden_dim_projector: 2048
+  n_res_blocks: 1
+  n_proj_blocks: 2

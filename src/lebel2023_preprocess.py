@@ -72,6 +72,7 @@ def process_bold_file(bold_file, subject, story, mask, dataset_path):
     # Mask and drop first and last 10 volumes like original dataset
     a = bold_file.get_fdata()[mask, 10:-10]
     a = scaler.fit_transform(a.T)
+    a = a.astype(np.float32)
     path.parent.mkdir(parents=True, exist_ok=True)
     np.save(path, a)
 

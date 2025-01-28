@@ -30,7 +30,6 @@ hydra:
       # decoder_cfg.n_proj_blocks: range(1,3)
       wrapper_cfg.temperature: tag(log,interval(1e-3,10))
       latents_cfg.context_length: range(14,30)
-      alignment_cfg.stack: range(2,6)
       top_encoding_voxels: choice(1024,2048,4096)
       wrapper_cfg.hidden_dim: choice(1024,2048,4096)
       decoder_cfg.hidden_dim_projector: choice(1024,2048,4096)

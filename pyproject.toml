@@ -54,6 +54,7 @@ dependencies = [
     "statannotations>=0.7.1",
     "jupyterlab>=4.3.4",
     "einops>=0.8.0",
+    "peft>=0.10",
 ]
 
 [tool.uv.sources]

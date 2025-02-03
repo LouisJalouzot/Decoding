@@ -35,7 +35,10 @@ hydra:
     # timeout_min: 120
 
     # A100 partition, 58Go RAM, 80Go VRAM
-    # cpus_per_task: 8
+    # cpus_per_task: 64
+    # cpus_per_task: 32
+    # cpus_per_task: 16
+    # cpus_per_task: 8 # 58 Go RAM
     # constraint: a100
     # account: ioj@a100
 
@@ -45,7 +48,10 @@ hydra:
     # timeout_min: 120
 
     # H100 partition, 117Go RAM, 80Go VRAM
-    cpus_per_task: 24
+    # cpus_per_task: 96
+    # cpus_per_task: 72
+    # cpus_per_task: 48
+    cpus_per_task: 24 # 117 Go RAM
     constraint: h100
     account: ioj@h100
     

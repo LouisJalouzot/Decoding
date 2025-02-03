@@ -46,23 +46,13 @@ print("Checking for required models")
 models = [
     "McGill-NLP/LLM2Vec-Meta-Llama-31-8B-Instruct-mntp",
     "McGill-NLP/LLM2Vec-Meta-Llama-31-8B-Instruct-mntp-unsup-simcse",
-    "bert-base-uncased",
-    "meta-llama/Llama-3.1-8B-Instruct",
-    "TencentBAC/Conan-embedding-v1",
-    "BAAI/bge-multilingual-gemma2",
-    "Linq-AI-Research/Linq-Embed-Mistral",
-    "Alignment-Lab-AI/e5-mistral-7b-instruct",
-    "intfloat/multilingual-e5-large",
+    "meta-llama/Llama-3.1-8B",
+    "McGill-NLP/LLM2Vec-Mistral-7B-Instruct-v2-mntp",
+    "McGill-NLP/LLM2Vec-Mistral-7B-Instruct-v2-mntp-unsup-simcse",
+    "mistralai/Mistral-7B-Instruct-v0.2",
 ]
-
-for model_name in models:
-    try:
-        snapshot_download(repo_id=model_name, local_files_only=True)
-        print(f"Model {model_name} found in cache")
-    except Exception:
-        print(f"Downloading {model_name}")
-        snapshot_download(repo_id=model_name)
-        print(f"Model {model_name} downloaded successfully")
+for model in models:
+    snapshot_download(repo_id=model)
 
 # Download necessary data before computing on nodes without internet access
 nltk.download("punkt_tab")

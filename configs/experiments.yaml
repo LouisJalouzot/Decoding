@@ -7,4 +7,4 @@ meta:
   cache: false
 
 splitting:
-  n_folds: 3
+  n_folds: 5

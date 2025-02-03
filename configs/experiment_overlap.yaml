@@ -5,20 +5,22 @@ defaults:
 datasets: lebel2023_fmriprep
 
 splitting:
-  train_ratio: 0.46
+  n_folds: 15
+  train_ratio: 0.3
 
 meta:
-  tags: [overlap]
+  cache: true
+  tags: [overlap_v3]
 
 hydra:
+  launcher:
+    cpus_per_task: 48
   sweeper:
     params:
-      wrapper_cfg.multi_subject_mode: individual
-      #,shared
-      top_encoding_voxels: 768
-      #,null
-      alignment_cfg.stack: 0
-      #,1,2,3
-      ++splitting.overlap: 0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1
-      ++subjects.lebel2023_fmriprep: [UTS01,UTS02],[UTS03,UTS04],[UTS05,UTS06],[UTS07,UTS08]
-      # ++subjects.lebel2023_fmriprep: [UTS01,UTS02],[UTS01,UTS03],[UTS01,UTS04],[UTS01,UTS05],[UTS01,UTS06],[UTS01,UTS07],[UTS01,UTS08],[UTS02,UTS03],[UTS02,UTS04],[UTS02,UTS05],[UTS02,UTS06],[UTS02,UTS07],[UTS02,UTS08],[UTS03,UTS04],[UTS03,UTS05],[UTS03,UTS06],[UTS03,UTS07],[UTS03,UTS08],[UTS04,UTS05],[UTS04,UTS06],[UTS04,UTS07],[UTS04,UTS08],[UTS05,UTS06],[UTS05,UTS07],[UTS05,UTS08],[UTS06,UTS07],[UTS06,UTS08],[UTS07,UTS08]
+      wrapper_cfg.hidden_dim: 64,4096
+      # wrapper_cfg.hidden_dim: 64,512,4096
+      splitting.overlap: 0,0.25,0.5,0.75,1
+      # splitting.overlap: 0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1
+      # +subjects.lebel2023_fmriprep: [UTS01,UTS02,UTS03]
+      +subjects.lebel2023_fmriprep: UTS01,UTS02,UTS03,[UTS01,UTS02],[UTS01,UTS03],[UTS02,UTS03]
+      # +subjects.lebel2023_fmriprep: UTS01,UTS02,UTS03,[UTS01,UTS02],[UTS01,UTS03],[UTS02,UTS03],[UTS01,UTS02,UTS03]

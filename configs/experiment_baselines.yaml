@@ -1,14 +1,13 @@
 defaults:
-  - multirun
+  - slurm_JZ
   - _self_
 
-datasets: li2022_EN_SS_trimmed_mean
-# datasets: lebel2023_fmriprep
-# subjects:
-#   lebel2023_fmriprep: UTS01
+datasets: lebel2023_fmriprep_balanced
+subjects:
+  lebel2023_fmriprep_balanced: UTS01
 
-# meta:
-#   tags: [baselines]
+meta:
+  tags: [baseline_v2]
 
 hydra:
   sweeper:

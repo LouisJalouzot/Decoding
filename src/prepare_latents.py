@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import torch
 from sklearn.preprocessing import StandardScaler
-
+from huggingface_hub import snapshot_download
 from src.nlp_metrics import get_glove_bows, nltk_pos_tag
 from src.textgrids import TextGrid
 from src.utils import device, memory, progress
@@ -278,16 +278,20 @@ def prepare_latents(
         )
     elif model.lower() == "clap":
         latents = prepare_clap(chunks, audio_path, tr, context_length, verbose)
-    elif model.lower() == "llm2vec":
-        # TIP: Because of annoying multiprocess with CUDA, use on CPU or with only 1 viisble GPU
+    elif "llm2vec" in model.lower():
+        # TIP: Because of annoying multiprocess with CUDA, use on CPU or with only 1 visible GPU or with os.environ["TOKENIZERS_PARALLELISM"] = "false"
         from llm2vec import LLM2Vec
 
         assert token_aggregation == "mean", "Only mean aggregation is supported"
-        model = "McGill-NLP/LLM2Vec-Meta-Llama-31-8B-Instruct-mntp"
-        peft_model = "unsup-simcse"
+        peft_model_path = snapshot_download(
+            repo_id=model, local_files_only=True
+        )
+        # Cut model after "mntp"
+        model = model.split("mntp")[0] + "mntp"
+        model_path = snapshot_download(repo_id=model, local_files_only=True)
         l2v = LLM2Vec.from_pretrained(
-            model,
-            peft_model_name_or_path=model + "-" + peft_model,
+            model_path,
+            peft_model_name_or_path=peft_model_path,
             merge_peft=True,
             device_map=device.type,
             max_length=None,

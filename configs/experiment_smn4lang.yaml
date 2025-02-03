@@ -5,7 +5,10 @@ defaults:
 
 datasets: smn4lang
 
+meta:
+  tags: [grid_search_smn4lang]
+
 hydra:
   sweeper:
     params:
-      +subjects.smn4lang: 01,02,03,04,05,06,07,08,09,10,11,12
+      +subjects.smn4lang: 01,02,03 #,04,05,06,07,08,09,10,11,12

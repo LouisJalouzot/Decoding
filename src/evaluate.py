@@ -31,7 +31,7 @@ def retrieval_metrics(
     if negatives is None:
         negatives = Y_true
     retrieval_size = len(negatives)
-    output = {"retrieval_size": retrieval_size, "size": len(Y_true)}
+    output = {}
     if metric == "cosine":
         dist_to_negatives = 1 - tm.functional.pairwise_cosine_similarity(
             Y_pred,
@@ -52,18 +52,18 @@ def retrieval_metrics(
         raise ValueError(
             "Metric not supported. Supported metrics are cosine and euclidean."
         )
-    ranks = (dist_to_ground_truth > dist_to_negatives).sum(1).double()
+    # All aggregations will be applied in aggregate_metrics_df
+    ranks = (dist_to_ground_truth > dist_to_negatives).sum(1)
+    ranks = ranks.double().cpu().numpy()
     for top_k in top_k_accuracies:
-        accuracy = (ranks < top_k).cpu().numpy().mean()
+        accuracy = ranks < top_k
         output[f"top_{top_k}_accuracy"] = accuracy
     for top_kp in top_k_percent_accuracies:
-        accuracy = (ranks < retrieval_size * top_kp / 100).cpu().numpy().mean()
+        accuracy = ranks < retrieval_size * top_kp / 100
         output[f"top_{top_kp}_percent_accuracy"] = accuracy
     if return_ranks:
-        ranks = ranks.cpu().numpy()
-        # Median will be applied in aggregate_metrics_df
+        output["rank_median"] = ranks
         output["relative_rank_median"] = ranks / retrieval_size
-        # Mean will be applied in aggregate_metrics_df
         output["mean_reciprocal_rank"] = 1 / (ranks + 1)
     if return_negatives_dist:
         output["negatives_dist"] = dist_to_negatives.cpu().numpy()
@@ -83,10 +83,10 @@ def aggregate_metrics_df(df):
             "chunk",
             "candidate",
         ]:
-            if key == "relative_rank_median":
+            if "median" in key:
                 output[key] = df[key].median()
                 subjects_df = df[key].groupby(subject_id).median()
-            elif key == "size":
+            elif key == "n_trs":
                 output[key] = df[key].sum()
                 subjects_df = df[key].groupby(subject_id).sum()
             else:
@@ -109,17 +109,22 @@ def evaluate(
     return_tables=False,
 ):
     decoder.eval()
-
     metrics = defaultdict(list)
-    nlp = defaultdict(list)
     ranks = defaultdict(list)
 
-    if nlp_distances is not None:
+    get_candidates = (return_tables) or (nlp_distances is not None)
+    if get_candidates:
+        candidates = defaultdict(list)
+        # Sort by chunk index
         all_chunks = df.drop_duplicates(["dataset", "run"])
-        all_chunks = all_chunks.chunks_with_context.explode().values
-        corresp = nlp_distances["corresp"]
-        assert len(all_chunks) == len(corresp)
+        all_chunks = df[["chunks", "chunks_index"]]
+        all_chunks = all_chunks.explode(["chunks", "chunks_index"])
+        all_chunks = all_chunks.sort_values("chunks_index").chunks.values
         assert len(all_chunks) == len(negatives)
+
+        if nlp_distances is not None:
+            corresp = nlp_distances["corresp"]
+            assert len(all_chunks) == len(corresp)
 
     negatives = negatives.to(device)
     if isinstance(decoder.decoder, MeanDecoder):
@@ -128,20 +133,11 @@ def evaluate(
     with torch.no_grad():
         for _, row in df.iterrows():
             run_id = row[["dataset", "subject", "run"]]
-            for k, v in run_id.items():
-                ranks[k].extend([v] * row.n_trs)
-                metrics[k].append(v)
-                if nlp_distances is not None:
-                    nlp[k].extend([v] * row.n_trs * n_candidates)
-            if nlp_distances is not None:
-                nlp["tr"].extend(np.repeat(range(row.n_trs), n_candidates))
-            ranks["tr"].extend(range(row.n_trs))
-
+            # Compute losses and other run-level metrics
             X = row.X.to(device)
             Y = row.Y.to(device)
             X_proj = decoder.projector[row.dataset][row.subject](X)
             Y_preds = decoder(X_proj)
-            # Evaluate losses
             mixco = decoder.mixco_loss(X_proj, Y)
             symm_nce = decoder.symm_nce_loss(X_proj, Y, Y_preds)
             mse = decoder.mse_loss(X_proj, Y, Y_preds)
@@ -149,13 +145,18 @@ def evaluate(
             mean_r2 = r2_score(
                 row.Y, Y_preds.cpu(), multioutput="raw_values"
             ).mean()
-            metrics["mixco"].extend([mixco.item()])
-            metrics["symm_nce"].extend([symm_nce.item()])
-            metrics["mse"].extend([mse.item()])
-            metrics["mean_r"].extend([mean_r])
-            metrics["mean_r2"].extend([mean_r2])
+            # Store metrics
+            for k, v in run_id.items():
+                metrics[k].append(v)
+            metrics["mixco"].append(mixco.item())
+            metrics["symm_nce"].append(symm_nce.item())
+            metrics["mse"].append(mse.item())
+            metrics["mean_r"].append(mean_r)
+            metrics["mean_r2"].append(mean_r2)
+            n_trs = row.n_trs
+            metrics["n_trs"].append(n_trs)
 
-            # Evaluate retrieval metrics
+            # Compute retrieval metrics
             r_metrics = retrieval_metrics(
                 Y,
                 Y_preds,
@@ -163,51 +164,58 @@ def evaluate(
                 top_k_accuracies=top_k_accuracies,
                 top_k_percent_accuracies=top_k_percent_accuracies,
                 return_ranks=True,
-                return_negatives_dist=(nlp_distances is not None),
+                return_negatives_dist=get_candidates,
             )
-            for key, values in r_metrics.items():
-                if key in ["relative_rank_median", "mean_reciprocal_rank"]:
-                    ranks[key].extend(values)
-                elif key != "negatives_dist":
-                    metrics[key].extend([values])
-
-            if nlp_distances is not None:
-                negatives_dist = r_metrics["negatives_dist"]
+            if get_candidates:
+                # Retrieve candidates (closest to preds)
+                negatives_dist = r_metrics.pop("negatives_dist")
                 candidates_idx = negatives_dist.argsort(axis=1)[
                     :, :n_candidates
                 ]
                 candidates_distances = negatives_dist[
                     np.arange(row.n_trs).reshape(-1, 1), candidates_idx
                 ]
-                nlp["dist"].extend(candidates_distances.reshape(-1))
-                chunk_idx = np.repeat(row.chunks_index, n_candidates)
                 candidates_idx = candidates_idx.reshape(-1)
-                corresp_idx = corresp[chunk_idx, candidates_idx]
-                for k, v in nlp_distances.items():
-                    if k != "corresp":
-                        nlp[k].extend(v[corresp_idx])
-                if return_tables:
-                    nlp["chunk"].extend(
-                        np.repeat(row.chunks_with_context, n_candidates)
-                    )
-                    nlp["top"].extend(
-                        np.tile(np.arange(n_candidates) + 1, row.n_trs)
-                    )
-                    nlp["candidate"].extend(all_chunks[candidates_idx])
+                chunk_idx = np.repeat(row.chunks_index, n_candidates)
+                # Store candidates
+                for k, v in run_id.items():
+                    candidates[k].extend([v] * n_trs * n_candidates)
+                candidates["tr"].extend(np.repeat(range(n_trs), n_candidates))
+                candidates["top"].extend(
+                    np.tile(np.arange(n_candidates) + 1, n_trs)
+                )
+                candidates["dist"].extend(candidates_distances.reshape(-1))
+                candidates["chunk"].extend(all_chunks[chunk_idx])
+                candidates["candidate"].extend(all_chunks[candidates_idx])
+
+                if nlp_distances is not None:
+                    # If nlp_distances are provided, store them
+                    corresp_idx = corresp[chunk_idx, candidates_idx]
+                    for k, v in nlp_distances.items():
+                        if k != "corresp":
+                            candidates[k].extend(v[corresp_idx])
+
+            # Store retrieval metrics
+            for k, v in run_id.items():
+                ranks[k].extend([v] * n_trs)
+            ranks["tr"].extend(range(n_trs))
+            for k, v in r_metrics.items():
+                ranks[k].extend(v)
 
     output = {}
     metrics = pd.DataFrame(metrics)
+    output.update(aggregate_metrics_df(metrics))
+    metrics["retrieval_size"] = len(negatives)
+    output["retrieval_size"] = len(negatives)
     ranks = pd.DataFrame(ranks)
-    dfs = [metrics, ranks]
-    if nlp_distances is not None:
-        nlp = pd.DataFrame(nlp)
-        dfs.append(nlp)
-        if return_tables:
-            output["nlp_distances"] = nlp
-    for df in dfs:
-        output.update(aggregate_metrics_df(df))
+    output.update(aggregate_metrics_df(ranks))
+    metrics = metrics.merge(ranks)
+    if get_candidates:
+        candidates = pd.DataFrame(candidates)
+        output.update(aggregate_metrics_df(candidates))
+        metrics = metrics.merge(candidates)
+
     if return_tables:
         output["metrics"] = metrics
-        output["ranks"] = ranks
 
     return output

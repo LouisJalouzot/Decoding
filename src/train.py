@@ -294,7 +294,7 @@ def train(
     ]:
         if df_split.empty:
             continue
-        for key, value in evaluate(
+        for k, v in evaluate(
             df=df_split,
             decoder=decoder,
             negatives=negatives_from_df(df_split),
@@ -304,7 +304,7 @@ def train(
             n_candidates=n_candidates,
             return_tables=return_tables,
         ).items():
-            output[split + "/" + key] = value
+            output[split + "/" + k] = v
     if wandb.run is not None:
         wandb.summary.update(
             {
@@ -319,8 +319,8 @@ def train(
         )
 
     for split in ["Train", "Valid", "Test"]:
-        split_key = f"{split.lower()}/top_10_percent_accuracy"
+        split_key = f"{split.lower()}/top_10_accuracy"
         if split_key in output:
-            logger.info(f"{split} Top 10% Accuracy {output[split_key]:.3g}")
+            logger.info(f"{split} Top 10 Accuracy {output[split_key]:.3g}")
 
     return output, decoder._orig_mod.cpu()

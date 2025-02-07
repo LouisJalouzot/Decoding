@@ -36,6 +36,9 @@ def read_brain_volume(dataset, subject, run, lag, smooth, stack):
 
 
 def compute_chunk_index(df):
+    if df.empty:
+        return df
+
     chunks_index = df[["dataset", "run", "n_trs"]].drop_duplicates()
     chunks_index["chunks_index"] = (
         chunks_index.n_trs.shift(1).cumsum().fillna(0).astype(int)

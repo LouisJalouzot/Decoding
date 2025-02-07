@@ -147,7 +147,9 @@ def decoding(
             data["dataset"] = dataset
             data["run"] = run
             # Truncate latents to match the number of TRs in the brain scans
-            data["Y"] = data["Y"][:n_trs]
+            for k, v in data.items():
+                if isinstance(v, np.ndarray | torch.Tensor):
+                    data[k] = v[:n_trs]
             latents.append(data)
             progress.update(task, advance=1, refresh=True)
     latents = pd.concat(latents, axis=1).T
@@ -191,22 +193,18 @@ def decoding(
         }
 
         df_train = df_fold[df_fold.split == "train"]
+        df_train = df_train.merge(compute_chunk_index(df_train))
         df_valid = df_fold[df_fold.split == "valid"]
+        df_valid = df_valid.merge(compute_chunk_index(df_valid))
         df_test = df_fold[df_fold.split == "test"]
+        df_test = df_test.merge(compute_chunk_index(df_test))
         df_ft_train = df_fold[df_fold.split == "ft_train"]
         df_ft_valid = df_fold[df_fold.split == "ft_valid"]
+        if not df_ft_train.empty:
+            df_ft_train = df_ft_train.merge(compute_chunk_index(df_ft_train))
+            df_ft_valid = df_ft_valid.merge(compute_chunk_index(df_ft_valid))
         nlp_distances = {}
         if log_nlp_distances:
-            chunks_index = compute_chunk_index(df_train)
-            df_train = df_train.merge(chunks_index)
-            chunks_index = compute_chunk_index(df_valid)
-            df_valid = df_valid.merge(chunks_index)
-            chunks_index = compute_chunk_index(df_test)
-            df_test = df_test.merge(chunks_index)
-            chunks_index = compute_chunk_index(df_ft_train)
-            df_ft_train = df_ft_train.merge(chunks_index)
-            chunks_index = compute_chunk_index(df_ft_valid)
-            df_ft_valid = df_ft_valid.merge(chunks_index)
             for split, df_split in [
                 ("test", df_test),
                 ("valid", df_valid),
@@ -214,6 +212,8 @@ def decoding(
                 ("ft_train", df_ft_train),
                 ("ft_valid", df_ft_valid),
             ]:
+                if df_split.empty:
+                    continue
                 data = df_split.drop_duplicates(["dataset", "run"])[nlp_cols]
                 data = data.to_dict("series")
                 for k, v in data.items():

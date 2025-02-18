@@ -1,9 +1,9 @@
 defaults:
   - experiments
+  - subjects: lebel_fmriprep_123
   - _self_
 
 datasets: lebel2023_fmriprep
-subjects: lebel_fmriprep_123
 
 splitting:
   n_folds: 15
@@ -12,6 +12,8 @@ meta:
   tags: [setup_v3]
 
 hydra:
+  launcher:
+    cpus_per_task: 72
   sweeper:
     params:
       latents_cfg.context_length: 0,3

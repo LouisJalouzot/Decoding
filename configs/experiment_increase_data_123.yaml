@@ -14,4 +14,4 @@ hydra:
   sweeper:
     params:
       +subjects.lebel2023_fmriprep: UTS01,UTS02,UTS03
-      splitting.train_ratio: 0.05,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,null
+      splitting.train_ratio: 0.033,0.066,0.1,0.13,0.17,0.2,0.23,0.27,0.3,0.4,0.5,0.6,0.7,0.8,null

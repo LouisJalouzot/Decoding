@@ -18,9 +18,7 @@ hydra:
   sweeper:
     params:
       wrapper_cfg.hidden_dim: 64,4096
-      # wrapper_cfg.hidden_dim: 64,512,4096
-      splitting.overlap: 0,0.25,0.5,0.75,1
-      # splitting.overlap: 0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1
+      splitting.overlap: 0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1
       # +subjects.lebel2023_fmriprep: [UTS01,UTS02,UTS03]
       +subjects.lebel2023_fmriprep: UTS01,UTS02,UTS03,[UTS01,UTS02],[UTS01,UTS03],[UTS02,UTS03]
       # +subjects.lebel2023_fmriprep: UTS01,UTS02,UTS03,[UTS01,UTS02],[UTS01,UTS03],[UTS02,UTS03],[UTS01,UTS02,UTS03]

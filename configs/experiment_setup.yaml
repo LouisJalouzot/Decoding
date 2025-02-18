@@ -3,18 +3,20 @@ defaults:
   - _self_
 
 datasets: lebel2023_fmriprep
+subjects: lebel_fmriprep_123
 
 splitting:
   n_folds: 15
 
 meta:
-  tags: [setup_v2]
+  tags: [setup_v3]
 
 hydra:
   sweeper:
     params:
+      latents_cfg.context_length: 0,3
+      alignment_cfg.lag: 0,3
+      alignment_cfg.smooth: 0,4
       latents_cfg.model: bert-base-uncased,McGill-NLP/LLM2Vec-Meta-Llama-31-8B-Instruct-mntp-unsup-simcse
       decoder_cfg: simple_mlp,brain_decoder
-      top_encoding_voxels: null,4096
       wrapper_cfg.loss: mse,symm_nce
-      ++subjects.lebel2023_fmriprep: UTS01,UTS02,UTS03

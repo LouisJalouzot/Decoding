@@ -9,16 +9,13 @@ splitting:
   train_ratio: 0.3
 
 meta:
-  cache: true
-  tags: [overlap_v3]
+  tags: [overlap_v4]
 
 hydra:
   launcher:
-    cpus_per_task: 48
+    cpus_per_task: 72
   sweeper:
     params:
       wrapper_cfg.hidden_dim: 64,4096
       splitting.overlap: 0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1
-      # +subjects.lebel2023_fmriprep: [UTS01,UTS02,UTS03]
-      +subjects.lebel2023_fmriprep: UTS01,UTS02,UTS03,[UTS01,UTS02],[UTS01,UTS03],[UTS02,UTS03]
-      # +subjects.lebel2023_fmriprep: UTS01,UTS02,UTS03,[UTS01,UTS02],[UTS01,UTS03],[UTS02,UTS03],[UTS01,UTS02,UTS03]
+      +subjects.lebel2023_fmriprep: UTS01,UTS02,UTS03,[UTS01,UTS02,UTS03]

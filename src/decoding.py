@@ -155,8 +155,8 @@ def decoding(
     latents = pd.concat(latents, axis=1).T
     df = df.merge(latents, on=["dataset", "run"])
     # Truncate brain scans to match the number of TRs in the latents
-    df["X"] = df.apply(lambda x: x.X[: x.Y.shape[0]], axis=1)
-    df["n_trs"] = df.apply(lambda x: x.Y.shape[0], axis=1)
+    df["X"] = df.apply(lambda r: r.X[: r.Y.shape[0]], axis=1)
+    df["n_trs"] = df.apply(lambda r: r.Y.shape[0], axis=1)
     if performance_ceiling:
         # Setup to train the model to predict Y from Y to get measure ceilings
         n_features = df.Y.iloc[0].shape[1]

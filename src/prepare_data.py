@@ -25,14 +25,14 @@ def read_brain_volume(dataset, subject, run, lag, smooth, stack):
         for i in range(1, smooth + 1):
             new_X[i:] += X[:-i]
             count[i:] += 1
-        X = (new_X / count).to(torch.float32)
+        X = new_X / count
     if stack > 0:
         X = X.unfold(0, stack + 1, 1).flatten(-2)
     if lag > 0:
         X = X[lag:]
     elif lag < 0:
         X = X[:lag]
-    return dataset, subject, run, X.shape[0], X.shape[1], X
+    return dataset, subject, run, X.shape[0], X.shape[1], X.float()
 
 
 def compute_chunk_index(df):

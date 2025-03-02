@@ -258,11 +258,17 @@ def find_best_encoding_voxels(
         )
         for _, (dataset, subject) in dataset_subject.iterrows():
             subject_sel = (df.dataset == dataset) & (df.subject == subject)
-            df_train_sel = df[subject_sel & (df.split.str.endswith("train"))]
             if isinstance(top_encoding_voxels, dict):
                 n_voxels = top_encoding_voxels[dataset]
             else:
                 n_voxels = top_encoding_voxels
+            df_train_sel = df[subject_sel & (df.split.str.endswith("train"))]
+            if df_train_sel.empty:
+                voxels_to_keep.append(
+                    [dataset, subject, np.arange(n_voxels), n_voxels, None]
+                )
+                progress.update(task, advance=1, refresh=True)
+                continue
             if df_train_sel.n_voxels.iloc[0] <= n_voxels:
                 progress.update(task, advance=1, refresh=True)
                 continue

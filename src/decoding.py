@@ -39,9 +39,9 @@ def decoding(
     meta: dict,
     seed: int,
     return_tables: bool,
-    log_nlp_distances: bool,
+    log_nlp_distances: bool | str | list[str],
     n_candidates: int,
-    datasets: list[str] | str,
+    datasets: str | list[str],
     subjects: dict[str, list[str]] | None,
     runs: dict[str, dict[str, list[str]]] | None,
     tr: int,
@@ -202,22 +202,46 @@ def decoding(
         if not df_ft_train.empty:
             df_ft_train = df_ft_train.merge(compute_chunk_index(df_ft_train))
             df_ft_valid = df_ft_valid.merge(compute_chunk_index(df_ft_valid))
-        nlp_distances = {}
+
+        # Determine which splits to compute NLP distances for
+        splits_to_compute = []
         if log_nlp_distances:
-            for split, df_split in [
-                ("test", df_test),
-                ("valid", df_valid),
-                ("train", df_train),
-                ("ft_train", df_ft_train),
-                ("ft_valid", df_ft_valid),
-            ]:
-                if df_split.empty:
-                    continue
-                data = df_split.drop_duplicates(["dataset", "run"])[nlp_cols]
-                data = data.to_dict("series")
-                for k, v in data.items():
-                    data[k] = v.explode().values
-                nlp_distances[split] = compute_nlp_distances(**data)
+            if log_nlp_distances in [True, "all"]:
+                # Compute for all splits (original behavior)
+                splits_to_compute = [
+                    "test",
+                    "valid",
+                    "train",
+                    "ft_train",
+                    "ft_valid",
+                ]
+            elif isinstance(log_nlp_distances, str):
+                # Compute for a specific split
+                splits_to_compute = [log_nlp_distances]
+            elif isinstance(log_nlp_distances, list):
+                # Compute for multiple specific splits
+                splits_to_compute = log_nlp_distances
+            else:
+                logger.warning(
+                    f"Invalid value for log_nlp_distances: {log_nlp_distances}. "
+                    "Expected True, 'all', a split name, or a list of split names."
+                )
+
+        nlp_distances = {}
+        for split, df_split in [
+            ("test", df_test),
+            ("valid", df_valid),
+            ("train", df_train),
+            ("ft_train", df_ft_train),
+            ("ft_valid", df_ft_valid),
+        ]:
+            if df_split.empty or split not in splits_to_compute:
+                continue
+            data = df_split.drop_duplicates(["dataset", "run"])[nlp_cols]
+            data = data.to_dict("series")
+            for k, v in data.items():
+                data[k] = v.explode().values
+            nlp_distances[split] = compute_nlp_distances(**data)
 
         if n_folds is not None:
             logger.info(f"Fold {fold}/{n_folds}")

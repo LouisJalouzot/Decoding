@@ -115,12 +115,13 @@ def evaluate(
     get_candidates = (return_tables) or (nlp_distances is not None)
     if get_candidates:
         candidates = defaultdict(list)
-        # Sort by chunk index
         all_chunks = df.drop_duplicates(["dataset", "run"])
         all_chunks = df[["chunks", "chunks_index"]]
         all_chunks = all_chunks.explode(["chunks", "chunks_index"])
         all_chunks = all_chunks.sort_values("chunks_index").chunks.values
         assert len(all_chunks) == len(negatives)
+        if n_candidates is None:
+            n_candidates = len(negatives)
 
         if nlp_distances is not None:
             corresp = nlp_distances["corresp"]

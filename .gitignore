@@ -1,0 +1,7 @@
+.*
+*.lock
+paper
+!.gitignore
+datasets
+wandb
+artifacts

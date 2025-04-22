@@ -56,6 +56,7 @@ dependencies = [
     "einops>=0.8.0",
     "peft>=0.10",
     "huggingface-hub[hf-xet]>=0.30.2",
+    "fastparquet>=2024.11.0",
 ]
 
 [tool.uv.sources]

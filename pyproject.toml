@@ -55,6 +55,7 @@ dependencies = [
     "jupyterlab>=4.3.4",
     "einops>=0.8.0",
     "peft>=0.10",
+    "huggingface-hub[hf-xet]>=0.30.2",
 ]
 
 [tool.uv.sources]
